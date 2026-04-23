@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { generateNote } from '@/notes/orchestrate';
 import type { NoteType } from '@/storage/indexed';
 import type { ParseFields } from '@/agent/tools';
 import { NOTE_LABEL } from '@/notes/templates';
 import { resolveContinuity } from '@/notes/continuity';
+import { auditChameleonRules, sanitizeForChameleon } from '@/i18n/bidi';
 
 type Status = 'gen' | 'ready' | 'error';
 
@@ -49,10 +50,22 @@ export function NoteEditor() {
     if (body) sessionStorage.setItem('body', body);
   }, [body]);
 
+  // Live audit: surfaces any Chameleon violations present in the current
+  // draft, including ones the user introduces while editing.
+  const issues = useMemo(() => auditChameleonRules(body), [body]);
+
   async function onCopy() {
-    await navigator.clipboard.writeText(body);
+    // Last-chance sanitize at the clipboard boundary — even if the draft
+    // somehow still contains forbidden chars (e.g. user just typed one),
+    // the pasted text is clean.
+    const clean = sanitizeForChameleon(body);
+    await navigator.clipboard.writeText(clean);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  function onAutoClean() {
+    setBody(sanitizeForChameleon(body));
   }
 
   if (status === 'gen') {
@@ -76,6 +89,42 @@ export function NoteEditor() {
   return (
     <section>
       <h1>טיוטת {NOTE_LABEL[noteType]}</h1>
+
+      {issues.length > 0 && (
+        <div
+          role="alert"
+          style={{
+            background: 'var(--warn)',
+            color: 'black',
+            padding: 10,
+            borderRadius: 8,
+            marginBottom: 10,
+            fontSize: 14,
+          }}
+        >
+          <strong>⚠ {issues.length} בעיית פורמט לצ׳מיליון:</strong>
+          <ul style={{ margin: '6px 0 8px 18px', padding: 0 }}>
+            {issues.map((i) => (
+              <li key={i}>{i}</li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            className="ghost"
+            onClick={onAutoClean}
+            style={{
+              background: 'black',
+              color: 'white',
+              minHeight: 36,
+              padding: '6px 12px',
+              fontSize: 13,
+            }}
+          >
+            נקה אוטומטית
+          </button>
+        </div>
+      )}
+
       <textarea
         dir="auto"
         rows={18}
