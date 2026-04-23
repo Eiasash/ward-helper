@@ -237,7 +237,6 @@ export function Review() {
         label="שם"
         value={fields.name ?? ''}
         confidence={parsed.confidence['name']}
-        sourceRegion={parsed.sourceRegions['name']}
         onChange={update('name')}
         critical
       />
@@ -245,7 +244,6 @@ export function Review() {
         label="ת.ז."
         value={fields.teudatZehut ?? ''}
         confidence={parsed.confidence['teudatZehut']}
-        sourceRegion={parsed.sourceRegions['teudatZehut']}
         onChange={update('teudatZehut')}
         critical
       />
@@ -253,7 +251,6 @@ export function Review() {
         label="גיל"
         value={String(fields.age ?? '')}
         confidence={parsed.confidence['age']}
-        sourceRegion={parsed.sourceRegions['age']}
         onChange={update('age')}
         critical
       />
@@ -261,14 +258,12 @@ export function Review() {
         label="חדר"
         value={fields.room ?? ''}
         confidence={parsed.confidence['room']}
-        sourceRegion={parsed.sourceRegions['room']}
         onChange={update('room')}
       />
       <FieldRow
         label="תלונה ראשית"
         value={fields.chiefComplaint ?? ''}
         confidence={parsed.confidence['chiefComplaint']}
-        sourceRegion={parsed.sourceRegions['chiefComplaint']}
         onChange={update('chiefComplaint')}
       />
 

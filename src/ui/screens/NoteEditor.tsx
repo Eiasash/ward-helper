@@ -28,7 +28,7 @@ export function NoteEditor() {
         const continuity = continuityTz ? await resolveContinuity(continuityTz) : null;
         const text = await generateNote(
           nt,
-          { fields: validated, confidence: {}, sourceRegions: {} },
+          { fields: validated, confidence: {} },
           continuity,
         );
         if (cancelled) return;

@@ -27,8 +27,7 @@ describe('runExtractTurn — JSON-mode via proxy', () => {
   it('parses a well-formed JSON response into a ParseResult', async () => {
     const payload = JSON.stringify({
       fields: { name: 'דוד כהן', age: 82, chiefComplaint: 'קוצר נשימה' },
-      confidence: { name: 'high', age: 'high', chiefComplaint: 'med' },
-      sourceRegions: { name: 'ADT banner', age: 'ADT banner', chiefComplaint: 'triage' },
+      confidence: { name: 'high', age: 'high', teudatZehut: 'low' },
     });
     vi.stubGlobal('fetch', mockProxyResponse(payload));
     const result = await runExtractTurn(
@@ -37,29 +36,28 @@ describe('runExtractTurn — JSON-mode via proxy', () => {
     );
     expect(result.fields.name).toBe('דוד כהן');
     expect(result.confidence['name']).toBe('high');
-    expect(result.sourceRegions['chiefComplaint']).toBe('triage');
+    expect(result.confidence['teudatZehut']).toBe('low');
   });
 
   it('strips ```json code fences if the model ignored instructions', async () => {
-    const payload = '```json\n{"fields":{"name":"X"},"confidence":{},"sourceRegions":{}}\n```';
+    const payload = '```json\n{"fields":{"name":"X"},"confidence":{}}\n```';
     vi.stubGlobal('fetch', mockProxyResponse(payload));
     const result = await runExtractTurn(['data:image/jpeg;base64,/9j/'], 'skill');
     expect(result.fields.name).toBe('X');
   });
 
   it('extracts the JSON object even with prose wrapper', async () => {
-    const payload = 'Here is the JSON:\n{"fields":{"age":77},"confidence":{},"sourceRegions":{}}\nHope that helps!';
+    const payload = 'Here is the JSON:\n{"fields":{"age":77},"confidence":{}}\nHope that helps!';
     vi.stubGlobal('fetch', mockProxyResponse(payload));
     const result = await runExtractTurn(['data:image/jpeg;base64,/9j/'], 'skill');
     expect(result.fields.age).toBe(77);
   });
 
-  it('backfills missing confidence and sourceRegions to empty objects', async () => {
+  it('backfills missing confidence to empty object', async () => {
     const payload = JSON.stringify({ fields: { name: 'Y' } });
     vi.stubGlobal('fetch', mockProxyResponse(payload));
     const result = await runExtractTurn(['data:image/jpeg;base64,/9j/'], 'skill');
     expect(result.confidence).toEqual({});
-    expect(result.sourceRegions).toEqual({});
   });
 
   it('throws on truly non-JSON response', async () => {
@@ -93,7 +91,7 @@ describe('runExtractTurn — JSON-mode via proxy', () => {
 
   it('sends image with media_type jpeg for jpeg data URL', async () => {
     const fetchFn = mockProxyResponse(
-      JSON.stringify({ fields: {}, confidence: {}, sourceRegions: {} }),
+      JSON.stringify({ fields: {}, confidence: {} }),
     );
     vi.stubGlobal('fetch', fetchFn);
     await runExtractTurn(['data:image/jpeg;base64,/9j/'], 'skill');
@@ -105,7 +103,7 @@ describe('runExtractTurn — JSON-mode via proxy', () => {
 
   it('falls back to image/jpeg for unknown media type', async () => {
     const fetchFn = mockProxyResponse(
-      JSON.stringify({ fields: {}, confidence: {}, sourceRegions: {} }),
+      JSON.stringify({ fields: {}, confidence: {} }),
     );
     vi.stubGlobal('fetch', fetchFn);
     await runExtractTurn(['data:image/bmp;base64,abc'], 'skill');

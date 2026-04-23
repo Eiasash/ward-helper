@@ -6,12 +6,11 @@ interface Props {
   label: string;
   value: string;
   confidence: Confidence | undefined;
-  sourceRegion: string | undefined;
   onChange: (v: string) => void;
   critical?: boolean;
 }
 
-export function FieldRow({ label, value, confidence, sourceRegion, onChange, critical }: Props) {
+export function FieldRow({ label, value, confidence, onChange, critical }: Props) {
   const needsConfirm = confidence === 'low' || (critical && !confidence);
   const [confirmed, setConfirmed] = useState(!needsConfirm);
 
@@ -29,11 +28,6 @@ export function FieldRow({ label, value, confidence, sourceRegion, onChange, cri
         <strong>{label}</strong>
         <ConfidencePill level={confidence} />
       </div>
-      {sourceRegion && (
-        <small style={{ color: 'var(--muted)', display: 'block', marginBottom: 4 }}>
-          מקור: {sourceRegion}
-        </small>
-      )}
       <input dir="auto" value={value} onChange={(e) => onChange(e.target.value)} />
       {needsConfirm && !confirmed && (
         <button className="ghost" onClick={() => setConfirmed(true)} style={{ marginTop: 6 }}>
