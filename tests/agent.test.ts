@@ -79,4 +79,72 @@ describe('agent loop', () => {
     );
     expect(note).toContain('קבלה');
   });
+
+  it('runExtractTurn passes jpeg media type for jpeg data URLs', async () => {
+    const client = makeFakeClient();
+    await runExtractTurn(
+      // @ts-expect-error — fake client shape is sufficient
+      client,
+      ['data:image/jpeg;base64,/9j/'],
+      'SKILL CONTENT azma-ui',
+    );
+    const callArg = (client.messages.create as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      messages: Array<{ content: Array<{ source?: { media_type: string } }> }>;
+    };
+    expect(callArg.messages[0]!.content[0]!.source?.media_type).toBe('image/jpeg');
+  });
+
+  it('runExtractTurn falls back to image/png for an unknown media type', async () => {
+    const client = makeFakeClient();
+    await runExtractTurn(
+      // @ts-expect-error — fake client shape is sufficient
+      client,
+      ['data:image/bmp;base64,abc'],
+      'SKILL CONTENT azma-ui',
+    );
+    const callArg = (client.messages.create as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      messages: Array<{ content: Array<{ source?: { media_type: string } }> }>;
+    };
+    expect(callArg.messages[0]!.content[0]!.source?.media_type).toBe('image/png');
+  });
+
+  it('runExtractTurn throws on an invalid (non-data-URL) image string', async () => {
+    const client = { messages: { create: vi.fn() } };
+    await expect(
+      // @ts-expect-error — fake client shape is sufficient
+      runExtractTurn(client, ['not-a-data-url'], 'skill content'),
+    ).rejects.toThrow('invalid data URL');
+  });
+
+  it('runExtractTurn throws when response has no tool_use block', async () => {
+    const client = {
+      messages: {
+        create: vi.fn(async () => ({
+          content: [{ type: 'text', text: 'plain text — no tool use' }],
+          stop_reason: 'end_turn',
+          usage: { input_tokens: 10, output_tokens: 5 },
+        })),
+      },
+    };
+    await expect(
+      // @ts-expect-error — fake client shape is sufficient
+      runExtractTurn(client, ['data:image/png;base64,iVBOR'], 'skill content'),
+    ).rejects.toThrow('no parse_azma_screen tool_use');
+  });
+
+  it('runEmitTurn throws when response has no tool_use block', async () => {
+    const client = {
+      messages: {
+        create: vi.fn(async () => ({
+          content: [{ type: 'text', text: 'plain text — no tool use' }],
+          stop_reason: 'end_turn',
+          usage: { input_tokens: 10, output_tokens: 5 },
+        })),
+      },
+    };
+    await expect(
+      // @ts-expect-error — fake client shape is sufficient
+      runEmitTurn(client, 'admission', { fields: {}, confidence: {}, sourceRegions: {} }, 'skill'),
+    ).rejects.toThrow('no emit_note tool_use');
+  });
 });
