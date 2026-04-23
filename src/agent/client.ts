@@ -22,6 +22,28 @@ export const MODEL = 'proxy:claude-sonnet-4-6';
 
 const TIMEOUT_MS = 60_000;
 
+/**
+ * The Toranot proxy runs on Netlify Functions with a ~10s execution budget.
+ * Opus 4.7 generating a long admission note regularly exceeds that, surfacing
+ * as `proxy HTTP 504: Upstream timeout` to the client. A single cold-start
+ * also often produces a spurious 504 that a retry resolves.
+ *
+ * Retry policy (callers opt in): up to 2 attempts on 504, 2s backoff between.
+ * Non-504 errors (auth, body, 500, abort) fail fast — retrying them just
+ * burns the user's tokens on a call that will never succeed.
+ */
+export interface CallProxyOptions {
+  /** Max additional attempts on 504 (0 = no retry, single call). Default 0. */
+  retryOn504?: number;
+}
+
+const RETRY_BACKOFF_MS = 2_000;
+
+function isProxy504(e: unknown): boolean {
+  if (!(e instanceof Error)) return false;
+  return /proxy HTTP 504\b/.test(e.message);
+}
+
 export type AnthropicContentBlock =
   | { type: 'text'; text: string }
   | {
@@ -52,7 +74,7 @@ export interface AnthropicResponse {
   };
 }
 
-export async function callProxy(req: AnthropicRequest): Promise<AnthropicResponse> {
+async function callProxyOnce(req: AnthropicRequest): Promise<AnthropicResponse> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
@@ -73,4 +95,22 @@ export async function callProxy(req: AnthropicRequest): Promise<AnthropicRespons
   } finally {
     clearTimeout(timer);
   }
+}
+
+export async function callProxy(
+  req: AnthropicRequest,
+  opts: CallProxyOptions = {},
+): Promise<AnthropicResponse> {
+  const maxRetries = Math.max(0, opts.retryOn504 ?? 0);
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await callProxyOnce(req);
+    } catch (e) {
+      lastErr = e;
+      if (attempt >= maxRetries || !isProxy504(e)) break;
+      await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS * (attempt + 1)));
+    }
+  }
+  throw lastErr;
 }
