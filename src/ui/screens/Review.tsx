@@ -11,15 +11,50 @@ import { ContinuityBanner } from '../components/ContinuityBanner';
 
 type Status = 'loading' | 'ready' | 'error';
 
+const EXTRACT_TIMEOUT_MS = 45_000;
+
+/**
+ * Wrap a promise with a hard timeout. On timeout, the promise rejects with
+ * a diagnostic message so the Review screen can surface "what went wrong"
+ * rather than sitting on "מנתח את המסך..." forever.
+ */
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`timeout after ${ms / 1000}s: ${label}. בדוק חיבור רשת / מפתח API תקין / מודל זמין.`));
+    }, ms);
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
+
 export function Review() {
   const nav = useNavigate();
   const [status, setStatus] = useState<Status>('loading');
   const [error, setError] = useState('');
+  const [elapsed, setElapsed] = useState(0);
   const [parsed, setParsed] = useState<ParseResult | null>(null);
   const [fields, setFields] = useState<ParseFields>({});
   const [continuity, setContinuity] = useState<ContinuityContext | null>(null);
   const [continuityEnabled, setContinuityEnabled] = useState<boolean>(true);
   const isSoap = sessionStorage.getItem('noteType') === 'soap';
+
+  // Elapsed-time counter while loading — gives user feedback that work is
+  // happening, and surfaces hangs visibly.
+  useEffect(() => {
+    if (status !== 'loading') return;
+    const start = Date.now();
+    const t = setInterval(() => setElapsed(Math.round((Date.now() - start) / 1000)), 500);
+    return () => clearInterval(t);
+  }, [status]);
 
   useEffect(() => {
     let cancelled = false;
@@ -30,16 +65,28 @@ export function Review() {
         if (images.length === 0 && !pasted) throw new Error('אין קלט לעיבוד');
         const client = await getClient();
         const skillContent = await loadSkills(['azma-ui', 'hebrew-medical-glossary']);
-        // paste-text mode: embed paste as a text block prefixed to the extraction request
         const imagePayload = images.length > 0 ? images : [];
-        const result = await runExtractTurn(client, imagePayload, skillContent + (pasted ? `\n\n## Pasted AZMA text\n${pasted}` : ''));
+        const result = await withTimeout(
+          runExtractTurn(
+            client,
+            imagePayload,
+            skillContent + (pasted ? `\n\n## Pasted AZMA text\n${pasted}` : ''),
+          ),
+          EXTRACT_TIMEOUT_MS,
+          'Anthropic extract call',
+        );
         if (cancelled) return;
         setParsed(result);
         setFields(result.fields);
         setStatus('ready');
       } catch (e: unknown) {
         if (cancelled) return;
-        setError((e as Error).message);
+        const err = e as { message?: string; status?: number; error?: { message?: string } };
+        const pieces: string[] = [];
+        if (err.status) pieces.push(`HTTP ${err.status}`);
+        if (err.error?.message) pieces.push(err.error.message);
+        else if (err.message) pieces.push(err.message);
+        setError(pieces.join(' — ') || String(e));
         setStatus('error');
       }
     })();
@@ -75,7 +122,20 @@ export function Review() {
     return (
       <section>
         <h1>בדיקה</h1>
-        <p>מנתח את המסך...</p>
+        <p>מנתח את המסך... ({elapsed}s)</p>
+        {elapsed > 15 && (
+          <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 12 }}>
+            לוקח זמן מעל הרגיל. אם זה נתקע, בדוק:
+            <br />• חיבור אינטרנט
+            <br />• שהוגדר מפתח API תקין בהגדרות
+            <br />• שהמודל {' '}claude-opus-4-7 זמין בחשבון שלך
+          </p>
+        )}
+        {elapsed > 40 && (
+          <button className="ghost" onClick={() => nav('/')} style={{ marginTop: 12 }}>
+            חזרה
+          </button>
+        )}
       </section>
     );
   }
@@ -84,8 +144,19 @@ export function Review() {
     return (
       <section>
         <h1>שגיאה</h1>
-        <p style={{ color: 'var(--red)' }}>{error}</p>
-        <button className="ghost" onClick={() => nav('/')}>חזרה</button>
+        <p style={{ color: 'var(--red)', whiteSpace: 'pre-wrap' }}>{error}</p>
+        <details style={{ marginTop: 12, fontSize: 13, color: 'var(--muted)' }}>
+          <summary>אבחון</summary>
+          <ul style={{ paddingInlineStart: 18 }}>
+            <li>תמונות בסשן: {listShots().length}</li>
+            <li>טקסט דבוק: {getPastedText() ? 'כן' : 'לא'}</li>
+            <li>זמן מקסימלי: {EXTRACT_TIMEOUT_MS / 1000}s</li>
+          </ul>
+        </details>
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <button onClick={() => nav('/settings')}>הגדרות</button>
+          <button className="ghost" onClick={() => nav('/')}>חזרה</button>
+        </div>
       </section>
     );
   }
