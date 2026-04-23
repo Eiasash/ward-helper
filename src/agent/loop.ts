@@ -1,4 +1,4 @@
-import { callProxy, type AnthropicContentBlock } from './client';
+import { callAnthropic, type AnthropicContentBlock } from './client';
 import type { ParseResult, ParseFields } from './tools';
 import { addTurn } from './costs';
 import type { NoteType } from '@/storage/indexed';
@@ -98,11 +98,11 @@ export async function runExtractTurn(
     { type: 'text', text: EXTRACT_JSON_INSTRUCTIONS },
   ];
 
-  const res = await callProxy({
+  const res = await callAnthropic({
     messages: [{ role: 'user', content }],
-    // 1500 is plenty for a compact ParseResult. Empirically this keeps
-    // single- and two-shot captures well inside the proxy's 10s Netlify
-    // Function budget even with the critical-3 confidence block re-enabled.
+    // 1500 is plenty for a compact ParseResult. With a user-direct path this
+    // comfortably fits the Anthropic non-streaming envelope; with the proxy
+    // fallback it stays under the 10s budget too.
     max_tokens: 1500,
     system: skillContent,
   });
@@ -139,6 +139,14 @@ Return EXACTLY ONE valid JSON object with this shape — no prose, no markdown f
 { "noteHebrew": string }
 
 The "noteHebrew" value is the full SZMC-format note in Hebrew, ready to paste into Chameleon. Plain text only. Follow the Chameleon paste rules strictly.
+
+CRITICAL — handling missing data:
+- If the validated fields are sparse, write a SHORT note with only the sections you can fill confidently.
+- Do NOT write placeholder tokens like [יש להשלים], [TODO], [not provided], or "לא ידוע" in prose slots. Either fill the section with real data or OMIT the whole section's body (keep the header, leave one blank line under it).
+- For exam/labs/imaging with zero data, write one short line: "לא צולם בקבלה" or "מחכה לתוצאות" — never a stub.
+- For drug doses where you have the drug but not the dose, omit the parenthetical and write just the generic + Hebrew instruction.
+- Under "דיון ותוכנית" / "מהלך ודיון" / "A:" / "P:" — if there's insufficient input to discuss a real problem, emit a single line: "ממתין להשלמת נתונים" and stop. Do not invent problems.
+
 Return ONLY the JSON.
 `.trim();
 
@@ -156,18 +164,17 @@ export async function runEmitTurn(
     EMIT_JSON_INSTRUCTIONS,
   ].join('\n');
 
-  // Emit calls on long notes (admission/discharge) can exceed the Toranot
-  // proxy's ~10s Netlify Function budget even on the first token. Retry on
-  // 504 twice with 2s/4s backoff — cold-start 504s often resolve on retry,
-  // and three attempts total is the right cost ceiling for a clinical flow
-  // where each failure otherwise forces a full re-capture.
-  const res = await callProxy(
+  // Long emits (admission/discharge) can take 30-60s even on the direct path.
+  // Retry transient network/5xx failures up to 2 more times with 2s/4s backoff.
+  // Direct-to-Anthropic transient failures are rare; proxy-path 504s are
+  // common but at least one retry sometimes lands in a warm function.
+  const res = await callAnthropic(
     {
       messages: [{ role: 'user', content: [{ type: 'text', text: userText }] }],
       max_tokens: 4096,
       system: skillContent,
     },
-    { retryOn504: 2 },
+    { retryOnTransient: 2 },
   );
 
   addTurn({
