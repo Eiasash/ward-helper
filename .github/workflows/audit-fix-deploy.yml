@@ -1,0 +1,38 @@
+name: audit-fix-deploy
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 0'  # weekly Sun 06:00 UTC
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - name: Type check
+        run: npm run check
+      - name: Tests
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Bundle size (150 kB gzipped)
+        run: |
+          MAIN=$(find dist/assets -name 'index-*.js' | head -1)
+          SIZE=$(gzip -c "$MAIN" | wc -c)
+          echo "main chunk gzipped: $SIZE bytes"
+          [ "$SIZE" -le 153600 ] || { echo "FAIL: main chunk exceeds 150 kB"; exit 1; }
+      - name: CSP + no-analytics greps
+        run: |
+          grep -q 'Content-Security-Policy' index.html
+          ! grep -rEi 'google-analytics|googletagmanager|sentry\.io|posthog|mixpanel' src/ public/ index.html
+      - name: Invariant — no plaintext PHI patterns in source
+        run: |
+          ! grep -rE 'console\.log\(.*(teudatZehut|bodyHebrew)' src/
+          ! grep -rE 'localStorage\.setItem\(.*bodyHebrew' src/
+      - name: Invariant — PBKDF2 >= 600000
+        run: grep -qE 'PBKDF2_ITERATIONS\s*=\s*600_000' src/crypto/pbkdf2.ts
+      - name: Invariant — BYO-key client uses dangerouslyAllowBrowser (intentional)
+        run: grep -q 'dangerouslyAllowBrowser' src/agent/client.ts
