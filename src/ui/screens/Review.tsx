@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { listShots, getPastedText } from '@/camera/session';
-import { getClient } from '@/agent/client';
 import { runExtractTurn } from '@/agent/loop';
 import { loadSkills } from '@/skills/loader';
 import type { ParseResult, ParseFields, Med } from '@/agent/tools';
@@ -63,12 +62,10 @@ export function Review() {
         const images = listShots().map((s) => s.dataUrl);
         const pasted = getPastedText();
         if (images.length === 0 && !pasted) throw new Error('אין קלט לעיבוד');
-        const client = await getClient();
         const skillContent = await loadSkills(['azma-ui', 'hebrew-medical-glossary']);
         const imagePayload = images.length > 0 ? images : [];
         const result = await withTimeout(
           runExtractTurn(
-            client,
             imagePayload,
             skillContent + (pasted ? `\n\n## Pasted AZMA text\n${pasted}` : ''),
           ),
@@ -127,8 +124,8 @@ export function Review() {
           <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 12 }}>
             לוקח זמן מעל הרגיל. אם זה נתקע, בדוק:
             <br />• חיבור אינטרנט
-            <br />• שהוגדר מפתח API תקין בהגדרות
-            <br />• שהמודל {' '}claude-opus-4-7 זמין בחשבון שלך
+            <br />• שהפרוקסי toranot.netlify.app פעיל
+            <br />• תמונות קטנות יותר (פחות מ-3 MB כל אחת)
           </p>
         )}
         {elapsed > 40 && (

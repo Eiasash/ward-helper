@@ -34,5 +34,10 @@ jobs:
           ! grep -rE 'localStorage\.setItem\(.*bodyHebrew' src/
       - name: Invariant — PBKDF2 >= 600000
         run: grep -qE 'PBKDF2_ITERATIONS\s*=\s*600_000' src/crypto/pbkdf2.ts
-      - name: Invariant — BYO-key client uses dangerouslyAllowBrowser (intentional)
-        run: grep -q 'dangerouslyAllowBrowser' src/agent/client.ts
+      - name: Invariant — Claude access goes through the Toranot proxy
+        run: grep -q 'toranot.netlify.app/api/claude' src/agent/client.ts
+      - name: Invariant — Anthropic SDK not in runtime deps
+        run: |
+          ! grep -q '"@anthropic-ai/sdk"' package.json || { echo "FAIL: SDK should be removed after proxy migration"; exit 1; }
+      - name: Invariant — image compression runs before shots are stored
+        run: grep -q 'compressImage' src/ui/screens/Capture.tsx
