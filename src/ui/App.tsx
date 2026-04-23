@@ -1,3 +1,24 @@
+import { HashRouter, Routes, Route, NavLink } from 'react-router-dom';
+import { Capture } from './screens/Capture';
+import { History } from './screens/History';
+import { Settings } from './screens/Settings';
+
 export function App() {
-  return <main className="shell"><h1>ward-helper</h1></main>;
+  return (
+    <HashRouter>
+      <main className="shell">
+        <Routes>
+          <Route path="/" element={<Capture />} />
+          <Route path="/history" element={<History />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="*" element={<Capture />} />
+        </Routes>
+      </main>
+      <nav className="bottom-nav">
+        <NavLink to="/" end>צלם</NavLink>
+        <NavLink to="/history">היסטוריה</NavLink>
+        <NavLink to="/settings">הגדרות</NavLink>
+      </nav>
+    </HashRouter>
+  );
 }
