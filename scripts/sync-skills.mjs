@@ -22,19 +22,29 @@ const DEST = resolve('public', 'skills');
 
 mkdirSync(DEST, { recursive: true });
 
+// If the source tree doesn't exist (e.g. CI runner), skip entirely so we don't
+// overwrite any checked-in skills. The dev machine is the authority for skill
+// content; CI just ships whatever is committed.
+if (!existsSync(SOURCE)) {
+  console.log(`sync-skills: source ${SOURCE} not found; skipping (using committed public/skills/)`);
+  process.exit(0);
+}
+
 for (const name of SKILLS) {
   const src = join(SOURCE, name);
   const dst = join(DEST, name);
-  rmSync(dst, { recursive: true, force: true });
   if (existsSync(src)) {
+    rmSync(dst, { recursive: true, force: true });
     cpSync(src, dst, { recursive: true });
     console.log(`synced ${name}`);
-  } else {
+  } else if (!existsSync(dst)) {
     mkdirSync(dst, { recursive: true });
     writeFileSync(
       join(dst, 'SKILL.md'),
       `# ${name}\n\n(placeholder — source not found at ${src})\n`,
     );
     console.warn(`WARN: ${name} source missing; wrote placeholder to ${dst}/SKILL.md`);
+  } else {
+    console.log(`${name}: source missing, keeping existing committed copy`);
   }
 }
