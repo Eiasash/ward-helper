@@ -17,6 +17,13 @@ function mkNote(overrides: Partial<Note>): Note {
 }
 
 describe('buildSoapPromptPrefix', () => {
+  it('null continuity returns first-SOAP instructions', () => {
+    const out = buildSoapPromptPrefix(null);
+    expect(out).toContain('First SOAP for this patient');
+    expect(out).not.toContain('ADMISSION');
+    expect(out).not.toContain('MOST RECENT SOAP');
+  });
+
   it('case 1 (fresh): first-SOAP instructions, no admission block', () => {
     const ctx: ContinuityContext = {
       patient: null,
