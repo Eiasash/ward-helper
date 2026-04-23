@@ -54,3 +54,39 @@ describe('bidi with SOAP-style content', () => {
     expect(out).toBe(input);
   });
 });
+
+describe('bidi edge cases', () => {
+  it('detectDir returns neutral for an empty string', () => {
+    expect(detectDir('')).toBe('neutral');
+  });
+
+  it('detectDir returns neutral for digits-only input', () => {
+    expect(detectDir('123.456')).toBe('neutral');
+  });
+
+  it('wrapForChameleon returns empty string unchanged', () => {
+    expect(wrapForChameleon('')).toBe('');
+  });
+
+  it('wrapForChameleon leaves pure Hebrew prose unchanged when no Latin embedded', () => {
+    const input = 'המטופל ללא תלונות';
+    expect(wrapForChameleon(input)).toBe(input);
+  });
+
+  it('lintBidi reports error for unbalanced PDI close (more closes than opens)', () => {
+    const bad = 'text\u2069 without matching open';
+    const errors = lintBidi(bad);
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it('lintBidi reports error for unbalanced LRI open (more opens than closes)', () => {
+    const bad = '\u2066text without closing PDI';
+    const errors = lintBidi(bad);
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it('lintBidi passes when isolate pairs are balanced', () => {
+    const good = '\u2066English run\u2069';
+    expect(lintBidi(good)).toEqual([]);
+  });
+});
