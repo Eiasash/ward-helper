@@ -107,6 +107,54 @@ Order:
 `.trim();
 
 /**
+ * Case-conference prompt — szmc-interesting-cases skill.
+ * Template (not audit): 1-page case file with a fixed 6-section structure.
+ * Default language is English (SZMC case conferences are in English); only
+ * switch to Hebrew if the validated fields themselves signal a Hebrew request.
+ * Keep sections in order; use tables for labs/imaging; abnormal values only.
+ */
+const CASE_STYLE = `
+Case conference (מקרה מעניין / ישיבת מקרים) — 1-page case file for ward presentation.
+Default language: English. Do NOT include opinions, teaching points, citations, PMIDs, or GOC commentary unless they appear in the source data.
+
+Emit this exact 6-section structure, in order:
+
+# [Last name] [First name], [Age][M/F] — Case Summary
+**For ישיבת מקרים מעניינים — [Department]**
+
+**Admission:** DD/MM/YYYY | **LOS:** X days | **Ward:** [X]
+**Allergies:** [list or NKDA]
+
+## 1. Who
+One paragraph — age, sex, living/marital situation, functional baseline BEFORE admission, cognitive status, mobility aid, caregiver, relevant occupation/context. Mark [not provided] for any missing piece — never invent.
+
+## 2. Background
+Relevant comorbidities only — not every ICD code. Group by organ system if >4 conditions. Recent relevant workup/treatments (last 6 months).
+
+## 3. Why they came
+- **Chief complaint:** [one line]
+- **Timeline:** symptom onset > ED > ward
+- **ED vitals & key findings:** BP / HR / Sat / T / GCS + anything that changed triage
+- **ED workup:** labs / imaging / ruled in / ruled out
+
+## 4. What we found
+Use a markdown table — Category | Key findings — with rows for: Vitals trend (if notable), Key labs (abnormal only, trends as "Ca: 12.3 > 11.6 > 9.8"), Imaging (1 line/study), Cultures (organism/sensitivity/specimen), ECG/TTE (if done), Consults (service/recommendation).
+
+## 5. What we did
+Active problems this admission — numbered list, ONE line per problem: workup done, treatment, response.
+1. **[Problem]** — [workup / treatment / response]
+2. **[Problem]** — [...]
+
+## 6. Current status / disposition
+- **Clinical status at presentation:** [improving / stable / deteriorating / discharged]
+- **Functional status now vs baseline:** [PT assessment if available]
+- **Disposition plan:** [home / rehab / hospice / long-term / still inpatient]
+- **Open questions for the room:** [1-3 bullets the presenter flags — or omit the subheading if none in source]
+
+Style: concise, tables over prose, abnormal labs only, no "teaching points" section, no NEJM headers. Drug doses inline with route ("Meropenem IV 1g q8h" is fine here — this is English case-conference, not Chameleon paste).
+`.trim();
+
+/**
  * Consult prompt — szmc-clinical-notes §"Consult" structure, in-lane/out-of-lane
  * discipline, no jargon.
  */
@@ -181,7 +229,7 @@ export function buildSoapPromptPrefix(continuity: ContinuityContext | null): str
   ].join('\n');
 }
 
-function buildPromptPrefix(noteType: NoteType, continuity: ContinuityContext | null): string {
+export function buildPromptPrefix(noteType: NoteType, continuity: ContinuityContext | null): string {
   switch (noteType) {
     case 'soap':
       return buildSoapPromptPrefix(continuity);
@@ -192,8 +240,10 @@ function buildPromptPrefix(noteType: NoteType, continuity: ContinuityContext | n
     case 'consult':
       return [CHAMELEON_RULES, CONSULT_STYLE].join('\n\n');
     case 'case':
-      // case-conference notes use szmc-interesting-cases skill; paste rules still apply.
-      return CHAMELEON_RULES;
+      // case-conference notes use szmc-interesting-cases skill. English-by-default
+      // template; Chameleon paste rules still apply as a hedge (in case the user
+      // requests Hebrew — the same arrow/bold/qNh landmines can still ride in).
+      return [CHAMELEON_RULES, CASE_STYLE].join('\n\n');
   }
 }
 

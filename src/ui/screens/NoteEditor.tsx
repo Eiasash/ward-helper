@@ -6,6 +6,7 @@ import type { ParseFields } from '@/agent/tools';
 import { NOTE_LABEL } from '@/notes/templates';
 import { resolveContinuity } from '@/notes/continuity';
 import { auditChameleonRules, sanitizeForChameleon } from '@/i18n/bidi';
+import { useBidiAudit } from '../hooks/useSettings';
 
 type Status = 'gen' | 'ready' | 'error';
 
@@ -16,6 +17,7 @@ export function NoteEditor() {
   const [body, setBody] = useState('');
   const [noteType, setNoteType] = useState<NoteType>('admission');
   const [copied, setCopied] = useState(false);
+  const [bidiAuditOn] = useBidiAudit();
 
   useEffect(() => {
     let cancelled = false;
@@ -28,7 +30,7 @@ export function NoteEditor() {
         const continuity = continuityTz ? await resolveContinuity(continuityTz) : null;
         const text = await generateNote(
           nt,
-          { fields: validated, confidence: {}, sourceRegions: {} },
+          { fields: validated, confidence: {} },
           continuity,
         );
         if (cancelled) return;
@@ -50,9 +52,13 @@ export function NoteEditor() {
     if (body) sessionStorage.setItem('body', body);
   }, [body]);
 
-  // Live audit: surfaces any Chameleon violations present in the current
-  // draft, including ones the user introduces while editing.
-  const issues = useMemo(() => auditChameleonRules(body), [body]);
+  // Live audit is a dev-time affordance, opt-in via Settings. In normal use
+  // the clipboard sanitizer handles violations silently; the banner exists
+  // so prompt tuners can see what the model produced before sanitization.
+  const issues = useMemo(
+    () => (bidiAuditOn ? auditChameleonRules(body) : []),
+    [body, bidiAuditOn],
+  );
 
   async function onCopy() {
     // Last-chance sanitize at the clipboard boundary — even if the draft
@@ -92,17 +98,20 @@ export function NoteEditor() {
 
       {issues.length > 0 && (
         <div
-          role="alert"
+          role="status"
           style={{
-            background: 'var(--warn)',
-            color: 'black',
+            background: 'var(--card)',
+            color: 'var(--muted)',
             padding: 10,
             borderRadius: 8,
             marginBottom: 10,
-            fontSize: 14,
+            fontSize: 13,
+            border: '1px solid var(--border, rgba(255,255,255,0.08))',
           }}
         >
-          <strong>⚠ {issues.length} בעיית פורמט לצ׳מיליון:</strong>
+          <strong style={{ color: 'var(--muted)' }}>
+            audit: {issues.length} בעיית פורמט לצ׳מיליון
+          </strong>
           <ul style={{ margin: '6px 0 8px 18px', padding: 0 }}>
             {issues.map((i) => (
               <li key={i}>{i}</li>
@@ -112,13 +121,7 @@ export function NoteEditor() {
             type="button"
             className="ghost"
             onClick={onAutoClean}
-            style={{
-              background: 'black',
-              color: 'white',
-              minHeight: 36,
-              padding: '6px 12px',
-              fontSize: 13,
-            }}
+            style={{ minHeight: 32, padding: '4px 10px', fontSize: 12 }}
           >
             נקה אוטומטית
           </button>

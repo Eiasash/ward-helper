@@ -23,6 +23,10 @@ Mobile-first Hebrew-RTL PWA for SZMC ward rounds. Camera an AZMA screen → revi
 - Supabase project is pinned to `krmlzwwelqvlfslwltol` (shared "Toranot" project — also used by Toranot, FamilyMedicine, Geriatrics, InternalMedicine). Never cross-wire to watch-advisor2's `oaojkanozbfpofbewtfq`. [tests/supabase-config.test.ts](tests/supabase-config.test.ts) enforces this.
 - Per-note-type prompt prefixes in [src/notes/orchestrate.ts](src/notes/orchestrate.ts) mirror the printed-output order from `szmc-clinical-notes` skill. SOAP is written "in the spirit of a consult" — brief, problem-focused, plan-heavy. Do not change prefix order without updating the skill.
 - Model access is via [src/agent/client.ts](src/agent/client.ts) → `callProxy()` → `toranot.netlify.app/api/claude` (shared secret `shlav-a-mega-2026`). The proxy strips `tools`/`tool_choice` fields, so structured output uses JSON-mode prompting. See [src/agent/loop.ts](src/agent/loop.ts) — `runExtractTurn` / `runEmitTurn` parse strict JSON from `content[].text`. **Do not re-introduce `@anthropic-ai/sdk`** — it added ~12 KB to the bundle and doesn't work through the proxy.
+- Extract prompt emits `confidence` for the critical-3 identifiers only (name / teudatZehut / age). Adding more fields re-introduces the 10s-budget stall the slim commit fixed. `sourceRegions` has been retired — don't re-add it.
+- Per-patient cost attribution: `Capture.tsx` opens a session via `startSession()` on mount; `saveBoth()` calls `finalizeSessionFor(patientId)` after IndexedDB put. Any new entry point that creates a note must follow the same open/finalize pair, or the tokens go unattributed.
+- Bidi audit banner in NoteEditor is a dev affordance only — gated behind the Settings toggle that writes `ward-helper.bidiAudit=1` to localStorage. It must not be visible by default; `wrapForChameleon` is the clinical safety net.
+- Service worker caches `index.html` — bump `VERSION` in [public/sw.js](public/sw.js) to match `package.json` on every release so installed PWAs pick up the new bundle hash.
 
 ## Architecture
 

@@ -25,6 +25,43 @@ export function clearPassphrase(): void {
   passphraseSetAt = 0;
 }
 
+/**
+ * Opt-in Chameleon-rules audit banner on the NoteEditor screen.
+ *
+ * The sanitizer at the clipboard boundary is the real safety net — but when
+ * tuning prompts or the sanitizer itself, it's useful to see violations the
+ * model produced BEFORE they get washed out. This toggle surfaces that
+ * signal for developers; in normal clinical use the banner is silent and
+ * the note appears pre-cleaned.
+ */
+const BIDI_AUDIT_KEY = 'ward-helper.bidiAudit';
+
+export function getBidiAuditEnabled(): boolean {
+  try {
+    return localStorage.getItem(BIDI_AUDIT_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setBidiAuditEnabled(on: boolean): void {
+  try {
+    if (on) localStorage.setItem(BIDI_AUDIT_KEY, '1');
+    else localStorage.removeItem(BIDI_AUDIT_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function useBidiAudit(): [boolean, (v: boolean) => void] {
+  const [on, setOn] = useState<boolean>(() => getBidiAuditEnabled());
+  const set = useCallback((v: boolean) => {
+    setBidiAuditEnabled(v);
+    setOn(v);
+  }, []);
+  return [on, set];
+}
+
 export function useApiKey() {
   const [present, setPresent] = useState<boolean | null>(null);
 
