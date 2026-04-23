@@ -4,6 +4,7 @@ import { generateNote } from '@/notes/orchestrate';
 import type { NoteType } from '@/storage/indexed';
 import type { ParseFields } from '@/agent/tools';
 import { NOTE_LABEL } from '@/notes/templates';
+import { resolveContinuity } from '@/notes/continuity';
 
 type Status = 'gen' | 'ready' | 'error';
 
@@ -22,11 +23,13 @@ export function NoteEditor() {
         const nt = (sessionStorage.getItem('noteType') ?? 'admission') as NoteType;
         const validated: ParseFields = JSON.parse(sessionStorage.getItem('validated') ?? '{}');
         setNoteType(nt);
-        const text = await generateNote(nt, {
-          fields: validated,
-          confidence: {},
-          sourceRegions: {},
-        });
+        const continuityTz = sessionStorage.getItem('continuityTeudatZehut');
+        const continuity = continuityTz ? await resolveContinuity(continuityTz) : null;
+        const text = await generateNote(
+          nt,
+          { fields: validated, confidence: {}, sourceRegions: {} },
+          continuity,
+        );
         if (cancelled) return;
         setBody(text);
         sessionStorage.setItem('body', text);

@@ -1,11 +1,19 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { listPatients, listNotes, type Patient, type Note } from '@/storage/indexed';
 import { NOTE_LABEL } from '@/notes/templates';
 
 export function History() {
+  const nav = useNavigate();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [notesByPid, setNotesByPid] = useState<Record<string, Note[]>>({});
   const [q, setQ] = useState('');
+
+  function startSoapForPatient() {
+    sessionStorage.setItem('continuityNoteType', 'soap');
+    sessionStorage.setItem('noteType', 'soap');
+    nav('/');
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -59,6 +67,13 @@ export function History() {
               </div>
             ))}
           </div>
+          <button
+            className="ghost"
+            style={{ marginTop: 8, fontSize: 13, padding: '6px 10px', minHeight: 32 }}
+            onClick={() => startSoapForPatient()}
+          >
+            + SOAP היום
+          </button>
         </div>
       ))}
     </section>
