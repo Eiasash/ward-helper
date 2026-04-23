@@ -140,9 +140,20 @@ export function Capture() {
                 onChange={onPickFiles}
               />
             </label>
-            {shots.length > 0 && (
+            {shots.length > 0 && shots.length <= 3 && (
               <span style={{ color: 'var(--muted)', fontSize: 14 }}>
                 {shots.length} תמונות
+              </span>
+            )}
+            {shots.length > 3 && (
+              <span
+                style={{
+                  color: 'var(--warn)',
+                  fontSize: 14,
+                  fontWeight: 500,
+                }}
+              >
+                ⚠ {shots.length} תמונות - עלול לגרום ל-timeout. מומלץ 3 או פחות.
               </span>
             )}
           </div>
