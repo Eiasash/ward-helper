@@ -1,6 +1,6 @@
 import { openDB, type IDBPDatabase } from 'idb';
 
-export type NoteType = 'admission' | 'discharge' | 'consult' | 'case';
+export type NoteType = 'admission' | 'discharge' | 'consult' | 'case' | 'soap';
 
 export interface Patient {
   id: string;
@@ -86,4 +86,22 @@ export async function setSettings(s: Settings): Promise<void> {
 
 export async function getSettings(): Promise<Settings | undefined> {
   return (await getDb()).get('settings', 'singleton');
+}
+
+export async function listNotesByTeudatZehut(
+  teudatZehut: string,
+): Promise<{ patient: Patient | null; notes: Note[] }> {
+  const tz = teudatZehut.trim();
+  if (!tz) return { patient: null, notes: [] };
+  const db = await getDb();
+  const all = (await db.getAll('patients')) as Patient[];
+  const matches = all.filter((p) => p.teudatZehut === tz);
+  if (matches.length === 0) return { patient: null, notes: [] };
+  matches.sort((a, b) => b.updatedAt - a.updatedAt);
+  const patient = matches[0]!;
+  const notesByPatient = await Promise.all(
+    matches.map((p) => db.getAllFromIndex('notes', 'by-patient', p.id)),
+  );
+  const notes = notesByPatient.flat() as Note[];
+  return { patient, notes };
 }

@@ -4,9 +4,11 @@ import {
   putNote,
   listPatients,
   listNotes,
+  listNotesByTeudatZehut,
   getSettings,
   setSettings,
   resetDbForTests,
+  type Patient,
 } from '@/storage/indexed';
 import { encryptForCloud, decryptFromCloud } from '@/storage/cloud';
 import { deriveAesKey } from '@/crypto/pbkdf2';
@@ -82,5 +84,43 @@ describe('cloud encryption boundary', () => {
     const sealed = await encryptForCloud(record, key, salt);
     const back = await decryptFromCloud<typeof record>(sealed.ciphertext, sealed.iv, key);
     expect(back).toEqual(record);
+  });
+});
+
+describe('listNotesByTeudatZehut', () => {
+  it('returns notes for patients matching the given teudat zehut', async () => {
+    const tz = '098765432';
+    const pA: Patient = { id: 'pA', name: 'A', teudatZehut: tz, dob: '', room: null, tags: [], createdAt: 1, updatedAt: 2 };
+    const pB: Patient = { id: 'pB', name: 'B', teudatZehut: '111111111', dob: '', room: null, tags: [], createdAt: 1, updatedAt: 1 };
+    await putPatient(pA);
+    await putPatient(pB);
+    await putNote({ id: 'n1', patientId: 'pA', type: 'admission', bodyHebrew: 'קבלה', structuredData: {}, createdAt: 10, updatedAt: 10 });
+    await putNote({ id: 'n2', patientId: 'pA', type: 'soap', bodyHebrew: 'SOAP', structuredData: {}, createdAt: 20, updatedAt: 20 });
+    await putNote({ id: 'n3', patientId: 'pB', type: 'soap', bodyHebrew: 'ignore', structuredData: {}, createdAt: 30, updatedAt: 30 });
+
+    const out = await listNotesByTeudatZehut(tz);
+    expect(out.notes.map((n) => n.id).sort()).toEqual(['n1', 'n2']);
+    expect(out.patient?.id).toBe('pA');
+  });
+
+  it('trims whitespace on the teudat zehut input', async () => {
+    const tz = '012345678';
+    await putPatient({ id: 'p1', name: 'X', teudatZehut: tz, dob: '', room: null, tags: [], createdAt: 1, updatedAt: 1 });
+    const out = await listNotesByTeudatZehut('  ' + tz + '  ');
+    expect(out.patient?.id).toBe('p1');
+  });
+
+  it('returns null patient + empty notes on no match', async () => {
+    const out = await listNotesByTeudatZehut('000000000');
+    expect(out.patient).toBeNull();
+    expect(out.notes).toEqual([]);
+  });
+
+  it('on duplicate teudat zehut picks the most recently updated patient', async () => {
+    const tz = '222222222';
+    await putPatient({ id: 'old', name: 'X', teudatZehut: tz, dob: '', room: null, tags: [], createdAt: 1, updatedAt: 10 });
+    await putPatient({ id: 'new', name: 'Y', teudatZehut: tz, dob: '', room: null, tags: [], createdAt: 1, updatedAt: 50 });
+    const out = await listNotesByTeudatZehut(tz);
+    expect(out.patient?.id).toBe('new');
   });
 });
