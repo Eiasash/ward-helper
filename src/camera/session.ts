@@ -31,6 +31,13 @@ export function listShots(): readonly Shot[] {
   return shots;
 }
 
+export function removeShot(id: string): void {
+  const idx = shots.findIndex((s) => s.id === id);
+  if (idx === -1) return;
+  const [s] = shots.splice(idx, 1);
+  if (s) URL.revokeObjectURL(s.blobUrl);
+}
+
 export function clearShots(): void {
   for (const s of shots) URL.revokeObjectURL(s.blobUrl);
   shots = [];

@@ -17,6 +17,10 @@ Mobile-first Hebrew-RTL PWA for SZMC ward rounds. Camera an AZMA screen → revi
 - CSP meta in `index.html` locks `connect-src` to `self` + `api.anthropic.com` + `*.supabase.co`.
 - No analytics, no 3rd-party scripts (CI grep enforces).
 - Main chunk ≤ 150 kB gzipped (CI enforces).
+- File inputs on mobile **must** use the `<label>`-wrapped pattern with `.visually-hidden` styling. Never use programmatic `ref.click()` on hidden inputs — it fails silently on mobile Chrome in PWA standalone mode.
+- Every string copied to the Chameleon clipboard must flow through `wrapForChameleon` (in [src/i18n/bidi.ts](src/i18n/bidi.ts)), which runs `sanitizeForChameleon` first. Arrows (→ ↑ ↓), `**bold**`, `--`, `>N`/`<N`, and `q8h`/`bid` all corrupt Chameleon — the sanitizer is the last line of defense.
+- Supabase project is pinned to `krmlzwwelqvlfslwltol` (shared "Toranot" project — also used by Toranot, FamilyMedicine, Geriatrics, InternalMedicine). Never cross-wire to watch-advisor2's `oaojkanozbfpofbewtfq`. [tests/supabase-config.test.ts](tests/supabase-config.test.ts) enforces this.
+- Per-note-type prompt prefixes in [src/notes/orchestrate.ts](src/notes/orchestrate.ts) mirror the printed-output order from `szmc-clinical-notes` skill. SOAP is written "in the spirit of a consult" — brief, problem-focused, plan-heavy. Do not change prefix order without updating the skill.
 
 ## Architecture
 

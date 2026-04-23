@@ -1,3 +1,14 @@
+/**
+ * Bidi + Chameleon sanitization layer.
+ *
+ * The agent is told (via the skill) not to emit forbidden chars, but models
+ * slip up. This module is the LAST line of defense before the clipboard:
+ * every string that gets copy-pasted into Chameleon flows through
+ * `wrapForChameleon`, which first `sanitizeForChameleon`s then applies
+ * bidi marks. Keep these rules in sync with
+ * public/skills/szmc-clinical-notes/SKILL.md §"CHAMELEON EMR PASTE RULES".
+ */
+
 const HEBREW_RE = /[\u0590-\u05FF]/;
 const LATIN_RE = /[A-Za-z]/;
 const RLM = '\u200F';
@@ -10,14 +21,70 @@ export function detectDir(s: string): 'rtl' | 'ltr' | 'neutral' {
 }
 
 /**
- * Insert RLM after English runs that end a Hebrew sentence with punctuation,
- * and wrap parenthesized Latin-only content with LRM on both sides.
- * Applied only at the clipboard boundary before paste into Chameleon.
+ * Strip / replace characters and patterns that Chameleon renders incorrectly.
+ * Safe to call on any string. Deterministic; idempotent.
+ */
+export function sanitizeForChameleon(text: string): string {
+  let s = text;
+
+  // 1. Unicode arrows corrupt to "?" in Chameleon. Replace with " > "
+  //    (right-pointing semantic) or Hebrew verbiage.
+  s = s.replace(/\s*→\s*/g, ' > ');
+  s = s.replace(/\s*←\s*/g, ' > '); // in a Hebrew trend string "→" and "←" both mean "progressed to"
+  s = s.replace(/\s*↑\s*/g, ' עלייה ל-');
+  s = s.replace(/\s*↓\s*/g, ' ירידה ל-');
+  // `=>` is a common asciified arrow — normalize.
+  s = s.replace(/\s*=>\s*/g, ' > ');
+
+  // 2. Bold / emphasis markers render literally.
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, '$1');
+  s = s.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '$1');
+
+  // 3. Double-dash dividers render as encoding artifacts.
+  s = s.replace(/(?<!-)--(?!-)/g, '-');
+  s = s.replace(/^-{3,}$/gm, ''); // horizontal rules on their own line -> drop
+
+  // 4. Multiple > collapse to single.
+  s = s.replace(/>{2,}/g, '>');
+
+  // 5. ">N" / "<N" flip in RTL — must be spelled out.
+  //    Rule: ">" or "<" immediately followed by a digit (no whitespace between)
+  //    is a comparison operator. The " > " transition syntax always has a
+  //    space between ">" and the next token, so it's safely excluded.
+  //    We run this AFTER rule 4 (">>>>" collapse) so chained ">" won't bleed in.
+  s = s.replace(/>(\d)/g, 'מעל $1');
+  s = s.replace(/<(\d)/g, 'מתחת $1');
+
+  // 6. English drug-schedule abbreviations confuse RTL readers.
+  s = s.replace(/\bq(\d{1,2})h\b/gi, 'כל $1 שעות');
+  s = s.replace(/\bqd\b/gi, 'פעם ביום');
+  s = s.replace(/\bbid\b/gi, 'פעמיים ביום');
+  s = s.replace(/\btid\b/gi, '3 פעמים ביום');
+  s = s.replace(/\bqid\b/gi, '4 פעמים ביום');
+  s = s.replace(/\bqhs\b/gi, 'לפני שינה');
+  s = s.replace(/\bq(\d{1,2})\s*(hrs?|hours?)\b/gi, 'כל $1 שעות');
+
+  // 7. Trailing "?" after a Hebrew word ending a line looks like an
+  //    encoding error to Chameleon readers. Drop it.
+  s = s.replace(/([\u0590-\u05FF])\?$/gm, '$1');
+
+  // 8. Collapse runs of blank lines.
+  s = s.replace(/\n{3,}/g, '\n\n');
+
+  // 9. Trim trailing whitespace on each line.
+  s = s.replace(/[ \t]+$/gm, '');
+
+  return s;
+}
+
+/**
+ * Full clipboard-boundary transform: sanitize, then insert directional marks.
  */
 export function wrapForChameleon(text: string): string {
-  // Rule 1: (Latin-only content) -> (LRM Latin-only content LRM)
-  let out = text.replace(/\(([^()\u0590-\u05FF]+)\)/g, (_, inner) => `(${LRM}${inner}${LRM})`);
-  // Rule 2: English run followed by Western punctuation -> RLM before the punct
+  let out = sanitizeForChameleon(text);
+  // Rule A: (Latin-only content) -> (LRM Latin-only content LRM)
+  out = out.replace(/\(([^()\u0590-\u05FF]+)\)/g, (_, inner) => `(${LRM}${inner}${LRM})`);
+  // Rule B: English run followed by Western punctuation -> RLM before the punct
   out = out.replace(/([A-Za-z][A-Za-z0-9 +\-/]{2,})([.,:;])/g, `$1${RLM}$2`);
   return out;
 }
@@ -29,4 +96,22 @@ export function lintBidi(s: string): string[] {
   const closes = (s.match(/[\u2069]/g) ?? []).length;
   if (opens !== closes) errors.push(`unbalanced isolates: ${opens} open vs ${closes} close`);
   return errors;
+}
+
+/**
+ * Audit a note for Chameleon rule violations. Returns a human-readable list.
+ * Empty array means the note is clean. Useful for tests + optional dev-time
+ * banner.
+ */
+export function auditChameleonRules(text: string): string[] {
+  const issues: string[] = [];
+  if (/[→←↑↓]/.test(text)) issues.push('Unicode arrow found (corrupts in Chameleon)');
+  if (/\*\*[^*]+\*\*/.test(text)) issues.push('** bold markers found');
+  if (/(?<!-)--(?!-)/.test(text)) issues.push('-- double dash found');
+  if (/>{2,}/.test(text)) issues.push('>> multiple > found');
+  if (/>\d/.test(text)) issues.push('">N" found (should be "מעל N")');
+  if (/<\d/.test(text)) issues.push('"<N" found (should be "מתחת N")');
+  if (/\bq\d{1,2}h\b/i.test(text)) issues.push('qNh frequency found (use Hebrew)');
+  if (/\b(bid|tid|qid|qd)\b/i.test(text)) issues.push('BID/TID/QID/QD found (use Hebrew)');
+  return issues;
 }

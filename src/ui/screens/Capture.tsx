@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect, type ChangeEvent } from 'react';
+import { useState, useEffect, type ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   addShot,
   listShots,
   clearShots,
+  removeShot,
   setPastedText,
   getPastedText,
   type Shot,
@@ -26,7 +27,6 @@ export function Capture() {
   const [mode, setMode] = useState<Mode>('camera');
   const [shots, setShots] = useState<readonly Shot[]>(listShots());
   const [paste, setPaste] = useState<string>(getPastedText() ?? '');
-  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const seeded = sessionStorage.getItem('continuityNoteType');
@@ -36,22 +36,34 @@ export function Capture() {
     }
   }, []);
 
-  async function onCapture(e: ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    const dataUrl = await new Promise<string>((res) => {
-      const r = new FileReader();
-      r.onload = () => res(r.result as string);
-      r.readAsDataURL(f);
-    });
-    addShot(dataUrl);
+  async function onPickFiles(e: ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    // Handle all selected files: 1 from camera OR N from gallery multi-select.
+    const readers = Array.from(files).map(
+      (f) =>
+        new Promise<string>((res, rej) => {
+          const r = new FileReader();
+          r.onload = () => res(r.result as string);
+          r.onerror = () => rej(r.error);
+          r.readAsDataURL(f);
+        }),
+    );
+    const dataUrls = await Promise.all(readers);
+    for (const d of dataUrls) addShot(d);
     setShots([...listShots()]);
+    // Reset so the same file can be picked again if user wants.
     e.target.value = '';
   }
 
   function onPasteChange(v: string) {
     setPaste(v);
     setPastedText(v.length > 0 ? v : null);
+  }
+
+  function onDeleteShot(id: string) {
+    removeShot(id);
+    setShots([...listShots()]);
   }
 
   function canProceed(): boolean {
@@ -97,15 +109,40 @@ export function Capture() {
 
       {mode === 'camera' ? (
         <>
-          <button onClick={() => fileRef.current?.click()}>📷 צלם AZMA</button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            hidden
-            onChange={onCapture}
-          />
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            {/*
+              Label-wrapped inputs are the reliable pattern on mobile Chrome.
+              Programmatic .click() on display:none inputs is flaky in PWA/standalone mode
+              because the browser's user-activation check can reject the synthesized click.
+              Tapping a <label> dispatches a trusted click to the input directly.
+            */}
+            <label className="btn-like" aria-label="צלם AZMA">
+              📷 צלם AZMA
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="visually-hidden"
+                onChange={onPickFiles}
+              />
+            </label>
+            <label className="btn-like ghost" aria-label="בחר מהגלריה">
+              🖼️ מהגלריה
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                className="visually-hidden"
+                onChange={onPickFiles}
+              />
+            </label>
+            {shots.length > 0 && (
+              <span style={{ color: 'var(--muted)', fontSize: 14 }}>
+                {shots.length} תמונות
+              </span>
+            )}
+          </div>
+
           <div
             style={{
               display: 'grid',
@@ -115,7 +152,17 @@ export function Capture() {
             }}
           >
             {shots.map((s) => (
-              <img key={s.id} src={s.blobUrl} style={{ width: '100%', borderRadius: 8 }} alt="shot" />
+              <div key={s.id} className="shot-thumb">
+                <img src={s.blobUrl} alt="shot" />
+                <button
+                  type="button"
+                  className="shot-delete"
+                  aria-label="הסר תמונה"
+                  onClick={() => onDeleteShot(s.id)}
+                >
+                  ✕
+                </button>
+              </div>
             ))}
           </div>
         </>
