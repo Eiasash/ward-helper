@@ -59,6 +59,20 @@ Preserve language: drug names in English, Hebrew clinical prose in Hebrew. Never
 Return ONLY the JSON object. No fences. Aim for the smallest complete JSON.
 `.trim();
 
+const CRITICAL_CONFIDENCE_KEYS = ['name', 'teudatZehut', 'age'] as const;
+
+function filterToCriticalThree(
+  conf: Record<string, unknown> | undefined,
+): Record<string, 'low' | 'med' | 'high'> {
+  if (!conf) return {};
+  const out: Record<string, 'low' | 'med' | 'high'> = {};
+  for (const k of CRITICAL_CONFIDENCE_KEYS) {
+    const v = conf[k];
+    if (v === 'low' || v === 'med' || v === 'high') out[k] = v;
+  }
+  return out;
+}
+
 function parseJsonStrict<T>(text: string): T {
   // Strip ```json fences if the model ignored instructions.
   let s = text.trim();
@@ -105,7 +119,12 @@ export async function runExtractTurn(
     const parsed = parseJsonStrict<ParseResult>(text);
     return {
       fields: (parsed.fields ?? {}) as ParseFields,
-      confidence: parsed.confidence ?? {},
+      // Enforce the critical-3 scope on read. Models sometimes emit extra
+      // confidence keys despite the prompt (e.g. room, chiefComplaint — we
+      // observed this in production on v1.6.0). The UI trust boundary is the
+      // ParseResult, so strip unknown keys here instead of letting them leak
+      // into FieldRow and render pills where we don't want them.
+      confidence: filterToCriticalThree(parsed.confidence),
     };
   } catch (e) {
     throw new Error(
@@ -137,11 +156,19 @@ export async function runEmitTurn(
     EMIT_JSON_INSTRUCTIONS,
   ].join('\n');
 
-  const res = await callProxy({
-    messages: [{ role: 'user', content: [{ type: 'text', text: userText }] }],
-    max_tokens: 4096,
-    system: skillContent,
-  });
+  // Emit calls on long notes (admission/discharge) can exceed the Toranot
+  // proxy's ~10s Netlify Function budget even on the first token. Retry on
+  // 504 twice with 2s/4s backoff — cold-start 504s often resolve on retry,
+  // and three attempts total is the right cost ceiling for a clinical flow
+  // where each failure otherwise forces a full re-capture.
+  const res = await callProxy(
+    {
+      messages: [{ role: 'user', content: [{ type: 'text', text: userText }] }],
+      max_tokens: 4096,
+      system: skillContent,
+    },
+    { retryOn504: 2 },
+  );
 
   addTurn({
     input_tokens: res.usage.input_tokens,
