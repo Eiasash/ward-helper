@@ -12,8 +12,8 @@
  * upload size, with no OCR quality loss for this use case.
  */
 
-const MAX_LONG_EDGE = 1600;
-const JPEG_QUALITY = 0.85;
+const MAX_LONG_EDGE = 1200;
+const JPEG_QUALITY = 0.75;
 
 export async function compressImage(dataUrl: string): Promise<string> {
   // Parse the data URL to a bitmap.

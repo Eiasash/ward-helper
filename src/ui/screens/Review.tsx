@@ -138,21 +138,41 @@ export function Review() {
   }
 
   if (status === 'error') {
+    const is504 = /504|Upstream timeout/i.test(error);
+    const imageCount = listShots().length;
     return (
       <section>
         <h1>שגיאה</h1>
         <p style={{ color: 'var(--red)', whiteSpace: 'pre-wrap' }}>{error}</p>
+        {is504 && (
+          <div
+            style={{
+              background: 'var(--warn)',
+              color: 'black',
+              padding: 10,
+              borderRadius: 8,
+              marginTop: 12,
+              fontSize: 14,
+            }}
+          >
+            <strong>Timeout נעוץ בריבוי תמונות.</strong>
+            <br />
+            יש לך {imageCount} תמונות בסשן. ה-AI מעבד כל תמונה בנפרד; מעל 3 תמונות חוצה את הזמן של הפרוקסי (10s).
+            <br />
+            <strong>תיקון:</strong> חזור, מחק תמונות חלשות ושאיר 1-3 (כותרת AZMA + תרופות + מעבדה).
+          </div>
+        )}
         <details style={{ marginTop: 12, fontSize: 13, color: 'var(--muted)' }}>
           <summary>אבחון</summary>
           <ul style={{ paddingInlineStart: 18 }}>
-            <li>תמונות בסשן: {listShots().length}</li>
+            <li>תמונות בסשן: {imageCount}</li>
             <li>טקסט דבוק: {getPastedText() ? 'כן' : 'לא'}</li>
             <li>זמן מקסימלי: {EXTRACT_TIMEOUT_MS / 1000}s</li>
           </ul>
         </details>
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-          <button onClick={() => nav('/settings')}>הגדרות</button>
-          <button className="ghost" onClick={() => nav('/')}>חזרה</button>
+          <button onClick={() => nav('/')}>חזרה לצילום</button>
+          <button className="ghost" onClick={() => nav('/settings')}>הגדרות</button>
         </div>
       </section>
     );
