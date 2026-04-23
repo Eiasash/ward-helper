@@ -26,27 +26,31 @@ function dataUrlToImageBlock(dataUrl: string): AnthropicContentBlock {
 const EXTRACT_JSON_INSTRUCTIONS = `
 Extract patient data from the AZMA screenshots. Return EXACTLY ONE valid JSON object, with no prose, no markdown fences, no preamble.
 
-The JSON must have this shape:
+Shape (ALL fields optional — OMIT anything not clearly visible, do NOT invent):
 {
   "fields": {
     "name"?: string,
     "teudatZehut"?: string,
     "age"?: number,
-    "sex"?: "M" | "F" | "unknown",
+    "sex"?: "M" | "F",
     "room"?: string,
     "chiefComplaint"?: string,
     "pmh"?: string[],
     "meds"?: [{ "name": string, "dose"?: string, "freq"?: string }],
     "allergies"?: string[],
-    "labs"?: [{ "name": string, "value": string, "unit"?: string, "flag"?: string }],
-    "vitals"?: { [key: string]: string | number }
-  },
-  "confidence": { "<field-path>": "low" | "med" | "high" },
-  "sourceRegions": { "<field-path>": string }
+    "labs"?: [{ "name": string, "value": string, "unit"?: string }]
+  }
 }
 
-Preserve original language per field — drug names in English, Hebrew clinical text in Hebrew. If a field isn't visible, omit it (don't invent).
-Return ONLY the JSON object. Do not wrap it in \`\`\`json fences.
+KEEP IT COMPACT:
+- Only include fields clearly readable from the screenshot.
+- For "meds", cap at 15 most relevant items. Skip irrelevant/historical.
+- For "labs", cap at 10 most abnormal or most recent.
+- DO NOT include a "confidence" or "sourceRegions" field — omit them entirely.
+- DO NOT include a "vitals" field unless BP/HR/SpO2/Temp are all visible as numbers.
+
+Preserve language: drug names in English, Hebrew clinical prose in Hebrew. Never transliterate.
+Return ONLY the JSON object. No fences. Aim for the smallest complete JSON.
 `.trim();
 
 function parseJsonStrict<T>(text: string): T {
@@ -76,7 +80,10 @@ export async function runExtractTurn(
 
   const res = await callProxy({
     messages: [{ role: 'user', content }],
-    max_tokens: 4096,
+    // 1500 is plenty for a compact ParseResult. Higher values let the model
+    // ramble with confidence/sourceRegions objects that blow past the
+    // proxy's 10s Netlify Function budget.
+    max_tokens: 1500,
     system: skillContent,
   });
 
