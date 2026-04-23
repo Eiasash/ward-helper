@@ -1,0 +1,28 @@
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - name: Bundle size gate (150 kB gzipped main chunk)
+        run: |
+          set -e
+          MAIN=$(find dist/assets -name 'index-*.js' | head -1)
+          SIZE=$(gzip -c "$MAIN" | wc -c)
+          echo "main chunk gzipped: $SIZE bytes"
+          [ "$SIZE" -le 153600 ] || { echo "FAIL: main chunk exceeds 150 kB"; exit 1; }
+      - name: CSP presence check
+        run: grep -q 'Content-Security-Policy' index.html
+      - name: No-analytics grep
+        run: |
+          ! grep -rEi 'google-analytics|googletagmanager|sentry\.io|posthog|mixpanel' src/ public/ index.html
