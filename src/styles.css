@@ -1,0 +1,5 @@
+:root { --bg: #0a0a0c; --fg: #e6e6e8; --accent: #3d7aff; --warn: #d88; --good: #8d8; }
+html, body, #root { height: 100%; margin: 0; background: var(--bg); color: var(--fg);
+  font-family: 'Heebo', 'Inter', system-ui, sans-serif; }
+* { box-sizing: border-box; }
+.shell { padding: 16px; min-height: 100%; unicode-bidi: plaintext; }
