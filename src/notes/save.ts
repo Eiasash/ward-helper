@@ -2,6 +2,7 @@ import { putPatient, putNote, type Patient, type Note, type NoteType } from '@/s
 import { encryptForCloud, pushBlob } from '@/storage/cloud';
 import { deriveAesKey } from '@/crypto/pbkdf2';
 import { getPassphrase } from '@/ui/hooks/useSettings';
+import { finalizeSessionFor } from '@/agent/costs';
 import type { ParseFields } from '@/agent/tools';
 
 export interface SaveResult {
@@ -42,6 +43,10 @@ export async function saveBoth(
 
   await putPatient(patient);
   await putNote(note);
+
+  // Attribute this session's extract + emit token spend to the patient now
+  // that the ID is known. Safe no-op if no session was open.
+  finalizeSessionFor(patientId);
 
   const pass = getPassphrase();
   let cloudPushed = false;
