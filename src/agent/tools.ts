@@ -42,6 +42,12 @@ export interface ParseFields {
 
 export interface ParseResult {
   fields: ParseFields;
+  /**
+   * Sparse map keyed by field name. Populated only for the three critical
+   * identifiers (name / teudatZehut / age) — the fields whose misread causes
+   * wrong-patient or wrong-age errors. Everything else the doc verifies
+   * visually against the source screenshot, so spending extract-response
+   * tokens on those confidence labels is not worth the latency cost.
+   */
   confidence: Record<string, Confidence>;
-  sourceRegions: Record<string, string>;
 }

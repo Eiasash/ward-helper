@@ -39,6 +39,11 @@ Shape (ALL fields optional — OMIT anything not clearly visible, do NOT invent)
     "meds"?: [{ "name": string, "dose"?: string, "freq"?: string }],
     "allergies"?: string[],
     "labs"?: [{ "name": string, "value": string, "unit"?: string }]
+  },
+  "confidence": {
+    "name"?: "low" | "med" | "high",
+    "teudatZehut"?: "low" | "med" | "high",
+    "age"?: "low" | "med" | "high"
   }
 }
 
@@ -46,7 +51,8 @@ KEEP IT COMPACT:
 - Only include fields clearly readable from the screenshot.
 - For "meds", cap at 15 most relevant items. Skip irrelevant/historical.
 - For "labs", cap at 10 most abnormal or most recent.
-- DO NOT include a "confidence" or "sourceRegions" field — omit them entirely.
+- "confidence" MUST contain ONLY the three critical identifier keys (name / teudatZehut / age) — NOT meds, labs, or any other field. These three drive wrong-patient / wrong-age errors, so the ward doc needs to know when extract was uncertain. Omit keys you can't assess.
+- DO NOT emit a "sourceRegions" field — it's no longer consumed.
 - DO NOT include a "vitals" field unless BP/HR/SpO2/Temp are all visible as numbers.
 
 Preserve language: drug names in English, Hebrew clinical prose in Hebrew. Never transliterate.
@@ -80,9 +86,9 @@ export async function runExtractTurn(
 
   const res = await callProxy({
     messages: [{ role: 'user', content }],
-    // 1500 is plenty for a compact ParseResult. Higher values let the model
-    // ramble with confidence/sourceRegions objects that blow past the
-    // proxy's 10s Netlify Function budget.
+    // 1500 is plenty for a compact ParseResult. Empirically this keeps
+    // single- and two-shot captures well inside the proxy's 10s Netlify
+    // Function budget even with the critical-3 confidence block re-enabled.
     max_tokens: 1500,
     system: skillContent,
   });
@@ -97,11 +103,9 @@ export async function runExtractTurn(
 
   try {
     const parsed = parseJsonStrict<ParseResult>(text);
-    // Ensure required fields exist; backfill empties.
     return {
       fields: (parsed.fields ?? {}) as ParseFields,
       confidence: parsed.confidence ?? {},
-      sourceRegions: parsed.sourceRegions ?? {},
     };
   } catch (e) {
     throw new Error(
