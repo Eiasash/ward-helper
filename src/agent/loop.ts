@@ -1,85 +1,157 @@
-import type Anthropic from '@anthropic-ai/sdk';
-import { MODEL } from './client';
-import { parseAzmaTool, emitNoteTool, type ParseResult } from './tools';
+import { callProxy, type AnthropicContentBlock } from './client';
+import type { ParseResult, ParseFields } from './tools';
 import { addTurn } from './costs';
 import type { NoteType } from '@/storage/indexed';
 
-function dataUrlToB64(dataUrl: string): { mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'; data: string } {
-  const match = /^data:([^;]+);base64,(.*)$/.exec(dataUrl);
-  if (!match) throw new Error('invalid data URL');
-  const raw = match[1] ?? 'image/png';
-  const data = match[2] ?? '';
+/**
+ * Extract structured AZMA data. Uses JSON-mode prompting (not tool_use)
+ * because the Toranot proxy strips the `tools` field.
+ *
+ * We instruct the model to return strict JSON that exactly matches the
+ * ParseResult shape, then parse/validate client-side.
+ */
+
+function dataUrlToImageBlock(dataUrl: string): AnthropicContentBlock {
+  const m = /^data:([^;]+);base64,(.*)$/.exec(dataUrl);
+  if (!m) throw new Error('invalid data URL');
+  const raw = m[1] ?? 'image/jpeg';
+  const data = m[2] ?? '';
   const allowed = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const;
-  const mediaType = (allowed as readonly string[]).includes(raw) ? (raw as typeof allowed[number]) : 'image/png';
-  return { mediaType, data };
+  const mediaType = (allowed as readonly string[]).includes(raw)
+    ? (raw as (typeof allowed)[number])
+    : 'image/jpeg';
+  return { type: 'image', source: { type: 'base64', media_type: mediaType, data } };
+}
+
+const EXTRACT_JSON_INSTRUCTIONS = `
+Extract patient data from the AZMA screenshots. Return EXACTLY ONE valid JSON object, with no prose, no markdown fences, no preamble.
+
+The JSON must have this shape:
+{
+  "fields": {
+    "name"?: string,
+    "teudatZehut"?: string,
+    "age"?: number,
+    "sex"?: "M" | "F" | "unknown",
+    "room"?: string,
+    "chiefComplaint"?: string,
+    "pmh"?: string[],
+    "meds"?: [{ "name": string, "dose"?: string, "freq"?: string }],
+    "allergies"?: string[],
+    "labs"?: [{ "name": string, "value": string, "unit"?: string, "flag"?: string }],
+    "vitals"?: { [key: string]: string | number }
+  },
+  "confidence": { "<field-path>": "low" | "med" | "high" },
+  "sourceRegions": { "<field-path>": string }
+}
+
+Preserve original language per field — drug names in English, Hebrew clinical text in Hebrew. If a field isn't visible, omit it (don't invent).
+Return ONLY the JSON object. Do not wrap it in \`\`\`json fences.
+`.trim();
+
+function parseJsonStrict<T>(text: string): T {
+  // Strip ```json fences if the model ignored instructions.
+  let s = text.trim();
+  if (s.startsWith('```')) {
+    s = s.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+  }
+  // Find the outermost { ... } if there's extra prose before/after.
+  const first = s.indexOf('{');
+  const last = s.lastIndexOf('}');
+  if (first >= 0 && last > first) {
+    s = s.slice(first, last + 1);
+  }
+  return JSON.parse(s) as T;
 }
 
 export async function runExtractTurn(
-  client: Anthropic,
   images: string[],
   skillContent: string,
 ): Promise<ParseResult> {
-  const imageBlocks = images.map((dataUrl) => {
-    const { mediaType, data } = dataUrlToB64(dataUrl);
-    return {
-      type: 'image' as const,
-      source: { type: 'base64' as const, media_type: mediaType, data },
-    };
-  });
-
-  const userContent: Anthropic.MessageParam['content'] = [
+  const imageBlocks = images.map(dataUrlToImageBlock);
+  const content: AnthropicContentBlock[] = [
     ...imageBlocks,
-    {
-      type: 'text' as const,
-      text: 'Extract structured data from these AZMA screenshots. For every field, report confidence and source_region.',
-    },
+    { type: 'text', text: EXTRACT_JSON_INSTRUCTIONS },
   ];
 
-  const res = await client.messages.create({
-    model: MODEL,
+  const res = await callProxy({
+    messages: [{ role: 'user', content }],
     max_tokens: 4096,
     system: skillContent,
-    tools: [parseAzmaTool],
-    tool_choice: { type: 'tool', name: 'parse_azma_screen' },
-    messages: [{ role: 'user', content: userContent }],
   });
 
-  addTurn(res.usage);
-  const toolUse = res.content.find((b) => b.type === 'tool_use');
-  if (!toolUse || toolUse.type !== 'tool_use') throw new Error('no parse_azma_screen tool_use');
-  return toolUse.input as ParseResult;
+  addTurn({
+    input_tokens: res.usage.input_tokens,
+    output_tokens: res.usage.output_tokens,
+  } as { input_tokens: number; output_tokens: number });
+
+  const text = res.content.map((b) => b.text).join('\n').trim();
+  if (!text) throw new Error('empty response from proxy');
+
+  try {
+    const parsed = parseJsonStrict<ParseResult>(text);
+    // Ensure required fields exist; backfill empties.
+    return {
+      fields: (parsed.fields ?? {}) as ParseFields,
+      confidence: parsed.confidence ?? {},
+      sourceRegions: parsed.sourceRegions ?? {},
+    };
+  } catch (e) {
+    throw new Error(
+      `failed to parse JSON from model: ${(e as Error).message}. First 200 chars: ${text.slice(0, 200)}`,
+    );
+  }
 }
 
+const EMIT_JSON_INSTRUCTIONS = `
+Return EXACTLY ONE valid JSON object with this shape — no prose, no markdown fences, no preamble:
+
+{ "noteHebrew": string }
+
+The "noteHebrew" value is the full SZMC-format note in Hebrew, ready to paste into Chameleon. Plain text only. Follow the Chameleon paste rules strictly.
+Return ONLY the JSON.
+`.trim();
+
 export async function runEmitTurn(
-  client: Anthropic,
   noteType: NoteType,
-  parsed: ParseResult,
+  validatedFields: ParseFields,
   skillContent: string,
 ): Promise<string> {
-  const res = await client.messages.create({
-    model: MODEL,
+  const userText = [
+    `Emit a SZMC ${noteType} note in Hebrew from the validated data below.`,
+    'Preserve bidi rules: Hebrew prose, English drug/acronym/lab names, RLM/LRM where needed.',
+    '',
+    JSON.stringify(validatedFields, null, 2),
+    '',
+    EMIT_JSON_INSTRUCTIONS,
+  ].join('\n');
+
+  const res = await callProxy({
+    messages: [{ role: 'user', content: [{ type: 'text', text: userText }] }],
     max_tokens: 4096,
     system: skillContent,
-    tools: [emitNoteTool],
-    tool_choice: { type: 'tool', name: 'emit_note' },
-    messages: [
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text:
-              `Emit a SZMC ${noteType} note in Hebrew from the validated data below. ` +
-              `Preserve bidi rules: Hebrew prose, English drug/acronym/lab names, RLM/LRM where needed.\n\n` +
-              JSON.stringify(parsed.fields, null, 2),
-          },
-        ],
-      },
-    ],
   });
 
-  addTurn(res.usage);
-  const toolUse = res.content.find((b) => b.type === 'tool_use');
-  if (!toolUse || toolUse.type !== 'tool_use') throw new Error('no emit_note tool_use');
-  return (toolUse.input as { noteHebrew: string }).noteHebrew;
+  addTurn({
+    input_tokens: res.usage.input_tokens,
+    output_tokens: res.usage.output_tokens,
+  } as { input_tokens: number; output_tokens: number });
+
+  const text = res.content.map((b) => b.text).join('\n').trim();
+  if (!text) throw new Error('empty response from proxy');
+
+  try {
+    const parsed = parseJsonStrict<{ noteHebrew: string }>(text);
+    if (typeof parsed.noteHebrew !== 'string' || parsed.noteHebrew.length === 0) {
+      throw new Error('missing noteHebrew field');
+    }
+    return parsed.noteHebrew;
+  } catch (e) {
+    // If JSON parsing fails, fall back to treating the whole response as
+    // the note body — the model may have ignored the JSON instruction.
+    if ((e as Error).message.includes('JSON')) {
+      return text;
+    }
+    throw e;
+  }
 }

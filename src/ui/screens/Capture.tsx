@@ -9,6 +9,7 @@ import {
   getPastedText,
   type Shot,
 } from '@/camera/session';
+import { compressImage } from '@/camera/compress';
 import type { NoteType } from '@/storage/indexed';
 
 const NOTE_TYPES: { type: NoteType; label: string }[] = [
@@ -50,7 +51,10 @@ export function Capture() {
         }),
     );
     const dataUrls = await Promise.all(readers);
-    for (const d of dataUrls) addShot(d);
+    // Downsize before storing — cuts upload size ~20x and avoids mobile
+    // Chrome stalling on multi-MB POSTs to the Claude proxy.
+    const compressed = await Promise.all(dataUrls.map(compressImage));
+    for (const d of compressed) addShot(d);
     setShots([...listShots()]);
     // Reset so the same file can be picked again if user wants.
     e.target.value = '';

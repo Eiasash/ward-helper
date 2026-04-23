@@ -1,6 +1,6 @@
 {
   "name": "ward-helper",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,7 +13,6 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.32.0",
     "@supabase/supabase-js": "^2.45.0",
     "idb": "^8.0.0",
     "react": "^18.3.1",

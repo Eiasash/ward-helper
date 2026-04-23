@@ -1,4 +1,3 @@
-import { getClient } from '@/agent/client';
 import { runEmitTurn } from '@/agent/loop';
 import { loadSkills } from '@/skills/loader';
 import { wrapForChameleon } from '@/i18n/bidi';
@@ -203,13 +202,12 @@ export async function generateNote(
   validated: ParseResult,
   continuity: ContinuityContext | null = null,
 ): Promise<string> {
-  const client = await getClient();
   const skills = NOTE_SKILL_MAP[noteType];
   const skillContent = await loadSkills([...skills]);
 
   const prefix = buildPromptPrefix(noteType, continuity);
   const systemWithPrefix = `${skillContent}\n\n---\n\n${prefix}`;
 
-  const raw = await runEmitTurn(client, noteType, validated, systemWithPrefix);
+  const raw = await runEmitTurn(noteType, validated.fields, systemWithPrefix);
   return wrapForChameleon(raw);
 }
