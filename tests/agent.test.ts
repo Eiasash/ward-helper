@@ -74,19 +74,20 @@ describe('runExtractTurn — JSON-mode via proxy', () => {
     ).rejects.toThrow('invalid data URL');
   });
 
-  it('throws on HTTP error from proxy', async () => {
+  it('throws on HTTP error from proxy', { timeout: 15_000 }, async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => ({
         ok: false,
-        status: 503,
+        status: 500,
         json: async () => ({}),
-        text: async () => 'service unavailable',
+        text: async () => 'internal server error',
       })),
     );
+    // Extract does NOT set retryOnTransient, so 500 fails after one attempt.
     await expect(
       runExtractTurn(['data:image/jpeg;base64,/9j/'], 'skill'),
-    ).rejects.toThrow(/proxy HTTP 503/);
+    ).rejects.toThrow(/HTTP 500/);
   });
 
   it('sends image with media_type jpeg for jpeg data URL', async () => {
@@ -151,7 +152,7 @@ describe('runExtractTurn — confidence filter', () => {
   });
 });
 
-describe('runEmitTurn — 504 retry', () => {
+describe('runEmitTurn — transient retry', () => {
   // Real backoff is 2s + 4s = 6s; bump this test's timeout past vitest default.
   it('retries emit twice on 504 before failing', { timeout: 15_000 }, async () => {
     let call = 0;
@@ -181,19 +182,55 @@ describe('runEmitTurn — 504 retry', () => {
     expect(call).toBe(3);
   });
 
-  it('does not retry non-504 errors (e.g. 503)', async () => {
+  // 503 is also transient — retry policy (v1.7.0+) retries all 5xx,
+  // not just 504. That's the correct behavior: a 503 from the proxy is
+  // typically a cold-function failure that resolves on retry.
+  it(
+    'retries on 503 (all 5xx are transient)',
+    { timeout: 15_000 },
+    async () => {
+      let call = 0;
+      const fetchFn = vi.fn(async () => {
+        call++;
+        if (call < 2) {
+          return {
+            ok: false,
+            status: 503,
+            json: async () => ({}),
+            text: async () => 'service unavailable',
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            content: [{ type: 'text', text: JSON.stringify({ noteHebrew: 'קבלה' }) }],
+            usage: { input_tokens: 3, output_tokens: 3 },
+          }),
+          text: async () => '',
+        };
+      }) as unknown as typeof fetch;
+      vi.stubGlobal('fetch', fetchFn);
+      const note = await runEmitTurn('admission', {}, 'skill');
+      expect(note).toContain('קבלה');
+      expect(call).toBe(2);
+    },
+  );
+
+  // 4xx (auth, body errors) must NOT retry — those never become success.
+  it('does not retry 4xx errors (e.g. 401)', async () => {
     let call = 0;
     const fetchFn = vi.fn(async () => {
       call++;
       return {
         ok: false,
-        status: 503,
+        status: 401,
         json: async () => ({}),
-        text: async () => 'service unavailable',
+        text: async () => 'invalid api key',
       };
     }) as unknown as typeof fetch;
     vi.stubGlobal('fetch', fetchFn);
-    await expect(runEmitTurn('admission', {}, 'skill')).rejects.toThrow(/503/);
+    await expect(runEmitTurn('admission', {}, 'skill')).rejects.toThrow(/401/);
     expect(call).toBe(1);
   });
 });

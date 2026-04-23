@@ -45,7 +45,30 @@ export function Settings() {
       <h1>הגדרות</h1>
 
       <h2>Anthropic API Key</h2>
-      <p>{present === null ? '...' : present ? '✓ מפתח מוגדר' : 'עדיין לא מוגדר'}</p>
+      {present === null ? (
+        <p>...</p>
+      ) : present ? (
+        <p>
+          ✓ מפתח אישי מוגדר — פניות ישירות ל-<code>api.anthropic.com</code>
+        </p>
+      ) : (
+        <div
+          style={{
+            background: 'var(--warn)',
+            color: 'black',
+            padding: 10,
+            borderRadius: 8,
+            marginBottom: 8,
+            fontSize: 14,
+            lineHeight: 1.5,
+          }}
+        >
+          <strong>אין מפתח — משתמש ב-Toranot proxy.</strong>
+          <br />
+          הפרוקסי קצוב ל-10 שניות ונפסק בשגיאת 504 על רישומים ארוכים (קבלה/שחרור).
+          הגדר מפתח כדי לעקוף את המגבלה הזאת.
+        </div>
+      )}
       <input
         dir="auto"
         placeholder="sk-ant-..."
