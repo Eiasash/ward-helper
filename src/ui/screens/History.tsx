@@ -1,7 +1,66 @@
+import { useEffect, useState } from 'react';
+import { listPatients, listNotes, type Patient, type Note } from '@/storage/indexed';
+import { NOTE_LABEL } from '@/notes/templates';
+
 export function History() {
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [notesByPid, setNotesByPid] = useState<Record<string, Note[]>>({});
+  const [q, setQ] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const ps = await listPatients();
+      ps.sort((a, b) => b.updatedAt - a.updatedAt);
+      if (cancelled) return;
+      setPatients(ps);
+      const m: Record<string, Note[]> = {};
+      for (const p of ps) m[p.id] = await listNotes(p.id);
+      if (cancelled) return;
+      setNotesByPid(m);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const filtered = patients.filter((p) =>
+    !q ||
+    p.name.includes(q) ||
+    p.teudatZehut.includes(q) ||
+    (p.room ?? '').includes(q),
+  );
+
   return (
     <section>
       <h1>היסטוריה</h1>
+      <input
+        dir="auto"
+        placeholder="חיפוש לפי שם / ת.ז. / חדר"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+      />
+      {filtered.length === 0 && patients.length === 0 && (
+        <p style={{ color: 'var(--muted)', marginTop: 16 }}>עדיין אין רשומות מקומיות.</p>
+      )}
+      {filtered.map((p) => (
+        <div
+          key={p.id}
+          style={{ background: 'var(--card)', padding: 12, borderRadius: 8, marginTop: 8 }}
+        >
+          <strong>{p.name || '(ללא שם)'}</strong>{' '}
+          <small style={{ color: 'var(--muted)' }}>
+            {p.teudatZehut} · חדר {p.room ?? '—'}
+          </small>
+          <div style={{ marginTop: 6 }}>
+            {(notesByPid[p.id] ?? []).map((n) => (
+              <div key={n.id} style={{ fontSize: 13, color: 'var(--muted)' }}>
+                {NOTE_LABEL[n.type]} · {new Date(n.updatedAt).toLocaleDateString('he-IL')}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
     </section>
   );
 }
