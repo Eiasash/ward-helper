@@ -8,6 +8,8 @@ import {
   setSettings,
   resetDbForTests,
 } from '@/storage/indexed';
+import { encryptForCloud, decryptFromCloud } from '@/storage/cloud';
+import { deriveAesKey } from '@/crypto/pbkdf2';
 
 beforeEach(async () => {
   await resetDbForTests();
@@ -59,5 +61,26 @@ describe('indexeddb schema', () => {
     });
     const s = await getSettings();
     expect(s?.apiKeyXor[0]).toBe(1);
+  });
+});
+
+describe('cloud encryption boundary', () => {
+  it('encryptForCloud produces opaque bytes', async () => {
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const key = await deriveAesKey('pass', salt);
+    const record = { id: 'p1', name: 'דוד כהן', teudatZehut: '012345678' };
+    const sealed = await encryptForCloud(record, key, salt);
+    const asString = new TextDecoder('utf-8', { fatal: false }).decode(sealed.ciphertext);
+    expect(asString).not.toContain('דוד');
+    expect(asString).not.toContain('012345678');
+  });
+
+  it('round-trips through encryptForCloud -> decryptFromCloud', async () => {
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const key = await deriveAesKey('pass', salt);
+    const record = { id: 'n1', bodyHebrew: 'קבלה של מטופל' };
+    const sealed = await encryptForCloud(record, key, salt);
+    const back = await decryptFromCloud<typeof record>(sealed.ciphertext, sealed.iv, key);
+    expect(back).toEqual(record);
   });
 });
