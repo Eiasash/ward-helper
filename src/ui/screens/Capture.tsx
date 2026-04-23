@@ -10,6 +10,7 @@ import {
   type Shot,
 } from '@/camera/session';
 import { compressImage } from '@/camera/compress';
+import { startSession as startCostSession } from '@/agent/costs';
 import type { NoteType } from '@/storage/indexed';
 
 const NOTE_TYPES: { type: NoteType; label: string }[] = [
@@ -35,6 +36,9 @@ export function Capture() {
       setNoteType('soap');
       sessionStorage.removeItem('continuityNoteType');
     }
+    // Open a fresh cost-attribution window for this capture session. Extract +
+    // emit turns accumulate into it; Save attributes the total to the patient.
+    startCostSession();
   }, []);
 
   async function onPickFiles(e: ChangeEvent<HTMLInputElement>) {

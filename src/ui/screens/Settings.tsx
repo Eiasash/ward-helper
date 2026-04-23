@@ -1,5 +1,11 @@
 import { useState } from 'react';
-import { useApiKey, setPassphrase, getPassphrase, clearPassphrase } from '../hooks/useSettings';
+import {
+  useApiKey,
+  setPassphrase,
+  getPassphrase,
+  clearPassphrase,
+  useBidiAudit,
+} from '../hooks/useSettings';
 import { load as loadCosts, reset as resetCosts } from '@/agent/costs';
 
 export function Settings() {
@@ -7,6 +13,7 @@ export function Settings() {
   const [key, setKey] = useState('');
   const [pass, setPass] = useState('');
   const [msg, setMsg] = useState('');
+  const [bidiAuditOn, setBidiAuditOn] = useBidiAudit();
 
   async function onSaveKey() {
     if (!key.startsWith('sk-ant-')) {
@@ -85,6 +92,19 @@ export function Settings() {
       >
         אפס מונה
       </button>
+
+      <h2>אבחון מפתחים</h2>
+      <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14 }}>
+        <input
+          type="checkbox"
+          checked={bidiAuditOn}
+          onChange={(e) => setBidiAuditOn(e.target.checked)}
+        />
+        הצג באנר audit של כללי Chameleon בעורך ההערה
+      </label>
+      <p style={{ color: 'var(--muted)', fontSize: 12, marginTop: 4 }}>
+        מציג הפרות שהמודל הפיק לפני ה-sanitizer. מיועד לכיול prompts. השאר כבוי בשימוש קליני.
+      </p>
 
       {msg && <p style={{ color: 'var(--muted)', marginTop: 24 }}>{msg}</p>}
     </section>

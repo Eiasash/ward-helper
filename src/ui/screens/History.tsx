@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { listPatients, listNotes, type Patient, type Note } from '@/storage/indexed';
 import { NOTE_LABEL } from '@/notes/templates';
+import { loadPerPatient, type Totals } from '@/agent/costs';
 
 export function History() {
   const nav = useNavigate();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [notesByPid, setNotesByPid] = useState<Record<string, Note[]>>({});
+  const [costsByPid, setCostsByPid] = useState<Record<string, Totals>>({});
   const [q, setQ] = useState('');
 
   function startSoapForPatient() {
@@ -26,6 +28,7 @@ export function History() {
       for (const p of ps) m[p.id] = await listNotes(p.id);
       if (cancelled) return;
       setNotesByPid(m);
+      setCostsByPid(loadPerPatient());
     })();
     return () => {
       cancelled = true;
@@ -60,6 +63,12 @@ export function History() {
           <small style={{ color: 'var(--muted)' }}>
             {p.teudatZehut} · חדר {p.room ?? '—'}
           </small>
+          {costsByPid[p.id] && costsByPid[p.id]!.usd > 0 && (
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+              עלות: ${costsByPid[p.id]!.usd.toFixed(3)} ·{' '}
+              {costsByPid[p.id]!.inputTokens + costsByPid[p.id]!.outputTokens} tokens
+            </div>
+          )}
           <div style={{ marginTop: 6 }}>
             {(notesByPid[p.id] ?? []).map((n) => (
               <div key={n.id} style={{ fontSize: 13, color: 'var(--muted)' }}>
