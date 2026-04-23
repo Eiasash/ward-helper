@@ -115,6 +115,89 @@ describe('runExtractTurn — JSON-mode via proxy', () => {
   });
 });
 
+describe('runExtractTurn — confidence filter', () => {
+  it('strips non-critical-3 confidence keys (model compliance hedge)', async () => {
+    // Observed in prod v1.6.0: model emits low-conf on room + chiefComplaint
+    // despite prompt. The client filter is the UI trust boundary.
+    const payload = JSON.stringify({
+      fields: { name: 'A', room: '7', chiefComplaint: 'x' },
+      confidence: {
+        name: 'high',
+        teudatZehut: 'med',
+        age: 'low',
+        room: 'low',
+        chiefComplaint: 'low',
+        meds: 'low',
+      },
+    });
+    vi.stubGlobal('fetch', mockProxyResponse(payload));
+    const result = await runExtractTurn(['data:image/jpeg;base64,/9j/'], 'skill');
+    expect(Object.keys(result.confidence).sort()).toEqual(['age', 'name', 'teudatZehut']);
+    expect(result.confidence['room']).toBeUndefined();
+    expect(result.confidence['chiefComplaint']).toBeUndefined();
+  });
+
+  it('drops confidence values that are not low/med/high', async () => {
+    const payload = JSON.stringify({
+      fields: { name: 'X' },
+      // Model garbling — null, booleans, typos. All must be rejected.
+      confidence: { name: 'high', age: 'very-high', teudatZehut: null },
+    });
+    vi.stubGlobal('fetch', mockProxyResponse(payload));
+    const result = await runExtractTurn(['data:image/jpeg;base64,/9j/'], 'skill');
+    expect(result.confidence['name']).toBe('high');
+    expect(result.confidence['age']).toBeUndefined();
+    expect(result.confidence['teudatZehut']).toBeUndefined();
+  });
+});
+
+describe('runEmitTurn — 504 retry', () => {
+  // Real backoff is 2s + 4s = 6s; bump this test's timeout past vitest default.
+  it('retries emit twice on 504 before failing', { timeout: 15_000 }, async () => {
+    let call = 0;
+    const fetchFn = vi.fn(async () => {
+      call++;
+      if (call < 3) {
+        return {
+          ok: false,
+          status: 504,
+          json: async () => ({}),
+          text: async () => 'Upstream timeout',
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          content: [{ type: 'text', text: JSON.stringify({ noteHebrew: 'קבלה...' }) }],
+          usage: { input_tokens: 5, output_tokens: 5 },
+        }),
+        text: async () => '',
+      };
+    }) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchFn);
+    const note = await runEmitTurn('admission', { name: 'X' }, 'skill');
+    expect(note).toContain('קבלה');
+    expect(call).toBe(3);
+  });
+
+  it('does not retry non-504 errors (e.g. 503)', async () => {
+    let call = 0;
+    const fetchFn = vi.fn(async () => {
+      call++;
+      return {
+        ok: false,
+        status: 503,
+        json: async () => ({}),
+        text: async () => 'service unavailable',
+      };
+    }) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchFn);
+    await expect(runEmitTurn('admission', {}, 'skill')).rejects.toThrow(/503/);
+    expect(call).toBe(1);
+  });
+});
+
 describe('runEmitTurn — JSON-mode via proxy', () => {
   it('parses JSON with noteHebrew field', async () => {
     const payload = JSON.stringify({ noteHebrew: 'קבלה: דוד כהן, בן 82...' });
