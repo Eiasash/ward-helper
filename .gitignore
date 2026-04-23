@@ -4,3 +4,10 @@ dist/
 .env.local
 *.log
 .DS_Store
+
+# Emitted TS artifacts (we use vite for bundling; tsc is --noEmit only)
+src/**/*.js
+src/**/*.js.map
+tests/**/*.js
+tests/**/*.js.map
+*.tsbuildinfo

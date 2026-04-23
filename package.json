@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run prebuild && tsc -b && vite build",
+    "build": "npm run prebuild && tsc --noEmit && vite build",
     "prebuild": "node scripts/sync-skills.mjs",
     "preview": "vite preview",
     "check": "tsc --noEmit",
