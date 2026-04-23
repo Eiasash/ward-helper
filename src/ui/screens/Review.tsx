@@ -6,6 +6,8 @@ import { runExtractTurn } from '@/agent/loop';
 import { loadSkills } from '@/skills/loader';
 import type { ParseResult, ParseFields, Med } from '@/agent/tools';
 import { FieldRow } from '../components/FieldRow';
+import { resolveContinuity, type ContinuityContext } from '@/notes/continuity';
+import { ContinuityBanner } from '../components/ContinuityBanner';
 
 type Status = 'loading' | 'ready' | 'error';
 
@@ -15,6 +17,9 @@ export function Review() {
   const [error, setError] = useState('');
   const [parsed, setParsed] = useState<ParseResult | null>(null);
   const [fields, setFields] = useState<ParseFields>({});
+  const [continuity, setContinuity] = useState<ContinuityContext | null>(null);
+  const [continuityEnabled, setContinuityEnabled] = useState<boolean>(true);
+  const isSoap = sessionStorage.getItem('noteType') === 'soap';
 
   useEffect(() => {
     let cancelled = false;
@@ -42,6 +47,29 @@ export function Review() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isSoap) return;
+    const tz = fields.teudatZehut?.trim();
+    if (!tz) return;
+    let cancelled = false;
+    (async () => {
+      const ctx = await resolveContinuity(tz);
+      if (cancelled) return;
+      setContinuity(ctx);
+      const stored = sessionStorage.getItem('soapContinuity');
+      const hasAnyContext = !!(ctx.admission || ctx.priorSoaps.length > 0);
+      setContinuityEnabled(stored === 'off' ? false : hasAnyContext);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isSoap, fields.teudatZehut]);
+
+  function onToggleContinuity(v: boolean) {
+    setContinuityEnabled(v);
+    sessionStorage.setItem('soapContinuity', v ? 'on' : 'off');
+  }
 
   if (status === 'loading') {
     return (
@@ -97,12 +125,25 @@ export function Review() {
 
   function onProceed() {
     sessionStorage.setItem('validated', JSON.stringify(fields));
+    if (isSoap && continuity?.patient && continuityEnabled) {
+      sessionStorage.setItem('continuityTeudatZehut', continuity.patient.teudatZehut);
+    } else {
+      sessionStorage.removeItem('continuityTeudatZehut');
+    }
     nav('/edit');
   }
 
   return (
     <section>
       <h1>בדיקה</h1>
+
+      {isSoap && continuity && (
+        <ContinuityBanner
+          ctx={continuity}
+          enabled={continuityEnabled}
+          onToggle={onToggleContinuity}
+        />
+      )}
 
       <FieldRow
         label="שם"

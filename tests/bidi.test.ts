@@ -39,3 +39,18 @@ describe('bidi', () => {
     expect(errors).toEqual([]);
   });
 });
+
+describe('bidi with SOAP-style content', () => {
+  it('preserves trend arrows unchanged', () => {
+    const input = 'Cr: 2.1 → 1.8, BNP 1200 → 800 ↓';
+    const out = wrapForChameleon(input);
+    expect(out).toContain('→');
+    expect(out).toContain('↓');
+  });
+
+  it('does not wrap Hebrew hashtag labels with LRM', () => {
+    const input = '#הימודינמי: יציב, #כלייתי: AKI';
+    const out = wrapForChameleon(input);
+    expect(out).toBe(input);
+  });
+});

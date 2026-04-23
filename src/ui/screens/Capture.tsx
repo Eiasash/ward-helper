@@ -1,4 +1,4 @@
-import { useState, useRef, type ChangeEvent } from 'react';
+import { useState, useRef, useEffect, type ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   addShot,
@@ -15,6 +15,7 @@ const NOTE_TYPES: { type: NoteType; label: string }[] = [
   { type: 'discharge', label: 'שחרור' },
   { type: 'consult', label: 'ייעוץ' },
   { type: 'case', label: 'מקרה מעניין' },
+  { type: 'soap', label: 'SOAP יומי' },
 ];
 
 type Mode = 'camera' | 'paste';
@@ -26,6 +27,14 @@ export function Capture() {
   const [shots, setShots] = useState<readonly Shot[]>(listShots());
   const [paste, setPaste] = useState<string>(getPastedText() ?? '');
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const seeded = sessionStorage.getItem('continuityNoteType');
+    if (seeded === 'soap') {
+      setNoteType('soap');
+      sessionStorage.removeItem('continuityNoteType');
+    }
+  }, []);
 
   async function onCapture(e: ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
