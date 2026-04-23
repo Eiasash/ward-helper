@@ -1,6 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { MODEL } from './client';
 import { parseAzmaTool, emitNoteTool, type ParseResult } from './tools';
+import { addTurn } from './costs';
 import type { NoteType } from '@/storage/indexed';
 
 function dataUrlToB64(dataUrl: string): { mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'; data: string } {
@@ -43,6 +44,7 @@ export async function runExtractTurn(
     messages: [{ role: 'user', content: userContent }],
   });
 
+  addTurn(res.usage);
   const toolUse = res.content.find((b) => b.type === 'tool_use');
   if (!toolUse || toolUse.type !== 'tool_use') throw new Error('no parse_azma_screen tool_use');
   return toolUse.input as ParseResult;
@@ -76,6 +78,7 @@ export async function runEmitTurn(
     ],
   });
 
+  addTurn(res.usage);
   const toolUse = res.content.find((b) => b.type === 'tool_use');
   if (!toolUse || toolUse.type !== 'tool_use') throw new Error('no emit_note tool_use');
   return (toolUse.input as { noteHebrew: string }).noteHebrew;

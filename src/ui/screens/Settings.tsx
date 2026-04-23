@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApiKey, setPassphrase, getPassphrase, clearPassphrase } from '../hooks/useSettings';
+import { load as loadCosts, reset as resetCosts } from '@/agent/costs';
 
 export function Settings() {
   const { present, save, clear } = useApiKey();
@@ -63,6 +64,27 @@ export function Settings() {
         <button onClick={onSavePass}>הפעל סיסמה</button>
         <button className="ghost" onClick={clearPassphrase}>נקה סיסמה</button>
       </div>
+
+      <h2>עלות מצטברת</h2>
+      {(() => {
+        const c = loadCosts();
+        return (
+          <p>
+            ${c.usd.toFixed(3)} · {c.inputTokens + c.outputTokens} tokens
+            {' '}
+            ({c.inputTokens} in / {c.outputTokens} out)
+          </p>
+        );
+      })()}
+      <button
+        className="ghost"
+        onClick={() => {
+          resetCosts();
+          setMsg('עלויות אופסו');
+        }}
+      >
+        אפס מונה
+      </button>
 
       {msg && <p style={{ color: 'var(--muted)', marginTop: 24 }}>{msg}</p>}
     </section>
