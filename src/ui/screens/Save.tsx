@@ -1,11 +1,21 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { saveBoth } from '@/notes/save';
-import { getPassphrase } from '../hooks/useSettings';
+import { getPassphrase, getEmailTarget } from '../hooks/useSettings';
 import type { NoteType } from '@/storage/indexed';
+import { NOTE_LABEL } from '@/notes/templates';
 import { clearShots } from '@/camera/session';
+import { sendNoteEmail, defaultEmailSubject } from '@/notes/email';
+import type { ParseFields } from '@/agent/tools';
 
 type Status = 'idle' | 'saving' | 'done' | 'error';
+type SendStatus = 'idle' | 'sending' | 'sent' | 'error';
+
+interface SavedSnapshot {
+  noteType: NoteType;
+  patientName: string;
+  body: string;
+}
 
 export function Save() {
   const nav = useNavigate();
@@ -16,12 +26,20 @@ export function Save() {
   // A string means a real cloud-push failure that the user needs to know
   // about — silent swallowing was how earlier versions hid broken backups.
   const [cloudError, setCloudError] = useState<string | null>(null);
+  // Snapshot of the note at save time — we clear sessionStorage on success,
+  // but the email button still needs the body/subject. Keeping a copy here
+  // avoids re-reading a now-empty sessionStorage after save.
+  const [snapshot, setSnapshot] = useState<SavedSnapshot | null>(null);
+
+  const [sendStatus, setSendStatus] = useState<SendStatus>('idle');
+  const [sendErr, setSendErr] = useState('');
+  const emailTarget = getEmailTarget();
 
   async function onSave() {
     setStatus('saving');
     try {
       const noteType = (sessionStorage.getItem('noteType') ?? 'admission') as NoteType;
-      const validated = JSON.parse(sessionStorage.getItem('validated') ?? '{}');
+      const validated: ParseFields = JSON.parse(sessionStorage.getItem('validated') ?? '{}');
       const body = sessionStorage.getItem('body') ?? '';
       const result = await saveBoth(validated, noteType, body);
       setCloudPushed(result.cloudPushed);
@@ -30,6 +48,7 @@ export function Save() {
           ? result.cloudSkippedReason
           : null,
       );
+      setSnapshot({ noteType, patientName: validated.name ?? '', body });
       clearShots();
       sessionStorage.removeItem('body');
       sessionStorage.removeItem('validated');
@@ -37,6 +56,20 @@ export function Save() {
     } catch (e: unknown) {
       setErr((e as Error).message);
       setStatus('error');
+    }
+  }
+
+  async function onSendEmail() {
+    if (!snapshot || !emailTarget) return;
+    setSendStatus('sending');
+    setSendErr('');
+    try {
+      const subject = defaultEmailSubject(NOTE_LABEL[snapshot.noteType], snapshot.patientName);
+      await sendNoteEmail(emailTarget, subject, snapshot.body);
+      setSendStatus('sent');
+    } catch (e: unknown) {
+      setSendErr((e as Error).message || 'שגיאה בשליחה');
+      setSendStatus('error');
     }
   }
 
@@ -76,7 +109,42 @@ export function Save() {
             </div>
           </div>
         )}
-        <div style={{ display: 'flex', gap: 8 }}>
+
+        {emailTarget && snapshot && (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 10,
+              background: 'var(--card-alt, #f4f7fa)',
+              borderRadius: 8,
+            }}
+          >
+            {sendStatus === 'sent' ? (
+              <p style={{ margin: 0 }}>
+                ✉ נשלח ל-<bdi dir="ltr">{emailTarget}</bdi>
+              </p>
+            ) : (
+              <>
+                <button
+                  onClick={onSendEmail}
+                  disabled={sendStatus === 'sending'}
+                  style={{ marginBottom: sendErr ? 6 : 0 }}
+                >
+                  {sendStatus === 'sending'
+                    ? 'שולח...'
+                    : sendStatus === 'error'
+                      ? 'נסה שוב — שלח במייל'
+                      : '✉ שלח במייל'}
+                </button>
+                {sendErr && (
+                  <p style={{ color: 'var(--red)', fontSize: 12, margin: 0 }}>{sendErr}</p>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
           <button onClick={() => nav('/history')}>ראה היסטוריה</button>
           <button className="ghost" onClick={() => nav('/')}>מטופל חדש</button>
         </div>

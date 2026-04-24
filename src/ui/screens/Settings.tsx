@@ -5,6 +5,7 @@ import {
   getPassphrase,
   clearPassphrase,
   useBidiAudit,
+  useEmailTarget,
 } from '../hooks/useSettings';
 import { load as loadCosts, reset as resetCosts } from '@/agent/costs';
 import { restoreFromCloud, type RestoreResult } from '@/notes/save';
@@ -16,6 +17,8 @@ export function Settings() {
   const [pass, setPass] = useState('');
   const [msg, setMsg] = useState('');
   const [bidiAuditOn, setBidiAuditOn] = useBidiAudit();
+  const [emailTarget, setEmailTargetValue] = useEmailTarget();
+  const [emailDraft, setEmailDraft] = useState(emailTarget);
   const [restoring, setRestoring] = useState(false);
   const [restoreResult, setRestoreResult] = useState<RestoreResult | null>(null);
   const [restoreErr, setRestoreErr] = useState('');
@@ -215,6 +218,42 @@ export function Settings() {
       >
         אפס מונה
       </button>
+
+      <h2>שליחה במייל (Gmail)</h2>
+      <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>
+        אחרי שמירה תופיע כפתור "שלח במייל" שישלח את ההערה ל-
+        <bdi dir="ltr">{emailTarget || 'כתובת שתגדיר כאן'}</bdi>.
+      </p>
+      <input
+        dir="ltr"
+        type="email"
+        placeholder="you@example.com"
+        value={emailDraft}
+        onChange={(e) => setEmailDraft(e.target.value)}
+        style={{ marginBottom: 8 }}
+      />
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          onClick={() => {
+            setEmailTargetValue(emailDraft);
+            setMsg(emailDraft.trim() ? 'כתובת נשמרה ✓' : 'כתובת נמחקה');
+          }}
+        >
+          שמור כתובת
+        </button>
+        {emailTarget && (
+          <button
+            className="ghost"
+            onClick={() => {
+              setEmailTargetValue('');
+              setEmailDraft('');
+              setMsg('כתובת נמחקה');
+            }}
+          >
+            מחק
+          </button>
+        )}
+      </div>
 
       <h2>אבחון מפתחים</h2>
       <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14 }}>
