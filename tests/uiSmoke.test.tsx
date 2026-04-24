@@ -67,6 +67,8 @@ import { NoteEditor } from '@/ui/screens/NoteEditor';
 import { Save } from '@/ui/screens/Save';
 import { History } from '@/ui/screens/History';
 import { Settings } from '@/ui/screens/Settings';
+import { PriorNotesBanner } from '@/ui/components/PriorNotesBanner';
+import { putPatient, putNote, resetDbForTests } from '@/storage/indexed';
 
 beforeEach(() => {
   sessionStorage.clear();
@@ -130,6 +132,69 @@ describe('History screen', () => {
   it('mounts and shows search-input affordance even when no patients exist', async () => {
     expect(() => renderAt('/history', <History />)).not.toThrow();
     await flushEffects();
+  });
+});
+
+describe('PriorNotesBanner', () => {
+  // Unlike the other smoke cases, these touch real IDB. Wipe between tests so
+  // seeded patients don't leak into the no-match case (and vice versa).
+  beforeEach(async () => {
+    await resetDbForTests();
+    await new Promise<void>((resolve) => {
+      const req = indexedDB.deleteDatabase('ward-helper');
+      req.onsuccess = () => resolve();
+      req.onerror = () => resolve();
+      req.onblocked = () => resolve();
+    });
+  });
+
+  it('renders when teudatZehut matches existing patient in IDB', async () => {
+    const now = Date.now();
+    await putPatient({
+      id: 'p1',
+      name: 'דוד לוי',
+      teudatZehut: '111111111',
+      dob: '1960-01-01',
+      room: null,
+      tags: [],
+      createdAt: now - 2 * 86_400_000,
+      updatedAt: now - 2 * 86_400_000,
+    });
+    await putNote({
+      id: 'n1',
+      patientId: 'p1',
+      type: 'admission',
+      bodyHebrew: '',
+      structuredData: {},
+      createdAt: now - 2 * 86_400_000,
+      updatedAt: now - 2 * 86_400_000,
+    });
+    await putNote({
+      id: 'n2',
+      patientId: 'p1',
+      type: 'soap',
+      bodyHebrew: '',
+      structuredData: {},
+      createdAt: now - 3600_000,
+      updatedAt: now - 3600_000,
+    });
+    render(
+      <MemoryRouter>
+        <PriorNotesBanner tz="111111111" />
+      </MemoryRouter>,
+    );
+    await flushEffects();
+    expect(screen.getByText('2 רישומים קודמים')).toBeInTheDocument();
+  });
+
+  it('renders nothing when tz not in IDB', async () => {
+    render(
+      <MemoryRouter>
+        <PriorNotesBanner tz="999999999" />
+      </MemoryRouter>,
+    );
+    await flushEffects();
+    expect(screen.queryByText(/רישומים קודמים/)).not.toBeInTheDocument();
   });
 });
 

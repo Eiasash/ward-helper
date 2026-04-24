@@ -7,6 +7,7 @@ import type { ParseResult, ParseFields, Med } from '@/agent/tools';
 import { FieldRow } from '../components/FieldRow';
 import { resolveContinuity, type ContinuityContext } from '@/notes/continuity';
 import { ContinuityBanner } from '../components/ContinuityBanner';
+import { PriorNotesBanner } from '../components/PriorNotesBanner';
 
 type Status = 'loading' | 'ready' | 'error';
 
@@ -224,6 +225,8 @@ export function Review() {
   return (
     <section>
       <h1>בדיקה</h1>
+
+      <PriorNotesBanner tz={fields.teudatZehut} />
 
       {isSoap && continuity && (
         <ContinuityBanner
