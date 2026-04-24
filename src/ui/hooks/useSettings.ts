@@ -99,6 +99,39 @@ export function useEmailTarget(): [string, (v: string) => void] {
   return [v, set];
 }
 
+/**
+ * Opt-in "debug" panel on the Settings screen. Shows the last extract/emit
+ * response bodies + IDB stats to help diagnose issues in the wild. Off by
+ * default — clinical users should never see it. Key: `ward-helper.debugPanel`.
+ */
+const DEBUG_PANEL_KEY = 'ward-helper.debugPanel';
+
+export function getDebugPanelEnabled(): boolean {
+  try {
+    return localStorage.getItem(DEBUG_PANEL_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setDebugPanelEnabled(on: boolean): void {
+  try {
+    if (on) localStorage.setItem(DEBUG_PANEL_KEY, '1');
+    else localStorage.removeItem(DEBUG_PANEL_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function useDebugPanel(): [boolean, (v: boolean) => void] {
+  const [on, setOn] = useState<boolean>(() => getDebugPanelEnabled());
+  const set = useCallback((v: boolean) => {
+    setDebugPanelEnabled(v);
+    setOn(v);
+  }, []);
+  return [on, set];
+}
+
 export function useApiKey() {
   const [present, setPresent] = useState<boolean | null>(null);
 

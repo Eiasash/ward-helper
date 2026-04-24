@@ -1,143 +1,280 @@
 :root {
-  --bg: #0a0a0c;
-  --card: #141418;
-  --fg: #e6e6e8;
-  --muted: #8a8a92;
-  --accent: #3d7aff;
-  --warn: #d88055;
-  --good: #7ac57a;
-  --red: #d85555;
-  --amber: #e0b040;
-  --radius: 12px;
-  --pad: 16px;
-  --font-he: 'Heebo', system-ui, sans-serif;
-  --font-en: 'Inter', system-ui, sans-serif;
-}
+  /* Surfaces */
+  --bg: #0e1014;
+  --surface-1: #14171c;
+  --surface-2: #1c2028;
+  --surface-3: #262b36;
+  --card: var(--surface-2); /* alias for legacy rules */
 
-html, body, #root {
-  height: 100%;
-  margin: 0;
-  background: var(--bg);
-  color: var(--fg);
-  font-family: var(--font-he);
+  /* Borders */
+  --border: #2a2f3a;
+  --border-strong: #3a4150;
+
+  /* Foreground */
+  --fg: #ebedf0;
+  --fg-2: #b8bcc6;
+  --muted: #7c828f;
+
+  /* Accent = clinical teal, from SZMC palette */
+  --accent: #14919B;
+  --accent-strong: #0D7377;
+  --accent-soft: rgba(20, 145, 155, 0.16);
+
+  /* Status palette */
+  --info: #5aa3f0; --info-soft: rgba(90, 163, 240, 0.16);
+  --good: #4ec27e; --good-soft: rgba(78, 194, 126, 0.16);
+  --warn: #e6b55c; --warn-soft: rgba(230, 181, 92, 0.18);
+  --err:  #e56a6a; --err-soft:  rgba(229, 106, 106, 0.18);
+
+  /* Legacy aliases kept so inline `style={{ color: 'var(--red)' }}` + `background: 'var(--warn)'`
+     referenced in pre-v1.18 components don't disappear. */
+  --red: var(--err);
+  --amber: var(--warn);
+
+  /* Geometry */
+  --radius: 12px;
+  --radius-sm: 8px;
+  --pad: 14px;
+  --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 * { box-sizing: border-box; }
 
+html, body, #root {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, 'Segoe UI', Tahoma, Arial, sans-serif;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+body { direction: rtl; }
+
 main.shell {
   padding: var(--pad);
-  padding-bottom: 80px;
-  min-height: 100%;
+  padding-bottom: 76px; /* space above bottom-nav */
+  min-height: 100vh;
   unicode-bidi: plaintext;
 }
 
-nav.bottom-nav {
-  position: fixed;
-  inset-inline: 0;
-  bottom: 0;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  background: var(--card);
-  border-top: 1px solid #222;
+/* --- DESKTOP LAYOUT CAP --- */
+@media (min-width: 600px) {
+  body {
+    background:
+      radial-gradient(ellipse at top, rgba(20, 145, 155, 0.04), transparent 60%),
+      var(--bg);
+  }
+  main.shell {
+    max-width: 32rem;
+    margin-inline: auto;
+    border-inline: 1px solid var(--border);
+  }
+  nav.bottom-nav {
+    max-width: 32rem;
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%);
+    border-inline: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+  }
 }
 
-nav.bottom-nav a {
-  padding: 14px 8px;
-  text-align: center;
-  color: var(--muted);
-  text-decoration: none;
-  font-size: 14px;
-}
-
-nav.bottom-nav a.active {
-  color: var(--accent);
-}
-
-button {
-  background: var(--accent);
-  color: white;
-  border: 0;
+/* --- Cards --- */
+.card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 12px 16px;
-  font-family: inherit;
-  font-size: 16px;
-  min-height: 44px;
-  cursor: pointer;
+  padding: var(--pad);
+  box-shadow: var(--shadow-inset);
+  margin-block: 10px;
 }
 
-button.ghost {
+/* --- Pills --- */
+.pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 10px; border-radius: 999px;
+  font-size: 0.85em; font-weight: 500;
+  border: 1px solid transparent;
+}
+.pill-info  { background: var(--info-soft); color: var(--info); border-color: rgba(90, 163, 240, 0.3); }
+.pill-good  { background: var(--good-soft); color: var(--good); border-color: rgba(78, 194, 126, 0.3); }
+.pill-warn  { background: var(--warn-soft); color: var(--warn); border-color: rgba(230, 181, 92, 0.3); }
+.pill-err   { background: var(--err-soft);  color: var(--err);  border-color: rgba(229, 106, 106, 0.3); }
+.pill-muted { background: var(--surface-3); color: var(--muted); border-color: var(--border); }
+
+/* --- Buttons --- */
+button, .btn {
+  appearance: none; border: none; cursor: pointer;
+  padding: 10px 16px; border-radius: var(--radius-sm);
+  font: inherit; font-weight: 500;
+  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+  color: white;
+  min-height: 44px;
+  transition: filter 120ms, transform 80ms;
+}
+button:hover, .btn:hover { filter: brightness(1.08); }
+button:active, .btn:active { transform: translateY(1px); }
+button.ghost, .btn.ghost {
   background: transparent;
   color: var(--fg);
-  border: 1px solid #333;
+  border: 1px solid var(--border-strong);
 }
+button.ghost:hover { background: var(--surface-3); }
+button:disabled, .btn:disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
 
-button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-input, textarea {
-  background: var(--card);
-  color: var(--fg);
-  border: 1px solid #2a2a30;
-  border-radius: 8px;
-  padding: 10px 12px;
-  font-family: inherit;
-  width: 100%;
-}
-
-input[dir="auto"], textarea[dir="auto"] {
-  unicode-bidi: plaintext;
-}
-
-h1, h2 { font-weight: 500; }
-h1 { font-size: 22px; margin: 0 0 16px; }
-h2 { font-size: 17px; margin: 20px 0 8px; color: var(--muted); }
-
-/* Label styled as a button (for label-wrapped file inputs). */
+/* --- Label-styled-as-button (for label-wrapped file inputs on mobile) --- */
 .btn-like {
-  background: var(--accent);
-  color: white;
-  border: 0;
-  border-radius: var(--radius);
-  padding: 12px 16px;
-  font-family: inherit;
-  font-size: 16px;
-  min-height: 44px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: inline-flex; align-items: center; justify-content: center;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
+  padding: 10px 16px; border-radius: var(--radius-sm);
+  font: inherit; font-weight: 500; min-height: 44px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+  color: white;
+  cursor: pointer;
 }
-
 .btn-like.ghost {
   background: transparent;
   color: var(--fg);
-  border: 1px solid #333;
+  border: 1px solid var(--border-strong);
 }
 
 /* Visually hide the file input while keeping it focusable + tappable via its label.
    Do NOT use display:none or [hidden] — that breaks label->input click on some mobile browsers. */
 .visually-hidden {
   position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
 }
 
-/* Thumbnail with delete overlay. */
+/* --- Inputs --- */
+input[type='text'], input[type='email'], input[type='password'],
+input[type='search'], input[type='number'], input:not([type]), textarea, select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--fg);
+  border: 1px solid var(--border-strong);
+  font: inherit;
+}
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+textarea { min-height: 120px; resize: vertical; }
+
+/* Checkboxes: don't stretch to 100% width. */
+input[type='checkbox'] {
+  width: auto;
+  accent-color: var(--accent);
+}
+
+input[dir='auto'], textarea[dir='auto'] {
+  unicode-bidi: plaintext;
+}
+
+/* --- Bottom nav (NavLink renders <a>, not <button>) --- */
+nav.bottom-nav {
+  position: fixed; inset: auto 0 0 0;
+  display: flex; justify-content: space-around;
+  background: var(--surface-1);
+  border-top: 1px solid var(--border);
+  padding: 8px;
+  z-index: 10;
+}
+nav.bottom-nav a,
+nav.bottom-nav button {
+  flex: 1;
+  background: transparent; color: var(--fg-2);
+  padding: 10px 12px; position: relative;
+  text-align: center; text-decoration: none;
+  font: inherit; font-size: 14px;
+  border: none;
+  min-height: 44px;
+}
+nav.bottom-nav a.active,
+nav.bottom-nav button.active {
+  color: var(--accent);
+  background: transparent;
+}
+nav.bottom-nav a.active::after,
+nav.bottom-nav button.active::after {
+  content: '';
+  position: absolute;
+  bottom: -2px; left: 20%; right: 20%; height: 2px;
+  background: var(--accent); border-radius: 2px;
+}
+
+/* --- Empty state --- */
+.empty {
+  text-align: center; padding: 40px 20px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--muted);
+  margin-block: 20px;
+}
+.empty-icon { font-size: 40px; margin-bottom: 12px; }
+.empty-title { color: var(--fg); font-size: 1.1em; font-weight: 500; margin: 4px 0; }
+.empty-sub { color: var(--muted); font-size: 0.9em; margin: 4px 0 16px; }
+
+/* --- Debug panel --- */
+.debug-label {
+  font-size: 0.75em; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--muted); margin: 12px 0 4px;
+}
+.debug-pre {
+  font-family: ui-monospace, Menlo, Monaco, 'Courier New', monospace;
+  font-size: 0.78em;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--fg-2);
+  direction: ltr;
+  text-align: left;
+}
+
+/* --- Banners (saved, cloud-backup, errors) --- */
+.save-banner, .cloud-banner {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  margin-block: 4px;
+  font-size: 0.9em;
+}
+.save-banner { background: var(--good-soft); color: var(--good); }
+.cloud-banner { background: var(--info-soft); color: var(--info); }
+.cloud-banner.cloud-error { background: var(--warn-soft); color: var(--warn); }
+
+/* --- Toggle row (Settings) --- */
+.toggle-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 0;
+  cursor: pointer;
+}
+.toggle-row input[type='checkbox'] {
+  width: 18px; height: 18px; accent-color: var(--accent);
+}
+
+/* --- Thumbnail with delete overlay. --- */
 .shot-thumb {
   position: relative;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
-  background: var(--card);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
 }
 .shot-thumb img {
   width: 100%;
@@ -153,17 +290,15 @@ h2 { font-size: 17px; margin: 20px 0 8px; color: var(--muted); }
   color: white;
   border: 0;
   border-radius: 999px;
-  width: 32px;
-  height: 32px;
-  min-height: 32px;
+  width: 32px; height: 32px; min-height: 32px;
   padding: 0;
   font-size: 14px;
-  line-height: 32px;
+  line-height: 1;
   text-align: center;
   cursor: pointer;
 }
 
-/* History: tappable note rows. 44px min height for thumb targets. */
+/* --- History: tappable note rows. 44px min height for thumb targets. --- */
 .note-row {
   display: flex;
   align-items: center;
@@ -172,21 +307,29 @@ h2 { font-size: 17px; margin: 20px 0 8px; color: var(--muted); }
   text-align: start;
   padding: 8px 10px;
   min-height: 44px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 6px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   color: var(--fg);
-  font-family: inherit;
+  font: inherit;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-.note-row:active {
-  background: rgba(255, 255, 255, 0.08);
-}
+.note-row:active { background: var(--surface-3); }
 .note-row:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* --- Misc --- */
+h1, h2, h3 { color: var(--fg); margin: 16px 0 8px; font-weight: 500; }
+h1 { font-size: 22px; margin: 0 0 16px; }
+h2 { font-size: 1.15em; color: var(--muted); margin-top: 20px; }
+h3 { font-size: 1em; }
+.muted { color: var(--muted); font-size: 0.9em; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 
 /* Version footer. Muted, doesn't compete with content. */
 .app-version {

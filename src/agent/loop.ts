@@ -1,6 +1,7 @@
 import { callAnthropic, type AnthropicContentBlock } from './client';
 import type { ParseResult, ParseFields } from './tools';
 import { addTurn } from './costs';
+import { recordExtract, recordEmit, recordError } from './debugLog';
 import type { NoteType } from '@/storage/indexed';
 
 /**
@@ -113,22 +114,29 @@ export async function runExtractTurn(
     { type: 'text', text: EXTRACT_JSON_INSTRUCTIONS },
   ];
 
-  const res = await callAnthropic(
-    {
-      messages: [{ role: 'user', content }],
-      // 1500 is plenty for a compact ParseResult. With a user-direct path this
-      // comfortably fits the Anthropic non-streaming envelope; with the proxy
-      // fallback it stays under the 10s budget too.
-      max_tokens: 1500,
-      system: skillContent,
-    },
-    // One retry on transient network / 5xx. Extract is the user's first
-    // real wait after hitting Proceed; a single transient failure forcing
-    // them back to Capture is a worse UX than 2-3 extra seconds here.
-    // We cap at 1 (not 2 like emit) because extract is much shorter — a
-    // retry landing a cold proxy function usually works on the first try.
-    { retryOnTransient: 1 },
-  );
+  const started = Date.now();
+  let res;
+  try {
+    res = await callAnthropic(
+      {
+        messages: [{ role: 'user', content }],
+        // 1500 is plenty for a compact ParseResult. With a user-direct path this
+        // comfortably fits the Anthropic non-streaming envelope; with the proxy
+        // fallback it stays under the 10s budget too.
+        max_tokens: 1500,
+        system: skillContent,
+      },
+      // One retry on transient network / 5xx. Extract is the user's first
+      // real wait after hitting Proceed; a single transient failure forcing
+      // them back to Capture is a worse UX than 2-3 extra seconds here.
+      // We cap at 1 (not 2 like emit) because extract is much shorter — a
+      // retry landing a cold proxy function usually works on the first try.
+      { retryOnTransient: 1 },
+    );
+  } catch (e) {
+    recordError(e, { phase: 'extract' });
+    throw e;
+  }
 
   addTurn({
     input_tokens: res.usage.input_tokens,
@@ -136,7 +144,17 @@ export async function runExtractTurn(
   } as { input_tokens: number; output_tokens: number });
 
   const text = res.content.map((b) => b.text).join('\n').trim();
-  if (!text) throw new Error('empty response from proxy');
+  recordExtract(text, {
+    images: images.length,
+    in_tokens: res.usage.input_tokens,
+    out_tokens: res.usage.output_tokens,
+    ms: Date.now() - started,
+  });
+  if (!text) {
+    const err = new Error('empty response from proxy');
+    recordError(err, { phase: 'extract' });
+    throw err;
+  }
 
   try {
     const parsed = parseJsonStrict<ParseResult>(text);
@@ -150,6 +168,7 @@ export async function runExtractTurn(
       confidence: filterToCriticalThree(parsed.confidence),
     };
   } catch (e) {
+    recordError(e, { phase: 'extract', context: text.slice(0, 200) });
     throw new Error(
       `failed to parse JSON from model: ${(e as Error).message}. First 200 chars: ${text.slice(0, 200)}`,
     );
@@ -191,14 +210,21 @@ export async function runEmitTurn(
   // Retry transient network/5xx failures up to 2 more times with 2s/4s backoff.
   // Direct-to-Anthropic transient failures are rare; proxy-path 504s are
   // common but at least one retry sometimes lands in a warm function.
-  const res = await callAnthropic(
-    {
-      messages: [{ role: 'user', content: [{ type: 'text', text: userText }] }],
-      max_tokens: 4096,
-      system: skillContent,
-    },
-    { retryOnTransient: 2 },
-  );
+  const started = Date.now();
+  let res;
+  try {
+    res = await callAnthropic(
+      {
+        messages: [{ role: 'user', content: [{ type: 'text', text: userText }] }],
+        max_tokens: 4096,
+        system: skillContent,
+      },
+      { retryOnTransient: 2 },
+    );
+  } catch (e) {
+    recordError(e, { phase: 'emit', context: noteType });
+    throw e;
+  }
 
   addTurn({
     input_tokens: res.usage.input_tokens,
@@ -206,7 +232,17 @@ export async function runEmitTurn(
   } as { input_tokens: number; output_tokens: number });
 
   const text = res.content.map((b) => b.text).join('\n').trim();
-  if (!text) throw new Error('empty response from proxy');
+  recordEmit(text, {
+    noteType,
+    in_tokens: res.usage.input_tokens,
+    out_tokens: res.usage.output_tokens,
+    ms: Date.now() - started,
+  });
+  if (!text) {
+    const err = new Error('empty response from proxy');
+    recordError(err, { phase: 'emit', context: noteType });
+    throw err;
+  }
 
   try {
     const parsed = parseJsonStrict<{ noteHebrew: string }>(text);
@@ -220,6 +256,7 @@ export async function runEmitTurn(
     if ((e as Error).message.includes('JSON')) {
       return text;
     }
+    recordError(e, { phase: 'emit', context: noteType });
     throw e;
   }
 }
