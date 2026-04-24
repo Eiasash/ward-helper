@@ -80,6 +80,18 @@ export async function listNotes(patientId: string): Promise<Note[]> {
   return db.getAllFromIndex('notes', 'by-patient', patientId);
 }
 
+export async function getNote(id: string): Promise<Note | undefined> {
+  return (await getDb()).get('notes', id);
+}
+
+export async function getPatient(id: string): Promise<Patient | undefined> {
+  return (await getDb()).get('patients', id);
+}
+
+export async function deleteNote(id: string): Promise<void> {
+  await (await getDb()).delete('notes', id);
+}
+
 export async function setSettings(s: Settings): Promise<void> {
   await (await getDb()).put('settings', s, 'singleton');
 }

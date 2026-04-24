@@ -5,6 +5,9 @@ import {
   listPatients,
   listNotes,
   listNotesByTeudatZehut,
+  getNote,
+  getPatient,
+  deleteNote,
   getSettings,
   setSettings,
   resetDbForTests,
@@ -122,5 +125,78 @@ describe('listNotesByTeudatZehut', () => {
     await putPatient({ id: 'new', name: 'Y', teudatZehut: tz, dob: '', room: null, tags: [], createdAt: 1, updatedAt: 50 });
     const out = await listNotesByTeudatZehut(tz);
     expect(out.patient?.id).toBe('new');
+  });
+});
+
+describe('note viewer helpers — getNote / getPatient / deleteNote', () => {
+  it('getNote returns the saved note by id', async () => {
+    await putPatient({
+      id: 'pv1',
+      name: 'כהן אשר',
+      teudatZehut: '003385747',
+      dob: '',
+      room: '87',
+      tags: [],
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    await putNote({
+      id: 'n-abc',
+      patientId: 'pv1',
+      type: 'soap',
+      bodyHebrew: 'S: תלונה\nO: ...\nA: ...\nP: ...',
+      structuredData: {},
+      createdAt: 100,
+      updatedAt: 100,
+    });
+    const n = await getNote('n-abc');
+    expect(n?.bodyHebrew).toContain('תלונה');
+    expect(n?.patientId).toBe('pv1');
+  });
+
+  it('getNote returns undefined for unknown id', async () => {
+    expect(await getNote('nonexistent')).toBeUndefined();
+  });
+
+  it('getPatient returns patient by id', async () => {
+    await putPatient({
+      id: 'pv2',
+      name: 'X',
+      teudatZehut: '1',
+      dob: '',
+      room: null,
+      tags: [],
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const p = await getPatient('pv2');
+    expect(p?.name).toBe('X');
+  });
+
+  it('deleteNote removes the note but keeps the patient', async () => {
+    await putPatient({
+      id: 'pv3',
+      name: 'X',
+      teudatZehut: '1',
+      dob: '',
+      room: null,
+      tags: [],
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    await putNote({
+      id: 'del-me',
+      patientId: 'pv3',
+      type: 'admission',
+      bodyHebrew: 'body',
+      structuredData: {},
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    expect((await listNotes('pv3')).length).toBe(1);
+    await deleteNote('del-me');
+    expect(await getNote('del-me')).toBeUndefined();
+    expect((await listNotes('pv3')).length).toBe(0);
+    expect(await getPatient('pv3')).toBeDefined();
   });
 });
