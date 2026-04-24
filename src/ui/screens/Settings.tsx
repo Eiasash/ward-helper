@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   useApiKey,
   setPassphrase,
@@ -8,6 +8,7 @@ import {
 } from '../hooks/useSettings';
 import { load as loadCosts, reset as resetCosts } from '@/agent/costs';
 import { restoreFromCloud, type RestoreResult } from '@/notes/save';
+import { activePath, type RequestPath } from '@/agent/client';
 
 export function Settings() {
   const { present, save, clear } = useApiKey();
@@ -18,6 +19,19 @@ export function Settings() {
   const [restoring, setRestoring] = useState(false);
   const [restoreResult, setRestoreResult] = useState<RestoreResult | null>(null);
   const [restoreErr, setRestoreErr] = useState('');
+  const [path, setPath] = useState<RequestPath | null>(null);
+
+  // Re-runs whenever `present` flips (save/clear in useApiKey bumps it).
+  // No polling, no refresh button — the path only changes when the key changes.
+  useEffect(() => {
+    let cancelled = false;
+    activePath().then((p) => {
+      if (!cancelled) setPath(p);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [present]);
 
   async function onSaveKey() {
     if (!key.startsWith('sk-ant-')) {
@@ -72,6 +86,22 @@ export function Settings() {
       <h1>הגדרות</h1>
 
       <h2>Anthropic API Key</h2>
+      <div
+        style={{
+          background: 'var(--card)',
+          padding: '4px 10px',
+          borderRadius: 6,
+          marginBottom: 8,
+          fontSize: 13,
+          lineHeight: 1.5,
+        }}
+      >
+        {path === null
+          ? '…'
+          : path === 'direct'
+          ? '🟢 פנייה ישירה (api.anthropic.com)'
+          : '🟡 Toranot proxy — פסק זמן 10 שניות'}
+      </div>
       {present === null ? (
         <p>...</p>
       ) : present ? (
