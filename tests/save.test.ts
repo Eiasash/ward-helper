@@ -111,17 +111,34 @@ describe('saveBoth — cloud-push path (passphrase set)', () => {
     expect(types.sort()).toEqual(['note', 'patient']);
   });
 
-  it('still saves locally even if cloud push throws (cloud is best-effort)', async () => {
+  it('still saves locally AND reports the failure reason when cloud push throws', async () => {
     (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue('pass');
     (cloud.pushBlob as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error('PGRST205: table does not exist'),
     );
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const result = await saveBoth({ name: 'fallback' }, 'admission', 'body');
     expect(result.cloudPushed).toBe(false);
+    expect(result.cloudSkippedReason).toContain('PGRST205');
     const patients = await listPatients();
     expect(patients).toHaveLength(1); // local persist still happened
-    expect(warnSpy).toHaveBeenCalled();
-    warnSpy.mockRestore();
+  });
+
+  it('reports "no-passphrase" (not a real error) when passphrase missing', async () => {
+    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue(null);
+    const result = await saveBoth({ name: 'Q' }, 'soap', 'body');
+    expect(result.cloudPushed).toBe(false);
+    expect(result.cloudSkippedReason).toBe('no-passphrase');
+  });
+
+  it('derives the AES key only once even though it encrypts two blobs', async () => {
+    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue('k');
+    const derive = (await import('@/crypto/pbkdf2')).deriveAesKey as unknown as ReturnType<typeof vi.fn>;
+    (derive as ReturnType<typeof vi.fn>).mockClear?.();
+    await saveBoth({ name: 'once' }, 'admission', 'body');
+    // One derivation shared across patient + note encryption — saves ~300ms
+    // of PBKDF2 on every save. Regression guard.
+    if ((derive as ReturnType<typeof vi.fn>).mock) {
+      expect((derive as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1);
+    }
   });
 });

@@ -1,7 +1,19 @@
 /**
  * Per-turn token + USD cost tracking, persisted in localStorage.
- * Opus 4.7 pricing as of 2026-04: $15/M input, $75/M output.
- * Update IN_PER_TOKEN / OUT_PER_TOKEN if pricing changes.
+ *
+ * Pricing for claude-sonnet-4-6 (what the app actually uses — see
+ * MODEL_DIRECT in src/agent/client.ts and the proxy's default model):
+ *   input:  $3/M tokens
+ *   output: $15/M tokens
+ *
+ * If you swap the underlying model (e.g. move to Opus 4.7 at $15/$75),
+ * update these TWO constants AND the model string in client.ts at the
+ * same time. Out-of-sync pricing silently misrepresents cost in the UI.
+ *
+ * NOTE: prior versions of this file used Opus pricing (5x too high).
+ * Per-patient cost readouts written before 2026-04-24 are inflated 5x —
+ * the patient map is cumulative and NOT retroactively corrected. Fresh
+ * patients after this change will show real costs.
  *
  * Three accounting layers:
  *   - global totals     — lifetime of the install
@@ -11,8 +23,8 @@
  *                         $X on N re-extractions" readout in Settings
  */
 
-const IN_PER_TOKEN = 15 / 1_000_000;
-const OUT_PER_TOKEN = 75 / 1_000_000;
+const IN_PER_TOKEN = 3 / 1_000_000;
+const OUT_PER_TOKEN = 15 / 1_000_000;
 const KEY = 'ward-helper.costs';
 const SESSION_KEY = 'ward-helper.costs.session';
 const PATIENT_KEY = 'ward-helper.costs.perPatient';

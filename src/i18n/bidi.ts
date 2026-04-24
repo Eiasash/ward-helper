@@ -47,13 +47,27 @@ export function sanitizeForChameleon(text: string): string {
   // 4. Multiple > collapse to single.
   s = s.replace(/>{2,}/g, '>');
 
-  // 5. ">N" / "<N" flip in RTL — must be spelled out.
-  //    Rule: ">" or "<" immediately followed by a digit (no whitespace between)
-  //    is a comparison operator. The " > " transition syntax always has a
-  //    space between ">" and the next token, so it's safely excluded.
-  //    We run this AFTER rule 4 (">>>>" collapse) so chained ">" won't bleed in.
-  s = s.replace(/>(\d)/g, 'מעל $1');
-  s = s.replace(/<(\d)/g, 'מתחת $1');
+  // 4b. "Greater/less than or equal" compound operators.
+  //     These MUST run before rule 5 (>N / <N comparison spell-out),
+  //     because rule 5's regex would otherwise see ">" and mangle them.
+  //     Hebrew readers typically write/read these as "גדול שווה" etc., but
+  //     the spelled-out words render cleanest in Chameleon.
+  s = s.replace(/>=/g, 'גדול-שווה ');
+  s = s.replace(/<=/g, 'קטן-שווה ');
+  s = s.replace(/≥\s*/g, 'גדול-שווה ');
+  s = s.replace(/≤\s*/g, 'קטן-שווה ');
+
+  // 5. ">N" / "<N" flip in RTL — must be spelled out when N is a number
+  //    comparison. Two exclusions:
+  //      a) " > " transition syntax (spaces already around >) — excluded
+  //         by rule 5's own pattern below.
+  //      b) A digit IMMEDIATELY before the operator — that's also a
+  //         transition ("2.1>1.8" means 2.1 transitioned to 1.8, not
+  //         "2.1 is greater-than 1.8"). Use negative lookbehind to skip.
+  //    Space-wrapped transitions (Cr: 2.1 > 1.8) are also preserved
+  //    because `>(\d)` requires no whitespace between > and the digit.
+  s = s.replace(/(?<![\d.])>(\d)/g, 'מעל $1');
+  s = s.replace(/(?<![\d.])<(\d)/g, 'מתחת $1');
 
   // 6. English drug-schedule abbreviations confuse RTL readers.
   s = s.replace(/\bq(\d{1,2})h\b/gi, 'כל $1 שעות');
@@ -109,8 +123,10 @@ export function auditChameleonRules(text: string): string[] {
   if (/\*\*[^*]+\*\*/.test(text)) issues.push('** bold markers found');
   if (/(?<!-)--(?!-)/.test(text)) issues.push('-- double dash found');
   if (/>{2,}/.test(text)) issues.push('>> multiple > found');
-  if (/>\d/.test(text)) issues.push('">N" found (should be "מעל N")');
-  if (/<\d/.test(text)) issues.push('"<N" found (should be "מתחת N")');
+  if (/[>=≥≤<]=|≥|≤/.test(text))
+    issues.push('>=, <=, ≥, or ≤ found (spell out in Hebrew)');
+  if (/(?<![\d.])>\d/.test(text)) issues.push('">N" comparison found (should be "מעל N")');
+  if (/(?<![\d.])<\d/.test(text)) issues.push('"<N" comparison found (should be "מתחת N")');
   if (/\bq\d{1,2}h\b/i.test(text)) issues.push('qNh frequency found (use Hebrew)');
   if (/\b(bid|tid|qid|qd)\b/i.test(text)) issues.push('BID/TID/QID/QD found (use Hebrew)');
   return issues;

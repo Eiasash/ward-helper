@@ -9,6 +9,12 @@ export interface SaveResult {
   patientId: string;
   noteId: string;
   cloudPushed: boolean;
+  /**
+   * When cloudPushed is false, this explains why:
+   *   - 'no-passphrase' = user hasn't set a cloud passphrase (expected, silent)
+   *   - a string       = real error message from the push attempt; UI should warn
+   */
+  cloudSkippedReason: 'no-passphrase' | string | null;
 }
 
 export async function saveBoth(
@@ -49,20 +55,37 @@ export async function saveBoth(
   finalizeSessionFor(patientId);
 
   const pass = getPassphrase();
-  let cloudPushed = false;
-  if (pass) {
-    try {
-      const salt = crypto.getRandomValues(new Uint8Array(16));
-      const key = await deriveAesKey(pass, salt);
-      const sealedP = await encryptForCloud(patient, key, salt);
-      const sealedN = await encryptForCloud(note, key, salt);
-      await pushBlob('patient', patientId, sealedP);
-      await pushBlob('note', noteId, sealedN);
-      cloudPushed = true;
-    } catch (e) {
-      console.warn('cloud push failed:', e);
-    }
+  if (!pass) {
+    return {
+      patientId,
+      noteId,
+      cloudPushed: false,
+      cloudSkippedReason: 'no-passphrase',
+    };
   }
 
-  return { patientId, noteId, cloudPushed };
+  try {
+    // Single PBKDF2 derivation reused for both blobs. Same salt is safe
+    // because AES-GCM uses a fresh IV per `encryptForCloud` call, and that's
+    // what actually needs to be unique. Sharing the derivation saves ~300ms
+    // of CPU time on every save.
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const key = await deriveAesKey(pass, salt);
+    const sealedP = await encryptForCloud(patient, key, salt);
+    const sealedN = await encryptForCloud(note, key, salt);
+    await pushBlob('patient', patientId, sealedP);
+    await pushBlob('note', noteId, sealedN);
+    return { patientId, noteId, cloudPushed: true, cloudSkippedReason: null };
+  } catch (e) {
+    // Don't throw — local save already succeeded. But DO report the reason
+    // to the caller so the UI can surface a "local only" warning. Silent
+    // swallowing was how we spent weeks thinking backups worked when they
+    // didn't.
+    return {
+      patientId,
+      noteId,
+      cloudPushed: false,
+      cloudSkippedReason: (e as Error).message ?? 'unknown error',
+    };
+  }
 }

@@ -242,3 +242,75 @@ describe('bidi with Hebrew hashtag labels (SOAP categories)', () => {
     expect(out).toContain('# כלייתי');
   });
 });
+
+describe('Chameleon sanitizer — compound operators (>= <= ≥ ≤)', () => {
+  it('spells out >= as Hebrew גדול-שווה', () => {
+    const out = sanitizeForChameleon('WBC >=10000');
+    expect(out).toContain('גדול-שווה');
+    expect(out).not.toContain('>=');
+    expect(out).not.toContain('מעל 1'); // ensure rule 5 didn't fire after
+  });
+
+  it('spells out <= as Hebrew קטן-שווה', () => {
+    const out = sanitizeForChameleon('BP <=90');
+    expect(out).toContain('קטן-שווה');
+    expect(out).not.toContain('<=');
+  });
+
+  it('handles unicode ≥ the same as >=', () => {
+    const out = sanitizeForChameleon('eGFR ≥60');
+    expect(out).toContain('גדול-שווה');
+    expect(out).not.toContain('≥');
+  });
+
+  it('handles unicode ≤ the same as <=', () => {
+    const out = sanitizeForChameleon('Na ≤130');
+    expect(out).toContain('קטן-שווה');
+    expect(out).not.toContain('≤');
+  });
+
+  it('does not leak מעל/מתחת when input used only compound operators', () => {
+    const out = sanitizeForChameleon('WBC >=10000, Na <=130');
+    expect(out).not.toContain('מעל');
+    expect(out).not.toContain('מתחת');
+  });
+});
+
+describe('Chameleon sanitizer — transition vs comparison (> with adjacent digits)', () => {
+  it('preserves digit>digit transitions (no comparison spell-out)', () => {
+    // A doctor who writes "Cr 2.1>1.8" without spaces still means a trend.
+    const out = sanitizeForChameleon('Cr 2.1>1.8');
+    expect(out).toContain('2.1>1.8');
+    expect(out).not.toContain('מעל 1.8');
+  });
+
+  it('still spells out true >N comparisons (non-digit prefix)', () => {
+    expect(sanitizeForChameleon('glucose >200')).toContain('מעל 200');
+    expect(sanitizeForChameleon('Hb >12 g/dL')).toContain('מעל 12');
+  });
+
+  it('still spells out true <N comparisons', () => {
+    expect(sanitizeForChameleon('Na <130')).toContain('מתחת 130');
+  });
+
+  it('preserves multi-step trend chain with no spaces', () => {
+    const out = sanitizeForChameleon('Cr 2.5>2.1>1.8');
+    expect(out).toContain('2.5>2.1>1.8');
+    expect(out).not.toContain('מעל');
+  });
+});
+
+describe('auditChameleonRules — new compound detectors', () => {
+  it('flags >= in text', () => {
+    expect(auditChameleonRules('WBC >=10000').join(' ')).toMatch(/>=|גדול-שווה/);
+  });
+
+  it('flags ≥ in text', () => {
+    expect(auditChameleonRules('eGFR ≥60').join(' ')).toMatch(/≥|>=|גדול-שווה/);
+  });
+
+  it('does NOT flag digit>digit transition as a violation', () => {
+    const issues = auditChameleonRules('Cr 2.1>1.8');
+    expect(issues.filter((s) => /">N"/.test(s))).toEqual([]);
+  });
+});
