@@ -10,10 +10,11 @@ import {
 } from '@/agent/costs';
 
 // Pricing constants mirrored from src/agent/costs.ts.
-// These are intentionally duplicated here so that any accidental pricing change
-// in production immediately breaks this test and forces a conscious update.
-const IN_PER_TOKEN = 15 / 1_000_000;
-const OUT_PER_TOKEN = 75 / 1_000_000;
+// Sonnet 4.6: $3/M input, $15/M output.
+// Duplicated here intentionally — any accidental change in production
+// breaks this test and forces a conscious update.
+const IN_PER_TOKEN = 3 / 1_000_000;
+const OUT_PER_TOKEN = 15 / 1_000_000;
 
 beforeEach(() => {
   reset();
@@ -46,14 +47,14 @@ describe('costs: addTurn', () => {
     expect(t.outputTokens).toBe(200);
   });
 
-  it('computes USD at $15/M input tokens', () => {
+  it('computes USD at $3/M input tokens', () => {
     addTurn({ input_tokens: 1_000_000, output_tokens: 0 });
-    expect(load().usd).toBeCloseTo(15, 5);
+    expect(load().usd).toBeCloseTo(3, 5);
   });
 
-  it('computes USD at $75/M output tokens', () => {
+  it('computes USD at $15/M output tokens', () => {
     addTurn({ input_tokens: 0, output_tokens: 1_000_000 });
-    expect(load().usd).toBeCloseTo(75, 5);
+    expect(load().usd).toBeCloseTo(15, 5);
   });
 
   it('accumulates correctly across multiple calls', () => {
