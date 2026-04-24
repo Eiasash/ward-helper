@@ -10,6 +10,22 @@ import { useBidiAudit } from '../hooks/useSettings';
 
 type Status = 'gen' | 'ready' | 'error';
 
+/**
+ * Stable fingerprint of the validated fields, used as a cache key for the
+ * generated body. Not cryptographic — just needs (a) deterministic ordering
+ * so the same input produces the same hash and (b) cheap. JSON.stringify of
+ * sorted keys is both.
+ */
+function hashFields(f: ParseFields): string {
+  const sorted = Object.keys(f).sort();
+  const pairs = sorted.map((k) => `${k}:${JSON.stringify((f as Record<string, unknown>)[k])}`);
+  // djb2 — 31-bit hash, collisions are fine for a 3-key namespace.
+  let h = 5381;
+  const str = pairs.join('|');
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+  return String(h >>> 0);
+}
+
 export function NoteEditor() {
   const nav = useNavigate();
   const [status, setStatus] = useState<Status>('gen');
@@ -18,6 +34,10 @@ export function NoteEditor() {
   const [noteType, setNoteType] = useState<NoteType>('admission');
   const [copied, setCopied] = useState(false);
   const [bidiAuditOn] = useBidiAudit();
+  // Bumping this forces the generate effect to re-run and ignore the cache.
+  // Wired to the "Regenerate" button — explicit user intent, unlike the
+  // implicit re-mount that used to cost them a real emit each time.
+  const [regenTick, setRegenTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -26,6 +46,26 @@ export function NoteEditor() {
         const nt = (sessionStorage.getItem('noteType') ?? 'admission') as NoteType;
         const validated: ParseFields = JSON.parse(sessionStorage.getItem('validated') ?? '{}');
         setNoteType(nt);
+
+        // Use the cached body if the user already generated this exact draft
+        // in this session and navigated away + back. Regenerating on every
+        // mount cost one full emit ($0.02-0.10) per accidental back-button
+        // tap. The cache key is (noteType + validated hash) to invalidate
+        // when either changes.
+        const cacheKey = `${nt}:${hashFields(validated)}`;
+        const cachedBody = sessionStorage.getItem('body');
+        const cachedKey = sessionStorage.getItem('bodyKey');
+        // regenTick > 0 means the user clicked "Regenerate" — always
+        // re-emit, don't take the cached body.
+        if (regenTick === 0 && cachedBody && cachedKey === cacheKey) {
+          if (cancelled) return;
+          setBody(cachedBody);
+          setStatus('ready');
+          return;
+        }
+
+        setStatus('gen');
+
         const continuityTz = sessionStorage.getItem('continuityTeudatZehut');
         const continuity = continuityTz ? await resolveContinuity(continuityTz) : null;
         const text = await generateNote(
@@ -36,6 +76,7 @@ export function NoteEditor() {
         if (cancelled) return;
         setBody(text);
         sessionStorage.setItem('body', text);
+        sessionStorage.setItem('bodyKey', cacheKey);
         setStatus('ready');
       } catch (e: unknown) {
         if (cancelled) return;
@@ -46,7 +87,7 @@ export function NoteEditor() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [regenTick]);
 
   useEffect(() => {
     if (body) sessionStorage.setItem('body', body);
@@ -135,9 +176,22 @@ export function NoteEditor() {
         onChange={(e) => setBody(e.target.value)}
         style={{ minHeight: 400, fontSize: 15, lineHeight: 1.6 }}
       />
-      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+      <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
         <button onClick={onCopy}>{copied ? '✓ הועתק' : 'העתק לצ׳מיליון'}</button>
         <button className="ghost" onClick={() => nav('/save')}>המשך לשמירה ←</button>
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => {
+            sessionStorage.removeItem('body');
+            sessionStorage.removeItem('bodyKey');
+            setRegenTick((t) => t + 1);
+          }}
+          style={{ marginInlineStart: 'auto', fontSize: 13 }}
+          title="צור טיוטה מחדש (בתשלום — שלח בקשה חדשה)"
+        >
+          🔄 צור מחדש
+        </button>
       </div>
     </section>
   );
