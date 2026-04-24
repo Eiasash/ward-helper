@@ -41,6 +41,25 @@ vi.mock('@/skills/loader', () => ({
   loadSkills: vi.fn(async () => ({})),
 }));
 
+// Passthrough mocks for the two modules driving the Settings path indicator.
+// Default behavior is identical to the real implementation; individual tests
+// override useApiKey / activePath to cover the 🟢/🟡 states.
+vi.mock('@/ui/hooks/useSettings', async () => {
+  const actual =
+    await vi.importActual<typeof import('@/ui/hooks/useSettings')>(
+      '@/ui/hooks/useSettings',
+    );
+  return { ...actual, useApiKey: vi.fn(actual.useApiKey) };
+});
+vi.mock('@/agent/client', async () => {
+  const actual =
+    await vi.importActual<typeof import('@/agent/client')>('@/agent/client');
+  return { ...actual, activePath: vi.fn(actual.activePath) };
+});
+
+import { useApiKey } from '@/ui/hooks/useSettings';
+import { activePath } from '@/agent/client';
+
 import { App } from '@/ui/App';
 import { Capture } from '@/ui/screens/Capture';
 import { Review } from '@/ui/screens/Review';
@@ -118,5 +137,35 @@ describe('Settings screen', () => {
   it('mounts without crashing (no saved API key, no passphrase)', async () => {
     expect(() => renderAt('/settings', <Settings />)).not.toThrow();
     await flushEffects();
+  });
+
+  it('shows 🟢 direct-path status when API key is set', async () => {
+    vi.mocked(useApiKey).mockReturnValue({
+      present: true,
+      save: vi.fn(async () => {}),
+      peek: vi.fn(async () => null),
+      clear: vi.fn(async () => {}),
+    });
+    vi.mocked(activePath).mockResolvedValue('direct');
+    renderAt('/settings', <Settings />);
+    await flushEffects();
+    expect(
+      screen.getByText('🟢 פנייה ישירה (api.anthropic.com)'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows 🟡 proxy-path status when no API key', async () => {
+    vi.mocked(useApiKey).mockReturnValue({
+      present: false,
+      save: vi.fn(async () => {}),
+      peek: vi.fn(async () => null),
+      clear: vi.fn(async () => {}),
+    });
+    vi.mocked(activePath).mockResolvedValue('proxy');
+    renderAt('/settings', <Settings />);
+    await flushEffects();
+    expect(
+      screen.getByText('🟡 Toranot proxy — פסק זמן 10 שניות'),
+    ).toBeInTheDocument();
   });
 });
