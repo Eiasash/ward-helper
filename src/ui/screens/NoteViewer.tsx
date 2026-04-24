@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { getNote, getPatient, deleteNote, type Note, type Patient } from '@/storage/indexed';
+import {
+  getNote,
+  getPatient,
+  deleteNote,
+  markNoteSent,
+  type Note,
+  type Patient,
+} from '@/storage/indexed';
 import { NOTE_LABEL } from '@/notes/templates';
 import { wrapForChameleon, auditChameleonRules } from '@/i18n/bidi';
 import { useBidiAudit } from '../hooks/useSettings';
@@ -56,9 +63,27 @@ export function NoteViewer() {
       await navigator.clipboard.writeText(cleanBody);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
+      // Optimistic mark — update local state first so the status line flips
+      // immediately, then persist in the background. If the IDB write fails,
+      // revert and surface the error; clipboard itself already succeeded.
+      const ts = Date.now();
+      const prev = note.sentToEmrAt;
+      setNote({ ...note, sentToEmrAt: ts, updatedAt: ts });
+      try {
+        await markNoteSent(note.id, ts);
+      } catch (e) {
+        setNote({ ...note, sentToEmrAt: prev });
+        setErr('סימון כנשלח נכשל: ' + (e as Error).message);
+      }
     } catch (e) {
       setErr('העתקה נכשלה: ' + (e as Error).message);
     }
+  }
+
+  function fmtDateTime(ts: number): string {
+    const d = new Date(ts);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
   async function onDelete() {
@@ -148,7 +173,9 @@ export function NoteViewer() {
       />
 
       <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-        <button onClick={onCopy}>{copied ? '✓ הועתק' : '📋 העתק ל-Chameleon'}</button>
+        <button onClick={onCopy}>
+          {copied ? '✓ הועתק ל-AZMA' : '📋 העתק ל-AZMA'}
+        </button>
         {note.type !== 'soap' && (
           <button className="ghost" onClick={onNewSoap}>+ SOAP היום</button>
         )}
@@ -161,6 +188,16 @@ export function NoteViewer() {
           🗑 מחק
         </button>
       </div>
+
+      {note.sentToEmrAt ? (
+        <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 8 }}>
+          ✓ הועתק ל-AZMA · {fmtDateTime(note.sentToEmrAt)}
+        </p>
+      ) : (
+        <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 8 }}>
+          ⚠ עדיין לא נשלח לאזמה — אחרי ההעתקה, בדוק שהפסטה הצליחה
+        </p>
+      )}
     </section>
   );
 }

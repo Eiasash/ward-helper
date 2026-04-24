@@ -10,6 +10,7 @@ import {
   deleteNote,
   getSettings,
   setSettings,
+  markNoteSent,
   resetDbForTests,
   type Patient,
 } from '@/storage/indexed';
@@ -119,6 +120,81 @@ describe('listNotesByTeudatZehut', () => {
     await putPatient({ id: 'new', name: 'Y', teudatZehut: tz, dob: '', room: null, tags: [], createdAt: 1, updatedAt: 50 });
     const out = await listNotesByTeudatZehut(tz);
     expect(out.patient?.id).toBe('new');
+  });
+});
+
+describe('Note.sentToEmrAt — schema v3', () => {
+  it('existing notes without sentToEmrAt deserialize cleanly (undefined, no crash)', async () => {
+    // Seed at v2 with a raw Note object that omits sentToEmrAt — simulates
+    // what's in every installed PWA's IDB before this upgrade lands.
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open('ward-helper', 2);
+      req.onupgradeneeded = (e) => {
+        const db = req.result;
+        const oldV = (e as IDBVersionChangeEvent).oldVersion;
+        if (oldV < 1) {
+          db.createObjectStore('patients', { keyPath: 'id' });
+          const notes = db.createObjectStore('notes', { keyPath: 'id' });
+          notes.createIndex('by-patient', 'patientId');
+          db.createObjectStore('settings');
+        }
+        if (oldV < 2) {
+          const tx = req.transaction!;
+          const patients = tx.objectStore('patients');
+          if (!patients.indexNames.contains('by-tz')) {
+            patients.createIndex('by-tz', 'teudatZehut', { unique: false });
+          }
+        }
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('notes', 'readwrite');
+        tx.objectStore('notes').put({
+          id: 'legacy-1',
+          patientId: 'p1',
+          type: 'admission',
+          bodyHebrew: 'קבלה ישנה',
+          structuredData: {},
+          createdAt: 1,
+          updatedAt: 1,
+          // no sentToEmrAt — this is the whole point of the test
+        });
+        tx.oncomplete = () => {
+          db.close();
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
+      };
+      req.onerror = () => reject(req.error);
+    });
+
+    // Read via the app code path — opens at v3, runs upgrade.
+    const n = await getNote('legacy-1');
+    expect(n).toBeDefined();
+    expect(n!.bodyHebrew).toBe('קבלה ישנה');
+    expect(n!.sentToEmrAt).toBeUndefined();
+  });
+
+  it('markNoteSent sets sentToEmrAt and bumps updatedAt', async () => {
+    await putNote({
+      id: 'n-mark',
+      patientId: 'p-mark',
+      type: 'soap',
+      bodyHebrew: 'body',
+      structuredData: {},
+      createdAt: 100,
+      updatedAt: 100,
+      sentToEmrAt: null,
+    });
+    await markNoteSent('n-mark', 12345);
+    const n = await getNote('n-mark');
+    expect(n?.sentToEmrAt).toBe(12345);
+    expect(n?.updatedAt).toBe(12345);
+  });
+
+  it('markNoteSent on a missing note is a silent no-op', async () => {
+    await expect(markNoteSent('does-not-exist')).resolves.toBeUndefined();
+    expect(await listNotes('whatever')).toEqual([]);
   });
 });
 
