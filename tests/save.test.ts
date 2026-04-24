@@ -1,0 +1,127 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import 'fake-indexeddb/auto';
+
+// Mock cloud + crypto + costs + settings hook BEFORE importing saveBoth, so
+// the module under test resolves the mocked versions.
+vi.mock('@/storage/cloud', () => ({
+  encryptForCloud: vi.fn(async (_obj: unknown, _key: CryptoKey, _salt: Uint8Array) => ({
+    ciphertext: new Uint8Array([1, 2, 3]),
+    iv: new Uint8Array([4, 5, 6]),
+    salt: new Uint8Array([7, 8, 9]),
+  })),
+  pushBlob: vi.fn(async () => undefined),
+}));
+vi.mock('@/crypto/pbkdf2', async (orig) => {
+  const real = (await orig()) as Record<string, unknown>;
+  return {
+    ...real,
+    deriveAesKey: vi.fn(async () => ({ type: 'secret' } as unknown as CryptoKey)),
+  };
+});
+vi.mock('@/agent/costs', () => ({
+  finalizeSessionFor: vi.fn(),
+}));
+vi.mock('@/ui/hooks/useSettings', () => ({
+  getPassphrase: vi.fn(() => null),
+}));
+
+import { saveBoth } from '@/notes/save';
+import { listPatients, listNotes, resetDbForTests } from '@/storage/indexed';
+import * as cloud from '@/storage/cloud';
+import * as costs from '@/agent/costs';
+import * as settings from '@/ui/hooks/useSettings';
+
+beforeEach(async () => {
+  // resetDbForTests only closes the connection; we need to delete the DB
+  // to actually wipe data between test cases.
+  await resetDbForTests();
+  await new Promise<void>((resolve, reject) => {
+    const req = indexedDB.deleteDatabase('ward-helper');
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => resolve();
+  });
+  vi.clearAllMocks();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('saveBoth — local-only path (no passphrase)', () => {
+  it('writes patient + note to IndexedDB and returns both ids', async () => {
+    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue(null);
+    const result = await saveBoth(
+      { name: 'דוד כהן', teudatZehut: '123456789', age: 80, room: '12A' },
+      'admission',
+      'גוף ההסבה בעברית',
+    );
+    expect(result.patientId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(result.noteId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(result.cloudPushed).toBe(false);
+
+    const patients = await listPatients();
+    const [p] = patients;
+    expect(p).toBeDefined();
+    expect(p!.name).toBe('דוד כהן');
+    expect(p!.teudatZehut).toBe('123456789');
+    expect(p!.room).toBe('12A');
+    const notes = await listNotes(result.patientId);
+    expect(notes).toHaveLength(1);
+    const [n] = notes;
+    expect(n!.patientId).toBe(result.patientId);
+    expect(n!.type).toBe('admission');
+    expect(n!.bodyHebrew).toBe('גוף ההסבה בעברית');
+  });
+
+  it('does NOT call cloud encrypt/push when no passphrase is set', async () => {
+    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue(null);
+    await saveBoth({ name: 'X' }, 'consult', 'body');
+    expect(cloud.encryptForCloud).not.toHaveBeenCalled();
+    expect(cloud.pushBlob).not.toHaveBeenCalled();
+  });
+
+  it('finalizes the cost session against the new patientId', async () => {
+    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue(null);
+    const result = await saveBoth({ name: 'Y' }, 'discharge', 'body');
+    expect(costs.finalizeSessionFor).toHaveBeenCalledWith(result.patientId);
+  });
+
+  it('handles missing optional fields without crashing', async () => {
+    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue(null);
+    const result = await saveBoth({}, 'case', '');
+    const [p] = await listPatients();
+    expect(p).toBeDefined();
+    expect(p!.name).toBe('');
+    expect(p!.teudatZehut).toBe('');
+    expect(p!.room).toBeNull();
+    expect(result.cloudPushed).toBe(false);
+  });
+});
+
+describe('saveBoth — cloud-push path (passphrase set)', () => {
+  it('encrypts patient + note and pushes both blobs when passphrase present', async () => {
+    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue('correct horse battery staple');
+    const result = await saveBoth({ name: 'Z' }, 'admission', 'body');
+    expect(result.cloudPushed).toBe(true);
+    expect(cloud.encryptForCloud).toHaveBeenCalledTimes(2);
+    expect(cloud.pushBlob).toHaveBeenCalledTimes(2);
+    const calls = (cloud.pushBlob as ReturnType<typeof vi.fn>).mock.calls;
+    const types = calls.map((c) => c[0]);
+    expect(types.sort()).toEqual(['note', 'patient']);
+  });
+
+  it('still saves locally even if cloud push throws (cloud is best-effort)', async () => {
+    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue('pass');
+    (cloud.pushBlob as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('PGRST205: table does not exist'),
+    );
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = await saveBoth({ name: 'fallback' }, 'admission', 'body');
+    expect(result.cloudPushed).toBe(false);
+    const patients = await listPatients();
+    expect(patients).toHaveLength(1); // local persist still happened
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+});
