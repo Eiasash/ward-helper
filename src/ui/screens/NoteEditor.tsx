@@ -177,7 +177,7 @@ export function NoteEditor() {
         style={{ minHeight: 400, fontSize: 15, lineHeight: 1.6 }}
       />
       <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-        <button onClick={onCopy}>{copied ? '✓ הועתק' : 'העתק לצ׳מיליון'}</button>
+        <button onClick={onCopy}>{copied ? '✓ הועתק ל-AZMA' : '📋 העתק ל-AZMA'}</button>
         <button className="ghost" onClick={() => nav('/save')}>המשך לשמירה ←</button>
         <button
           type="button"

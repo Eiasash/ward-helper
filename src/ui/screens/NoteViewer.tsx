@@ -174,7 +174,7 @@ export function NoteViewer() {
 
       <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
         <button onClick={onCopy}>
-          {copied ? '✓ הועתק לצ׳מיליון' : '📋 העתק לצ׳מיליון'}
+          {copied ? '✓ הועתק ל-AZMA' : '📋 העתק ל-AZMA'}
         </button>
         {note.type !== 'soap' && (
           <button className="ghost" onClick={onNewSoap}>+ SOAP היום</button>
@@ -191,11 +191,11 @@ export function NoteViewer() {
 
       {note.sentToEmrAt ? (
         <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 8 }}>
-          ✓ הועתק לצ׳מיליון · {fmtDateTime(note.sentToEmrAt)}
+          ✓ הועתק ל-AZMA · {fmtDateTime(note.sentToEmrAt)}
         </p>
       ) : (
         <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 8 }}>
-          ⚠ עדיין לא נשלח — אחרי ההעתקה, בדוק שהפסטה הצליחה
+          ⚠ עדיין לא נשלח לאזמה — אחרי ההעתקה, בדוק שהפסטה הצליחה
         </p>
       )}
     </section>
