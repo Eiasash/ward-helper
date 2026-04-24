@@ -35,6 +35,25 @@ describe('base64ToBytes', () => {
   it('handles empty input safely', () => {
     expect(base64ToBytes('').length).toBe(0);
   });
+
+  it('throws a clear error on odd-length hex bytea (truncated payload)', () => {
+    // Missing the last hex nibble — previously this was silently dropped,
+    // corrupting the ciphertext / IV / salt on restore.
+    expect(() => base64ToBytes('\\x68656c6c6')).toThrow(/odd-length hex/);
+  });
+
+  it('throws a clear error on malformed base64 input', () => {
+    // atob() rejects invalid base64. We wrap the error so restore UIs can
+    // surface it instead of crashing with "InvalidCharacterError".
+    expect(() => base64ToBytes('not valid base64 @@@')).toThrow(/malformed bytea/);
+  });
+
+  it('preserves every byte of hex bytea regardless of length parity intent', () => {
+    // Sanity check: a 3-byte hex payload (even nibble count) round-trips.
+    // \x010203 === 3 bytes: 0x01, 0x02, 0x03
+    const bytes = base64ToBytes('\\x010203');
+    expect(Array.from(bytes)).toEqual([1, 2, 3]);
+  });
 });
 
 describe('pullAllBlobs', () => {
