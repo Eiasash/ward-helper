@@ -6,6 +6,7 @@ import type { NoteType } from '@/storage/indexed';
 import { NOTE_LABEL } from '@/notes/templates';
 import { clearShots } from '@/camera/session';
 import { sendNoteEmail, defaultEmailSubject } from '@/notes/email';
+import { openMailCompose, openShareSheet } from '@/notes/share';
 import type { ParseFields } from '@/agent/tools';
 
 type Status = 'idle' | 'saving' | 'done' | 'error';
@@ -73,6 +74,18 @@ export function Save() {
     }
   }
 
+  function onMailto() {
+    if (!snapshot || !emailTarget) return;
+    const subject = defaultEmailSubject(NOTE_LABEL[snapshot.noteType], snapshot.patientName);
+    openMailCompose({ to: emailTarget, subject, body: snapshot.body });
+  }
+
+  async function onShare() {
+    if (!snapshot) return;
+    const subject = defaultEmailSubject(NOTE_LABEL[snapshot.noteType], snapshot.patientName);
+    await openShareSheet({ title: subject, text: snapshot.body });
+  }
+
   if (status === 'done') {
     return (
       <section>
@@ -111,33 +124,42 @@ export function Save() {
         )}
 
         {emailTarget && snapshot && (
-          <div
-            style={{
-              marginTop: 12,
-              padding: 10,
-              background: 'var(--card-alt, #f4f7fa)',
-              borderRadius: 8,
-            }}
-          >
+          <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {sendStatus === 'sent' ? (
               <p style={{ margin: 0 }}>
                 ✉ נשלח ל-<bdi dir="ltr">{emailTarget}</bdi>
               </p>
             ) : (
               <>
+                <button className="ghost" onClick={onMailto}>
+                  ✉ מייל מהמכשיר
+                </button>
+                {typeof navigator !== 'undefined' && 'share' in navigator && (
+                  <button className="ghost" onClick={onShare}>
+                    ↗ שתף
+                  </button>
+                )}
                 <button
                   onClick={onSendEmail}
                   disabled={sendStatus === 'sending'}
-                  style={{ marginBottom: sendErr ? 6 : 0 }}
                 >
                   {sendStatus === 'sending'
                     ? 'שולח...'
                     : sendStatus === 'error'
                       ? 'נסה שוב — שלח במייל'
-                      : '✉ שלח במייל'}
+                      : '✉ שלח במייל (Gmail)'}
                 </button>
                 {sendErr && (
-                  <p style={{ color: 'var(--red)', fontSize: 12, margin: 0 }}>{sendErr}</p>
+                  <p
+                    style={{
+                      color: 'var(--red)',
+                      fontSize: 12,
+                      margin: 0,
+                      flexBasis: '100%',
+                    }}
+                  >
+                    {sendErr}
+                  </p>
                 )}
               </>
             )}
