@@ -130,9 +130,69 @@ describe('Save screen', () => {
 });
 
 describe('History screen', () => {
+  beforeEach(async () => {
+    await resetDbForTests();
+  });
+
   it('mounts and shows search-input affordance even when no patients exist', async () => {
     expect(() => renderAt('/history', <History />)).not.toThrow();
     await flushEffects();
+  });
+
+  it('search box matches note body content, not just patient name', async () => {
+    await putPatient({
+      id: 'p-kr',
+      name: 'דוד לוי',
+      teudatZehut: '111111111',
+      dob: '1960-01-01',
+      room: null,
+      tags: [],
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    await putPatient({
+      id: 'p-su',
+      name: 'שרה כהן',
+      teudatZehut: '222222222',
+      dob: '1955-05-05',
+      room: null,
+      tags: [],
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    await putNote({
+      id: 'n-kr',
+      patientId: 'p-kr',
+      type: 'admission',
+      bodyHebrew: 'קריאטינין 2.3 > 1.8, AKI על רקע התייבשות',
+      structuredData: {},
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    await putNote({
+      id: 'n-su',
+      patientId: 'p-su',
+      type: 'admission',
+      bodyHebrew: 'סוכרת לא מאוזנת, HbA1c 9.2',
+      structuredData: {},
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    renderAt('/history', <History />);
+    await flushEffects();
+
+    expect(screen.getByText('דוד לוי')).toBeInTheDocument();
+    expect(screen.getByText('שרה כהן')).toBeInTheDocument();
+
+    const searchBox = screen.getByRole('textbox');
+    await act(async () => {
+      fireEvent.change(searchBox, { target: { value: 'קריאטינין' } });
+    });
+    await flushEffects();
+
+    expect(screen.getByText('דוד לוי')).toBeInTheDocument();
+    expect(screen.queryByText('שרה כהן')).not.toBeInTheDocument();
   });
 });
 

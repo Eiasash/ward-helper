@@ -140,6 +140,16 @@ export async function listNotes(patientId: string): Promise<Note[]> {
   return db.getAllFromIndex('notes', 'by-patient', patientId);
 }
 
+/**
+ * One-shot fetch of every note in the DB. Used by History to group into a
+ * patient→notes map for render + search without N per-patient round-trips.
+ * The dataset is bounded (hundreds of notes max in real use) — a single
+ * getAll is strictly cheaper than N index scans.
+ */
+export async function listAllNotes(): Promise<Note[]> {
+  return (await getDb()).getAll('notes');
+}
+
 export async function getNote(id: string): Promise<Note | undefined> {
   return (await getDb()).get('notes', id);
 }

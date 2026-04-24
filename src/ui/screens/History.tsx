@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { listPatients, listNotes, type Patient, type Note } from '@/storage/indexed';
+import { listPatients, listAllNotes, type Patient, type Note } from '@/storage/indexed';
 import { NOTE_LABEL } from '@/notes/templates';
 import { loadPerPatient, type Totals } from '@/agent/costs';
 
@@ -36,18 +36,19 @@ export function History() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const ps = await listPatients();
-      ps.sort((a, b) => b.updatedAt - a.updatedAt);
+      // One round-trip each for patients and notes; group locally. Previously
+      // this was listNotes(id) per patient = N round-trips on every mount.
+      const [ps, allNotes] = await Promise.all([listPatients(), listAllNotes()]);
       if (cancelled) return;
+      ps.sort((a, b) => b.updatedAt - a.updatedAt);
       setPatients(ps);
       const m: Record<string, Note[]> = {};
-      for (const p of ps) {
-        const ns = await listNotes(p.id);
-        // Newest note first inside each patient card.
-        ns.sort((a, b) => b.updatedAt - a.updatedAt);
-        m[p.id] = ns;
+      for (const n of allNotes) {
+        (m[n.patientId] ??= []).push(n);
       }
-      if (cancelled) return;
+      for (const id in m) {
+        m[id]!.sort((a, b) => b.updatedAt - a.updatedAt);
+      }
       setNotesByPid(m);
       setCostsByPid(loadPerPatient());
     })();
@@ -56,17 +57,17 @@ export function History() {
     };
   }, []);
 
-  const filtered = useMemo(
-    () =>
-      patients.filter(
-        (p) =>
-          !q ||
-          p.name.includes(q) ||
-          p.teudatZehut.includes(q) ||
-          (p.room ?? '').includes(q),
-      ),
-    [patients, q],
-  );
+  const filtered = useMemo(() => {
+    if (!q) return patients;
+    const qLower = q.toLowerCase();
+    return patients.filter((p) => {
+      if (p.name.toLowerCase().includes(qLower)) return true;
+      if (p.teudatZehut.includes(q)) return true;
+      if ((p.room ?? '').toLowerCase().includes(qLower)) return true;
+      const notes = notesByPid[p.id] ?? [];
+      return notes.some((n) => n.bodyHebrew.toLowerCase().includes(qLower));
+    });
+  }, [patients, notesByPid, q]);
 
   return (
     <section>
