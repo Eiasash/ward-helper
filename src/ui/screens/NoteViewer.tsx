@@ -35,16 +35,22 @@ export function NoteViewer() {
       setErr('הערה לא נמצאה');
       return;
     }
+    let cancelled = false;
     (async () => {
       const n = await getNote(id);
+      if (cancelled) return;
       if (!n) {
         setErr('הערה לא נמצאה');
         return;
       }
       setNote(n);
       const p = await getPatient(n.patientId);
+      if (cancelled) return;
       setPatient(p ?? null);
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   const cleanBody = useMemo(

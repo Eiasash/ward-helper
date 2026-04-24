@@ -142,7 +142,12 @@ export async function pullAllBlobs(): Promise<CloudBlobRow[]> {
 export function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
   // Supabase sometimes prefixes hex-encoded bytea with `\x`; strip it.
   const clean = b64.startsWith('\\x') ? hexToBase64(b64.slice(2)) : b64;
-  const bin = atob(clean);
+  let bin: string;
+  try {
+    bin = atob(clean);
+  } catch {
+    throw new Error('cloud restore: malformed bytea (expected base64 or \\xHEX)');
+  }
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
@@ -150,6 +155,12 @@ export function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
 
 function hexToBase64(hex: string): string {
   const clean = hex.replace(/[^0-9a-fA-F]/g, '');
+  // A valid bytea hex stream must have an even number of nibbles. An odd
+  // length means the payload is truncated — fail loudly rather than silently
+  // drop the last half-byte.
+  if (clean.length % 2 !== 0) {
+    throw new Error('cloud restore: odd-length hex bytea (truncated payload)');
+  }
   const bytes = new Uint8Array(clean.length / 2);
   for (let i = 0; i < bytes.length; i++) {
     bytes[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
