@@ -4,12 +4,6 @@ import { resolveContinuity, EPISODE_WINDOW_MS } from '@/notes/continuity';
 
 beforeEach(async () => {
   await resetDbForTests();
-  await new Promise<void>((resolve) => {
-    const req = indexedDB.deleteDatabase('ward-helper');
-    req.onsuccess = () => resolve();
-    req.onerror = () => resolve();
-    req.onblocked = () => resolve();
-  });
 });
 
 function mkPatient(overrides: Partial<Patient> = {}): Patient {

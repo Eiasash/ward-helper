@@ -89,10 +89,19 @@ export async function resetDbForTests(): Promise<void> {
     try {
       (await dbPromise).close();
     } catch {
-      /* ignore */
+      /* connection already closed — fine */
     }
     dbPromise = null;
   }
+  await new Promise<void>((resolve, reject) => {
+    const req = indexedDB.deleteDatabase('ward-helper');
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error ?? new Error('deleteDatabase failed'));
+    // onblocked: fake-indexeddb can fire this spuriously. Rejecting would
+    // deadlock the suite; in a real browser a blocked delete indicates a
+    // leaked connection and would warrant escalation.
+    req.onblocked = () => resolve();
+  });
 }
 
 export async function putPatient(p: Patient): Promise<void> {
