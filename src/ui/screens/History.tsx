@@ -123,7 +123,9 @@ export function History() {
                   className="note-row"
                   aria-label={`פתח ${NOTE_LABEL[n.type]}`}
                 >
-                  <span style={{ fontSize: 13 }}>{NOTE_LABEL[n.type]}</span>
+                  <span style={{ fontSize: 13 }}>
+                    {n.sentToEmrAt ? '✓ ' : ''}{NOTE_LABEL[n.type]}
+                  </span>
                   <span style={{ fontSize: 12, color: 'var(--muted)' }}>
                     {new Date(n.updatedAt).toLocaleDateString('he-IL')}
                   </span>
