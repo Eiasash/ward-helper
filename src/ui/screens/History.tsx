@@ -79,14 +79,17 @@ export function History() {
         onChange={(e) => setQ(e.target.value)}
       />
 
-      {patients.length === 0 && (
-        <p style={{ color: 'var(--muted)', marginTop: 16 }}>
-          עדיין אין רשומות מקומיות.
-        </p>
-      )}
-
-      {filtered.length === 0 && patients.length > 0 && (
-        <p style={{ color: 'var(--muted)', marginTop: 16 }}>אין התאמות לחיפוש.</p>
+      {filtered.length === 0 && (
+        <div className="empty">
+          <div className="empty-icon">📋</div>
+          <p className="empty-title">
+            {patients.length === 0 ? 'אין רשומות עדיין' : 'אין התאמות לחיפוש'}
+          </p>
+          <p className="empty-sub">
+            {patients.length === 0 ? 'צלם AZMA כדי להתחיל' : 'נסה חיפוש אחר'}
+          </p>
+          {patients.length === 0 && <button onClick={() => nav('/')}>↤ צלם</button>}
+        </div>
       )}
 
       {filtered.map((p) => {

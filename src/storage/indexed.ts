@@ -184,6 +184,43 @@ export async function getSettings(): Promise<Settings | undefined> {
   return (await getDb()).get('settings', 'singleton');
 }
 
+export interface DbStats {
+  patients: number;
+  notes: number;
+  estimatedBytes: number;
+  oldestNoteAt: number | null;
+  newestNoteAt: number | null;
+}
+
+/**
+ * Lightweight stats for the debug panel. No per-record decryption — bytes
+ * are a rough estimate (`patients*256 + Σ note.body.length*2 + 256`) so the
+ * user can eyeball whether local storage is bloating up.
+ */
+export async function getDbStats(): Promise<DbStats> {
+  const db = await getDb();
+  const patients = await db.count('patients');
+  const notes = (await db.getAll('notes')) as Note[];
+  let estimatedBytes = patients * 256;
+  let oldest: number | null = null;
+  let newest: number | null = null;
+  for (const n of notes) {
+    estimatedBytes += (n.bodyHebrew?.length ?? 0) * 2 + 256;
+    const t = n.updatedAt ?? n.createdAt ?? 0;
+    if (t) {
+      if (oldest === null || t < oldest) oldest = t;
+      if (newest === null || t > newest) newest = t;
+    }
+  }
+  return {
+    patients,
+    notes: notes.length,
+    estimatedBytes,
+    oldestNoteAt: oldest,
+    newestNoteAt: newest,
+  };
+}
+
 export async function listNotesByTeudatZehut(
   teudatZehut: string,
 ): Promise<{ patient: Patient | null; notes: Note[] }> {
