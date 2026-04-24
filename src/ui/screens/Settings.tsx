@@ -5,11 +5,13 @@ import {
   getPassphrase,
   clearPassphrase,
   useBidiAudit,
+  useDebugPanel,
   useEmailTarget,
 } from '../hooks/useSettings';
 import { load as loadCosts, reset as resetCosts } from '@/agent/costs';
 import { restoreFromCloud, type RestoreResult } from '@/notes/save';
 import { activePath, type RequestPath } from '@/agent/client';
+import { DebugPanel } from '../components/DebugPanel';
 
 export function Settings() {
   const { present, save, clear } = useApiKey();
@@ -17,6 +19,7 @@ export function Settings() {
   const [pass, setPass] = useState('');
   const [msg, setMsg] = useState('');
   const [bidiAuditOn, setBidiAuditOn] = useBidiAudit();
+  const [debugOn, setDebugOn] = useDebugPanel();
   const [emailTarget, setEmailTargetValue] = useEmailTarget();
   const [emailDraft, setEmailDraft] = useState(emailTarget);
   const [restoring, setRestoring] = useState(false);
@@ -267,6 +270,17 @@ export function Settings() {
       <p style={{ color: 'var(--muted)', fontSize: 12, marginTop: 4 }}>
         מציג הפרות שהמודל הפיק לפני ה-sanitizer. מיועד לכיול prompts. השאר כבוי בשימוש קליני.
       </p>
+
+      <h2>דיבוג</h2>
+      <label className="toggle-row">
+        <input
+          type="checkbox"
+          checked={debugOn}
+          onChange={(e) => setDebugOn(e.target.checked)}
+        />
+        <span>הצג מידע debug</span>
+      </label>
+      {debugOn && <DebugPanel />}
 
       {msg && <p style={{ color: 'var(--muted)', marginTop: 24 }}>{msg}</p>}
     </section>

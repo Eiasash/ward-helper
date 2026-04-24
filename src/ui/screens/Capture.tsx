@@ -22,6 +22,9 @@ const NOTE_TYPES: { type: NoteType; label: string }[] = [
   { type: 'soap', label: 'SOAP יומי' },
 ];
 
+export const IMAGE_SOFT_CAP = 6;
+export const IMAGE_HARD_CAP = 10;
+
 type Mode = 'camera' | 'paste';
 
 export function Capture() {
@@ -30,6 +33,7 @@ export function Capture() {
   const [mode, setMode] = useState<Mode>('camera');
   const [shots, setShots] = useState<readonly Shot[]>(listShots());
   const [paste, setPaste] = useState<string>(getPastedText() ?? '');
+  const [pickWarn, setPickWarn] = useState('');
   // null until the first async check resolves — avoids flashing the banner.
   const [keyPresent, setKeyPresent] = useState<boolean | null>(null);
 
@@ -52,8 +56,21 @@ export function Capture() {
   async function onPickFiles(e: ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    // Handle all selected files: 1 from camera OR N from gallery multi-select.
-    const readers = Array.from(files).map(
+    const current = listShots().length;
+    const remaining = IMAGE_HARD_CAP - current;
+    if (remaining <= 0) {
+      setPickWarn(`הגעת לתקרה של ${IMAGE_HARD_CAP} תמונות.`);
+      e.target.value = '';
+      return;
+    }
+    const toAdd = Array.from(files).slice(0, remaining);
+    const dropped = files.length - toAdd.length;
+    if (dropped > 0) {
+      setPickWarn(`הגעת לתקרה של ${IMAGE_HARD_CAP} תמונות. ${dropped} לא נוספו.`);
+    } else {
+      setPickWarn('');
+    }
+    const readers = toAdd.map(
       (f) =>
         new Promise<string>((res, rej) => {
           const r = new FileReader();
@@ -96,7 +113,22 @@ export function Capture() {
     clearShots();
     setShots([]);
     setPaste('');
+    setPickWarn('');
   }
+
+  const n = shots.length;
+  const pillClass =
+    n <= IMAGE_SOFT_CAP
+      ? 'pill pill-info'
+      : n < IMAGE_HARD_CAP
+        ? 'pill pill-warn'
+        : 'pill pill-err';
+  const pillText =
+    n <= IMAGE_SOFT_CAP
+      ? `${n} תמונות`
+      : n < IMAGE_HARD_CAP
+        ? `${n} תמונות — אטי יותר, אך פעיל`
+        : `${n}/${IMAGE_HARD_CAP} — תקרה`;
 
   return (
     <section>
@@ -176,64 +208,47 @@ export function Capture() {
                 onChange={onPickFiles}
               />
             </label>
-            {shots.length > 0 && shots.length <= 3 && (
-              <span style={{ color: 'var(--muted)', fontSize: 14 }}>
-                {shots.length} תמונות
-              </span>
-            )}
-            {shots.length > 3 && (
-              <span
-                style={{
-                  color: 'var(--warn)',
-                  fontSize: 14,
-                  fontWeight: 500,
-                }}
-              >
-                ⚠ {shots.length} תמונות - עלול לגרום ל-timeout. מומלץ 3 או פחות.
-              </span>
-            )}
+            {n > 0 && <span className={pillClass}>{pillText}</span>}
           </div>
 
-          {/* Phone-photo-of-monitor tip — shown only on the first capture
-              session (when there are no shots yet AND there's nothing
-              queued). Deliberately small; doesn't nag. */}
-          {shots.length === 0 && (
-            <p
-              style={{
-                color: 'var(--muted)',
-                fontSize: 12,
-                marginTop: 10,
-                lineHeight: 1.4,
-              }}
-            >
-              טיפ: לצלם מסך מקביל למצלמה, בהירות גבוהה, הפלאש כבוי. הטלפון
-              מול הצג — לא מהצד. המערכת מבינה גם תמונות מזווית, אבל מקבילות
-              יותר → זיהוי טוב יותר של ת.ז. וערכים.
-            </p>
+          {pickWarn && (
+            <div className="pill pill-warn" style={{ marginBlock: 4 }}>
+              {pickWarn}
+            </div>
           )}
 
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(2, 1fr)',
-              gap: 8,
-              marginTop: 16,
-            }}
-          >
-            {shots.map((s) => (
-              <div key={s.id} className="shot-thumb">
-                <img src={s.blobUrl} alt="shot" />
-                <button
-                  type="button"
-                  className="shot-delete"
-                  aria-label="הסר תמונה"
-                  onClick={() => onDeleteShot(s.id)}
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
-          </div>
+          {n === 0 ? (
+            <div className="empty">
+              <div className="empty-icon">📷</div>
+              <p className="empty-title">אין תמונות AZMA</p>
+              <p className="empty-sub">
+                עד {IMAGE_HARD_CAP} תמונות — כפתור "הוסף תמונה" למטה
+              </p>
+            </div>
+          ) : (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, 1fr)',
+                gap: 8,
+                marginTop: 16,
+              }}
+            >
+              {shots.map((s) => (
+                <div key={s.id} className="shot-thumb">
+                  <img src={s.blobUrl} alt="shot" />
+                  <button
+                    type="button"
+                    className="shot-delete"
+                    aria-label="הסר תמונה"
+                    onClick={() => onDeleteShot(s.id)}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       ) : (
         <textarea
