@@ -21,6 +21,14 @@ export interface Note {
   structuredData: Record<string, unknown>;
   createdAt: number;
   updatedAt: number;
+  /**
+   * Timestamp (ms) when the user copied this note to the Chameleon clipboard.
+   * Optional + nullable: old rows written under schema v2 have the field
+   * absent → reads back as undefined, which the UI treats as "not sent".
+   * A one-time backfill to `null` would be a needless IDB rewrite on every
+   * existing note.
+   */
+  sentToEmrAt?: number | null;
 }
 
 export interface Settings {
@@ -41,14 +49,20 @@ let dbPromise: Promise<IDBPDatabase> | null = null;
 // loops. If you need to migrate data, use a cursor and batch; don't
 // getAll()/putAll() in one go on a user who has 500 notes.
 //
-// Current schema (v2):
+// Current schema (v3):
 //   patients [keyPath: id]
 //   notes    [keyPath: id, index: by-patient (patientId), by-tz (teudatZehut)]
 //   settings [no keyPath, uses string keys ('singleton')]
 //
 // The by-tz index was added in v2 to make listNotesByTeudatZehut O(1)
 // instead of O(N_patients) on every SOAP continuity resolve.
-const DB_VERSION = 2;
+//
+// v3 introduces Note.sentToEmrAt (optional, non-indexed). The object store
+// doesn't change — IDB stores free-form objects, so a new optional field
+// needs no schema work. We still bump DB_VERSION: it documents that the
+// Note shape changed, future indexes on sentToEmrAt branch off v3, and
+// any data-migration for old notes would land in the v3 upgrade block.
+const DB_VERSION = 3;
 
 export function getDb(): Promise<IDBPDatabase> {
   if (!dbPromise) {
@@ -77,6 +91,11 @@ export function getDb(): Promise<IDBPDatabase> {
           if (!patients.indexNames.contains('by-tz')) {
             patients.createIndex('by-tz', 'teudatZehut', { unique: false });
           }
+        }
+        if (oldVersion < 3) {
+          // Schema unchanged — Note.sentToEmrAt is an optional non-indexed
+          // field. Block kept intentionally so future v3 data migrations
+          // (backfills, index adds on sentToEmrAt) have a landing spot.
         }
       },
     });
@@ -131,6 +150,20 @@ export async function getPatient(id: string): Promise<Patient | undefined> {
 
 export async function deleteNote(id: string): Promise<void> {
   await (await getDb()).delete('notes', id);
+}
+
+/**
+ * Mark a note as copied to the Chameleon clipboard. Bumps both sentToEmrAt
+ * and updatedAt — the copy is an interaction with the note and History
+ * sorts by updatedAt, so just-sent notes float to the top naturally.
+ * Missing-note is a silent no-op (the user may have deleted the note
+ * mid-copy on another tab).
+ */
+export async function markNoteSent(id: string, ts: number = Date.now()): Promise<void> {
+  const db = await getDb();
+  const note = (await db.get('notes', id)) as Note | undefined;
+  if (!note) return;
+  await db.put('notes', { ...note, sentToEmrAt: ts, updatedAt: ts });
 }
 
 export async function setSettings(s: Settings): Promise<void> {
