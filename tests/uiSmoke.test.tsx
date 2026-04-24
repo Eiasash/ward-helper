@@ -13,8 +13,8 @@
  * issue real network calls during mount.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, act } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { render, screen, cleanup, act, fireEvent } from '@testing-library/react';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import 'fake-indexeddb/auto';
 
 /** Drain microtasks + the next macro-task so any setState scheduled by mount
@@ -68,7 +68,8 @@ import { Save } from '@/ui/screens/Save';
 import { History } from '@/ui/screens/History';
 import { Settings } from '@/ui/screens/Settings';
 import { PriorNotesBanner } from '@/ui/components/PriorNotesBanner';
-import { putPatient, putNote, resetDbForTests } from '@/storage/indexed';
+import { NoteViewer } from '@/ui/screens/NoteViewer';
+import { putPatient, putNote, getNote, resetDbForTests } from '@/storage/indexed';
 
 beforeEach(() => {
   sessionStorage.clear();
@@ -189,6 +190,64 @@ describe('PriorNotesBanner', () => {
     );
     await flushEffects();
     expect(screen.queryByText(/רישומים קודמים/)).not.toBeInTheDocument();
+  });
+});
+
+describe('NoteViewer — mark-on-copy', () => {
+  beforeEach(async () => {
+    await resetDbForTests();
+  });
+
+  it('copy button marks the note as sent (persists sentToEmrAt to IDB)', async () => {
+    await putPatient({
+      id: 'p-copy',
+      name: 'שרה כהן',
+      teudatZehut: '222222222',
+      dob: '1950-05-05',
+      room: null,
+      tags: [],
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    await putNote({
+      id: 'n-copy',
+      patientId: 'p-copy',
+      type: 'soap',
+      bodyHebrew: 'S: כאב ראש\nO: ...\nA: ...\nP: ...',
+      structuredData: {},
+      createdAt: 2,
+      updatedAt: 2,
+      sentToEmrAt: null,
+    });
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/note/n-copy']}>
+        <Routes>
+          <Route path="/note/:id" element={<NoteViewer />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await flushEffects();
+    // Pre-copy: the unsent hint is visible.
+    expect(screen.getByText(/עדיין לא נשלח/)).toBeInTheDocument();
+
+    const copyBtn = screen.getByRole('button', { name: /העתק לצ׳מיליון/ });
+    await act(async () => {
+      fireEvent.click(copyBtn);
+    });
+    await flushEffects();
+
+    expect(writeText).toHaveBeenCalledTimes(1);
+    // Status line flipped to "✓ הועתק לצ׳מיליון · ..."
+    expect(screen.getByText(/✓ הועתק לצ׳מיליון · /)).toBeInTheDocument();
+    // And persisted to IDB.
+    const after = await getNote('n-copy');
+    expect(typeof after?.sentToEmrAt).toBe('number');
   });
 });
 
