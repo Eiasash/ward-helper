@@ -7,6 +7,7 @@ import { NOTE_LABEL } from '@/notes/templates';
 import { resolveContinuity } from '@/notes/continuity';
 import { auditChameleonRules, sanitizeForChameleon } from '@/i18n/bidi';
 import { useBidiAudit } from '../hooks/useSettings';
+import { snapshot as debugSnapshot } from '@/agent/debugLog';
 
 type Status = 'gen' | 'ready' | 'error';
 
@@ -132,11 +133,39 @@ export function NoteEditor() {
   }
 
   if (status === 'error') {
+    // Show the raw model body (clipped via debugLog) so the user can see what
+    // the model returned without any chance of pasting it as a "note" into
+    // Chameleon. The textarea stays absent — only "Regenerate" can recover.
+    const rawBody = debugSnapshot().emit?.body ?? '';
     return (
       <section>
-        <h1>שגיאה</h1>
-        <p style={{ color: 'var(--red)' }}>{err}</p>
-        <button className="ghost" onClick={() => nav('/')}>חזרה</button>
+        <h1>שגיאה — {NOTE_LABEL[noteType]}</h1>
+        <div className="pill pill-err" style={{ marginBlock: 8 }}>
+          לא הצלחתי לקרוא את התגובה מהמודל. לחץ "צור מחדש" כדי לנסות שוב.
+        </div>
+        <p style={{ color: 'var(--muted)', fontSize: 13, marginBlock: 8 }}>{err}</p>
+        {rawBody && (
+          <details style={{ marginBlock: 12 }}>
+            <summary style={{ cursor: 'pointer', color: 'var(--muted)' }}>
+              טכני (debug)
+            </summary>
+            <pre className="debug-pre" dir="ltr">{rawBody.slice(0, 2000)}</pre>
+          </details>
+        )}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            onClick={() => {
+              sessionStorage.removeItem('body');
+              sessionStorage.removeItem('bodyKey');
+              setRegenTick((t) => t + 1);
+            }}
+          >
+            🔄 צור מחדש
+          </button>
+          <button className="ghost" onClick={() => nav('/')}>
+            חזרה
+          </button>
+        </div>
       </section>
     );
   }
