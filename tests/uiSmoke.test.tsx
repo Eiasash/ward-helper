@@ -234,17 +234,17 @@ describe('NoteViewer — mark-on-copy', () => {
     );
     await flushEffects();
     // Pre-copy: the unsent hint is visible.
-    expect(screen.getByText(/עדיין לא נשלח/)).toBeInTheDocument();
+    expect(screen.getByText(/עדיין לא נשלח לאזמה/)).toBeInTheDocument();
 
-    const copyBtn = screen.getByRole('button', { name: /העתק לצ׳מיליון/ });
+    const copyBtn = screen.getByRole('button', { name: /העתק ל-AZMA/ });
     await act(async () => {
       fireEvent.click(copyBtn);
     });
     await flushEffects();
 
     expect(writeText).toHaveBeenCalledTimes(1);
-    // Status line flipped to "✓ הועתק לצ׳מיליון · ..."
-    expect(screen.getByText(/✓ הועתק לצ׳מיליון · /)).toBeInTheDocument();
+    // Status line flipped to "✓ הועתק ל-AZMA · ..."
+    expect(screen.getByText(/✓ הועתק ל-AZMA · /)).toBeInTheDocument();
     // And persisted to IDB.
     const after = await getNote('n-copy');
     expect(typeof after?.sentToEmrAt).toBe('number');
