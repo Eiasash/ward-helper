@@ -7,6 +7,7 @@ import {
   useBidiAudit,
 } from '../hooks/useSettings';
 import { load as loadCosts, reset as resetCosts } from '@/agent/costs';
+import { restoreFromCloud, type RestoreResult } from '@/notes/save';
 
 export function Settings() {
   const { present, save, clear } = useApiKey();
@@ -14,6 +15,9 @@ export function Settings() {
   const [pass, setPass] = useState('');
   const [msg, setMsg] = useState('');
   const [bidiAuditOn, setBidiAuditOn] = useBidiAudit();
+  const [restoring, setRestoring] = useState(false);
+  const [restoreResult, setRestoreResult] = useState<RestoreResult | null>(null);
+  const [restoreErr, setRestoreErr] = useState('');
 
   async function onSaveKey() {
     if (!key.startsWith('sk-ant-')) {
@@ -38,6 +42,29 @@ export function Settings() {
   async function onClearKey() {
     await clear();
     setMsg('מפתח נמחק');
+  }
+
+  async function onRestore() {
+    const p = getPassphrase();
+    if (!p) {
+      setRestoreErr('הפעל קודם את סיסמת הגיבוי למעלה — צריך אותה כדי לפענח את הגיבוי בענן.');
+      return;
+    }
+    if (!confirm(
+      'זה ימשוך את כל הרשומות המוצפנות מהענן ויכתוב אותן למכשיר הזה. ' +
+      'רשומות מקומיות עם אותו מזהה יוחלפו. להמשיך?'
+    )) return;
+    setRestoring(true);
+    setRestoreErr('');
+    setRestoreResult(null);
+    try {
+      const res = await restoreFromCloud(p);
+      setRestoreResult(res);
+    } catch (e) {
+      setRestoreErr((e as Error).message ?? 'נכשל');
+    } finally {
+      setRestoring(false);
+    }
   }
 
   return (
@@ -94,6 +121,49 @@ export function Settings() {
         <button onClick={onSavePass}>הפעל סיסמה</button>
         <button className="ghost" onClick={clearPassphrase}>נקה סיסמה</button>
       </div>
+
+      <h2>שחזור מהענן</h2>
+      <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 8 }}>
+        מכשיר חדש? IDB נמחק? זה מושך את כל הגיבויים המוצפנים מ-Supabase,
+        מפענח אותם עם סיסמת הגיבוי שלמעלה, וכותב אותם למכשיר הזה.
+      </p>
+      <button
+        onClick={onRestore}
+        disabled={restoring}
+        className="ghost"
+      >
+        {restoring ? 'משחזר...' : '⬇ שחזר מהענן'}
+      </button>
+      {restoreResult && (
+        <div
+          style={{
+            background: 'var(--card)',
+            padding: 10,
+            borderRadius: 8,
+            marginTop: 8,
+            fontSize: 13,
+            lineHeight: 1.5,
+          }}
+        >
+          <strong>שוחזר ✓</strong>
+          <br />
+          נסרקו: {restoreResult.scanned}
+          {' · '}שוחזרו מטופלים: {restoreResult.restoredPatients}
+          {' · '}הערות: {restoreResult.restoredNotes}
+          {restoreResult.skipped.length > 0 && (
+            <>
+              <br />
+              דילוג: {restoreResult.skipped.length} רשומות (סיסמה שגויה /
+              פורמט לא תואם). ראה console.
+            </>
+          )}
+        </div>
+      )}
+      {restoreErr && (
+        <p style={{ color: 'var(--warn)', fontSize: 13, marginTop: 8 }}>
+          {restoreErr}
+        </p>
+      )}
 
       <h2>עלות מצטברת</h2>
       {(() => {

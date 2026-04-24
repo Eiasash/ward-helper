@@ -89,3 +89,89 @@ export async function saveBoth(
     };
   }
 }
+
+import {
+  pullAllBlobs,
+  decryptFromCloud,
+  base64ToBytes,
+  type CloudBlobRow,
+} from '@/storage/cloud';
+
+export interface RestoreResult {
+  scanned: number;
+  restoredPatients: number;
+  restoredNotes: number;
+  skipped: Array<{ blob_type: string; blob_id: string; reason: string }>;
+}
+
+/**
+ * Pull every encrypted blob from the cloud and re-persist it locally.
+ *
+ * Workflow:
+ *   1. user sets passphrase in Settings (same one used for push)
+ *   2. user taps "Restore from cloud" in Settings
+ *   3. this function runs, returns a summary
+ *
+ * Each blob carries its own salt (chosen fresh at push time), so the AES key
+ * is re-derived per-blob. That's ~300ms PBKDF2 per blob on a phone — slow,
+ * but restore is a one-time operation when setting up a new device, so the
+ * UX tradeoff is acceptable. An optimization would be to group-push all
+ * blobs with a shared salt, but that complicates the pushBlob contract and
+ * the gain is small (a restore of 100 blobs = 30s).
+ *
+ * Local writes go through the same putPatient/putNote path used by
+ * saveBoth, so RLS-compliant cloud data and local data stay schema-aligned.
+ * Existing local rows are overwritten if IDs match (upsert semantics from
+ * IndexedDB's put()).
+ *
+ * Failure handling: a single corrupt blob (wrong passphrase, malformed
+ * payload, schema mismatch) does NOT abort the whole restore. It lands in
+ * `skipped` and the rest continues. This matters because of the
+ * backward-compat case: blobs pushed by old versions with different schema
+ * keys shouldn't brick a restore.
+ */
+export async function restoreFromCloud(passphrase: string): Promise<RestoreResult> {
+  if (!passphrase) throw new Error('passphrase required for restore');
+
+  const rows: CloudBlobRow[] = await pullAllBlobs();
+  const result: RestoreResult = {
+    scanned: rows.length,
+    restoredPatients: 0,
+    restoredNotes: 0,
+    skipped: [],
+  };
+
+  for (const row of rows) {
+    try {
+      const salt = base64ToBytes(row.salt);
+      const iv = base64ToBytes(row.iv);
+      const ct = base64ToBytes(row.ciphertext);
+      const key = await deriveAesKey(passphrase, salt);
+      const decrypted = await decryptFromCloud<Patient | Note>(ct, iv, key);
+
+      if (row.blob_type === 'patient') {
+        await putPatient(decrypted as Patient);
+        result.restoredPatients++;
+      } else if (row.blob_type === 'note') {
+        await putNote(decrypted as Note);
+        result.restoredNotes++;
+      } else {
+        result.skipped.push({
+          blob_type: row.blob_type,
+          blob_id: row.blob_id,
+          reason: 'unknown blob_type',
+        });
+      }
+    } catch (e) {
+      // Most likely: wrong passphrase (AES-GCM auth tag fails). Could also
+      // be a schema mismatch. Don't abort — capture and continue.
+      result.skipped.push({
+        blob_type: row.blob_type,
+        blob_id: row.blob_id,
+        reason: (e as Error).message ?? 'decrypt failed',
+      });
+    }
+  }
+
+  return result;
+}

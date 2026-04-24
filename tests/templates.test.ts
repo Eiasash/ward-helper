@@ -13,9 +13,10 @@ describe('NOTE_SKILL_MAP', () => {
     }
   });
 
-  it('each entry is a tuple of exactly 2 skill names', () => {
+  it('each entry has at least 1 skill and no duplicates', () => {
     for (const skills of Object.values(NOTE_SKILL_MAP)) {
-      expect(skills).toHaveLength(2);
+      expect(skills.length).toBeGreaterThanOrEqual(1);
+      expect(new Set(skills).size).toBe(skills.length);
     }
   });
 
@@ -25,8 +26,16 @@ describe('NOTE_SKILL_MAP', () => {
     }
   });
 
-  it('non-case types use szmc-clinical-notes', () => {
-    for (const t of ['admission', 'discharge', 'consult', 'soap'] as NoteType[]) {
+  // SOAP is driven by orchestrate.ts SOAP_STYLE prefix; it doesn't need
+  // the 23 KB clinical-notes skill. Keep this test around so a future
+  // well-meaning "add clinical-notes back to SOAP" bloat regression
+  // is caught — that would cost ~\$0.018 more per SOAP.
+  it('SOAP does NOT load szmc-clinical-notes (token cost saver)', () => {
+    expect(NOTE_SKILL_MAP.soap).not.toContain('szmc-clinical-notes');
+  });
+
+  it('non-case, non-soap types use szmc-clinical-notes', () => {
+    for (const t of ['admission', 'discharge', 'consult'] as NoteType[]) {
       expect(NOTE_SKILL_MAP[t]).toContain('szmc-clinical-notes');
     }
   });

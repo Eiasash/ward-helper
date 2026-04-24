@@ -96,3 +96,65 @@ export async function pushBlob(
   );
   if (error) throw error;
 }
+
+/**
+ * Supabase stores bytea as base64-encoded hex-with-backslash-x prefix, or as
+ * a plain base64 string, depending on the client version and column config.
+ * The @supabase/supabase-js v2 client returns bytea columns as base64
+ * strings on read. Callers of pullAllBlobs get this back and must decode.
+ */
+export type CloudBlobRow = {
+  blob_type: 'patient' | 'note';
+  blob_id: string;
+  ciphertext: string; // base64
+  iv: string; // base64
+  salt: string; // base64
+  updated_at: string; // ISO
+};
+
+/**
+ * Fetch every encrypted blob belonging to the current anon user.
+ *
+ * Used for restore: when the user installs on a new device (or clears their
+ * IDB), this is the path that pulls their history back. The salt is returned
+ * INSIDE each row — the caller must use that blob's salt + the user's
+ * passphrase to re-derive the AES key, then decryptFromCloud() with that
+ * row's iv + ciphertext.
+ *
+ * Returns rows in (blob_type, blob_id) order — patients and notes
+ * interleaved, not separated. Caller splits them.
+ */
+export async function pullAllBlobs(): Promise<CloudBlobRow[]> {
+  await ensureAnonymousAuth();
+  const { data, error } = await getSupabase()
+    .from('ward_helper_backup')
+    .select('blob_type, blob_id, ciphertext, iv, salt, updated_at')
+    .order('blob_type')
+    .order('blob_id');
+  if (error) throw error;
+  return (data ?? []) as CloudBlobRow[];
+}
+
+/**
+ * Convert a base64 string (as returned by Supabase for bytea columns) back
+ * into a Uint8Array for crypto operations.
+ */
+export function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
+  // Supabase sometimes prefixes hex-encoded bytea with `\x`; strip it.
+  const clean = b64.startsWith('\\x') ? hexToBase64(b64.slice(2)) : b64;
+  const bin = atob(clean);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function hexToBase64(hex: string): string {
+  const clean = hex.replace(/[^0-9a-fA-F]/g, '');
+  const bytes = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  }
+  let s = '';
+  for (const b of bytes) s += String.fromCharCode(b);
+  return btoa(s);
+}
