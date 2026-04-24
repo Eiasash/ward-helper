@@ -46,11 +46,15 @@ describe('runExtractTurn — JSON-mode via proxy', () => {
     expect(result.fields.name).toBe('X');
   });
 
-  it('extracts the JSON object even with prose wrapper', async () => {
+  it('throws when the model wraps JSON in prose (no brace-extraction fallback in v1.18.1)', async () => {
+    // v1.18.0 silently extracted the outermost {...} from prose-wrapped responses.
+    // v1.18.1 enforces fence-only tolerance: model must comply with the
+    // "no preamble" instruction or the UI shows a regenerate prompt.
     const payload = 'Here is the JSON:\n{"fields":{"age":77},"confidence":{}}\nHope that helps!';
     vi.stubGlobal('fetch', mockProxyResponse(payload));
-    const result = await runExtractTurn(['data:image/jpeg;base64,/9j/'], 'skill');
-    expect(result.fields.age).toBe(77);
+    await expect(
+      runExtractTurn(['data:image/jpeg;base64,/9j/'], 'skill'),
+    ).rejects.toThrow(/failed to parse JSON/);
   });
 
   it('backfills missing confidence to empty object', async () => {
@@ -260,10 +264,33 @@ describe('runEmitTurn — JSON-mode via proxy', () => {
     expect(note).toContain('קבלה');
   });
 
-  it('falls back to raw text if the model ignored JSON instructions', async () => {
-    // Model returned the note as raw Hebrew text, not wrapped in JSON.
-    vi.stubGlobal('fetch', mockProxyResponse('קבלה חופשית של דוד'));
+  it('parses ```json-fenced response (v1.18.1 admission regression fix)', async () => {
+    const payload = '```json\n{"noteHebrew":"test"}\n```';
+    vi.stubGlobal('fetch', mockProxyResponse(payload));
     const note = await runEmitTurn('admission', {}, 'skill');
-    expect(note).toContain('קבלה');
+    expect(note).toBe('test');
+  });
+
+  it('parses bare JSON without fences', async () => {
+    vi.stubGlobal('fetch', mockProxyResponse('{"noteHebrew":"test"}'));
+    const note = await runEmitTurn('admission', {}, 'skill');
+    expect(note).toBe('test');
+  });
+
+  it('throws on non-JSON garbage instead of silently returning the raw body', async () => {
+    // v1.18.0 returned `text` here so the user could see Hebrew prose; v1.18.1
+    // throws so the UI shows the regenerate pill — copying ```json into
+    // Chameleon is the failure mode this hotfix exists to prevent.
+    vi.stubGlobal('fetch', mockProxyResponse('קבלה חופשית של דוד'));
+    await expect(runEmitTurn('admission', {}, 'skill')).rejects.toThrow(
+      /not valid JSON/,
+    );
+  });
+
+  it('throws when JSON parses but is missing the noteHebrew field', async () => {
+    vi.stubGlobal('fetch', mockProxyResponse('{"wrong":"field"}'));
+    await expect(runEmitTurn('admission', {}, 'skill')).rejects.toThrow(
+      /missing noteHebrew/,
+    );
   });
 });
