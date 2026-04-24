@@ -55,7 +55,7 @@ describe('compressImage — early-return path (image already small)', () => {
   beforeEach(() => stubImage(800, 600));
   afterEach(() => vi.unstubAllGlobals());
 
-  it('returns the input data URL unchanged when longest edge ≤ 1200px', async () => {
+  it('returns the input data URL unchanged when longest edge ≤ 1600px', async () => {
     const out = await compressImage(TINY_PNG_DATAURL);
     expect(out).toBe(TINY_PNG_DATAURL);
   });
@@ -71,7 +71,7 @@ describe('compressImage — resize path (large image)', () => {
   beforeEach(() => stubImage(2412, 1080));
   afterEach(() => vi.unstubAllGlobals());
 
-  it('takes the resize branch (output differs from input) when longest edge > 1200px', async () => {
+  it('takes the resize branch (output differs from input) when longest edge > 1600px', async () => {
     // happy-dom's canvas.toDataURL doesn't pixel-encode, but the function
     // still goes through createElement('canvas') + drawImage + toDataURL,
     // returning *some* string that isn't the original input. That confirms

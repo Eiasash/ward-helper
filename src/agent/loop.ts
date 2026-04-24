@@ -24,7 +24,9 @@ function dataUrlToImageBlock(dataUrl: string): AnthropicContentBlock {
 }
 
 const EXTRACT_JSON_INSTRUCTIONS = `
-Extract patient data from the AZMA screenshots. Return EXACTLY ONE valid JSON object, with no prose, no markdown fences, no preamble.
+Extract patient data from the attached image(s). Return EXACTLY ONE valid JSON object, with no prose, no markdown fences, no preamble.
+
+Image context: the images are often PHONE PHOTOS of a desktop monitor displaying AZMA/Chameleon EMR, not clean digital screenshots. Expect keystone distortion, moiré patterns, glare, partial reflections, monitor bezel, and slight blur. Read through these — the underlying data is SZMC AZMA/Chameleon. Hebrew column headers and English medication names are high-contrast and reliable; numeric values (ID numbers, lab values, doses) are what you should be most careful about. When a digit is genuinely ambiguous due to photo quality (not just "could be 0 or O"), lower the confidence on that field instead of guessing.
 
 Shape (ALL fields optional — OMIT anything not clearly visible, do NOT invent):
 {
@@ -48,10 +50,11 @@ Shape (ALL fields optional — OMIT anything not clearly visible, do NOT invent)
 }
 
 KEEP IT COMPACT:
-- Only include fields clearly readable from the screenshot.
+- Only include fields clearly readable from the image.
 - For "meds", cap at 15 most relevant items. Skip irrelevant/historical.
 - For "labs", cap at 10 most abnormal or most recent.
 - "confidence" MUST contain ONLY the three critical identifier keys (name / teudatZehut / age) — NOT meds, labs, or any other field. These three drive wrong-patient / wrong-age errors, so the ward doc needs to know when extract was uncertain. Omit keys you can't assess.
+- On a phone photo of a monitor, drop confidence to "med" on any field you wouldn't bet on after one quick glance; drop to "low" if pixels are genuinely smeared. Do NOT mark "high" just because the value is present — mark "high" only when the rendering is sharp AND unambiguous.
 - DO NOT emit a "sourceRegions" field — it's no longer consumed.
 - DO NOT include a "vitals" field unless BP/HR/SpO2/Temp are all visible as numbers.
 

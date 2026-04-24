@@ -1,5 +1,5 @@
 import { useState, useEffect, type ChangeEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import {
   addShot,
   listShots,
@@ -11,6 +11,7 @@ import {
 } from '@/camera/session';
 import { compressImage } from '@/camera/compress';
 import { startSession as startCostSession } from '@/agent/costs';
+import { hasApiKey } from '@/crypto/keystore';
 import type { NoteType } from '@/storage/indexed';
 
 const NOTE_TYPES: { type: NoteType; label: string }[] = [
@@ -29,6 +30,8 @@ export function Capture() {
   const [mode, setMode] = useState<Mode>('camera');
   const [shots, setShots] = useState<readonly Shot[]>(listShots());
   const [paste, setPaste] = useState<string>(getPastedText() ?? '');
+  // null until the first async check resolves — avoids flashing the banner.
+  const [keyPresent, setKeyPresent] = useState<boolean | null>(null);
 
   useEffect(() => {
     const seeded = sessionStorage.getItem('continuityNoteType');
@@ -39,6 +42,11 @@ export function Capture() {
     // Open a fresh cost-attribution window for this capture session. Extract +
     // emit turns accumulate into it; Save attributes the total to the patient.
     startCostSession();
+    // Pre-flight check: is the direct-to-Anthropic path usable? Show a banner
+    // NOW rather than letting the user photograph, wait, and then hit the
+    // "proxy is too slow" error. Banner is soft — doesn't block capture, just
+    // tells the user to go set a key before they hit Proceed.
+    hasApiKey().then(setKeyPresent);
   }, []);
 
   async function onPickFiles(e: ChangeEvent<HTMLInputElement>) {
@@ -93,6 +101,30 @@ export function Capture() {
   return (
     <section>
       <h1>צלם מסך</h1>
+
+      {keyPresent === false && (
+        <div
+          style={{
+            background: 'var(--warn)',
+            color: 'black',
+            padding: '10px 12px',
+            borderRadius: 8,
+            marginBottom: 12,
+            fontSize: 14,
+            lineHeight: 1.45,
+          }}
+          role="alert"
+        >
+          <strong>אין מפתח API.</strong>{' '}
+          הפרוקסי הציבורי עוצר אחרי 10 שניות ונפסק על רישומים ארוכים.{' '}
+          <Link
+            to="/settings"
+            style={{ color: 'black', fontWeight: 600, textDecoration: 'underline' }}
+          >
+            הגדר מפתח ←
+          </Link>
+        </div>
+      )}
 
       <div role="tablist" style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         {NOTE_TYPES.map((t) => (
@@ -161,6 +193,24 @@ export function Capture() {
               </span>
             )}
           </div>
+
+          {/* Phone-photo-of-monitor tip — shown only on the first capture
+              session (when there are no shots yet AND there's nothing
+              queued). Deliberately small; doesn't nag. */}
+          {shots.length === 0 && (
+            <p
+              style={{
+                color: 'var(--muted)',
+                fontSize: 12,
+                marginTop: 10,
+                lineHeight: 1.4,
+              }}
+            >
+              טיפ: לצלם מסך מקביל למצלמה, בהירות גבוהה, הפלאש כבוי. הטלפון
+              מול הצג — לא מהצד. המערכת מבינה גם תמונות מזווית, אבל מקבילות
+              יותר → זיהוי טוב יותר של ת.ז. וערכים.
+            </p>
+          )}
 
           <div
             style={{
