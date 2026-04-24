@@ -26,6 +26,7 @@ const pkg = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'ut
  * prevent.
  */
 function swVersionSync(): Plugin {
+  const VERSION_RE = /const VERSION = '[^']*';/;
   return {
     name: 'sw-version-sync',
     apply: 'build',
@@ -34,18 +35,22 @@ function swVersionSync(): Plugin {
       const swPath = path.join(outDir, 'sw.js');
       const { readFile, writeFile } = await import('node:fs/promises');
       const src = await readFile(swPath, 'utf8');
-      const next = src.replace(
-        /const VERSION = '[^']*';/,
-        `const VERSION = 'ward-v${pkg.version}';`,
-      );
-      if (next === src) {
+      if (!VERSION_RE.test(src)) {
         throw new Error(
           `sw-version-sync: could not find VERSION line in ${swPath}. ` +
             `If you renamed it, update the plugin — shipping an out-of-sync ` +
             `SW means PWA users stay on an old cached bundle.`,
         );
       }
-      await writeFile(swPath, next, 'utf8');
+      const next = src.replace(
+        VERSION_RE,
+        `const VERSION = 'ward-v${pkg.version}';`,
+      );
+      // No-op when sw.js VERSION already matches package.json — that's success,
+      // not a failure. Only rewrite when the file actually needs to change.
+      if (next !== src) {
+        await writeFile(swPath, next, 'utf8');
+      }
     },
   };
 }

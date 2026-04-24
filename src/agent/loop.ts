@@ -28,6 +28,18 @@ Extract patient data from the attached image(s). Return EXACTLY ONE valid JSON o
 
 Image context: the images are often PHONE PHOTOS of a desktop monitor displaying AZMA/Chameleon EMR, not clean digital screenshots. Expect keystone distortion, moiré patterns, glare, partial reflections, monitor bezel, and slight blur. Read through these — the underlying data is SZMC AZMA/Chameleon. Hebrew column headers and English medication names are high-contrast and reliable; numeric values (ID numbers, lab values, doses) are what you should be most careful about. When a digit is genuinely ambiguous due to photo quality (not just "could be 0 or O"), lower the confidence on that field instead of guessing.
 
+AZMA / Chameleon — identity traps you MUST respect (these override anything else in the image):
+
+1. The top-left title bar shows "Eitan 4  <Doctor name>  <Patient code>" — e.g. "Eitan 4  אשרב איאס  p15695". The Hebrew name in this strip is the LOGGED-IN CLINICIAN, NOT the patient. NEVER put this name in fields.name. The short "pNNNNN" code is an internal patient code, NOT the Israeli ת.ז. — never put it in fields.teudatZehut (a real ת.ז. is 9 digits, no letters).
+
+2. The authoritative patient identity is the PATIENT CARD near the top-center/right, with vertically stacked labeled lines: "שם מטופל:", "ת.זהות:", "גיל:", "נקבה/זכר:", "מחלקה:", "ת.אשפוז:". Read name / teudatZehut / age / sex ONLY from this card. If the card is not clearly visible in any image, OMIT those fields entirely rather than substituting from elsewhere on screen.
+
+3. The small numeric strip above the tabs has labeled cells: "גיל" (age, years), "משקל" (weight, kg), "חום" (temp, °C), "ל"ד" (BP), "דופק" (pulse), "סטורציה" (SpO₂), "BMI". Read by label, never by position. A 92-year-old weighing 62 kg shows "גיל: 92" and "משקל: 62.00" — returning age 62 in that case is a wrong-patient-age error. Omit the field rather than guess its label.
+
+4. The left pane "visit history" rows (date + doctor name + discipline) are HISTORY, not the current patient. Doctor names in those rows are not patient data.
+
+When in doubt about name / teudatZehut / age / sex, OMIT the field. An omitted field becomes a blank the doctor fills; a wrong field becomes a wrong-patient clinical note.
+
 Shape (ALL fields optional — OMIT anything not clearly visible, do NOT invent):
 {
   "fields": {

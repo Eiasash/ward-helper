@@ -247,11 +247,112 @@ export function buildPromptPrefix(noteType: NoteType, continuity: ContinuityCont
   }
 }
 
+/**
+ * Hard safety guard: detect extract outputs that are obviously corrupted
+ * before we let them reach the emit turn. An emit on bad identifiers
+ * produces a wrong-patient clinical note — that failure mode is worse
+ * than a noisy refusal.
+ *
+ * Thrown message is shown to the user; keep it Hebrew and actionable.
+ *
+ * Rules (each triggers a block on its own):
+ *   1. `name` matches a known SZMC-geriatrics DOCTOR name. These appear
+ *      in the top-left AZMA title strip and are the #1 vision trap.
+ *      Keep this list tight — it's a hard block, so false positives are
+ *      expensive. Add names only when a real miscapture is observed.
+ *   2. `teudatZehut` is a Chameleon internal patient code (starts with
+ *      ^p\d+$), not a 9-digit Israeli ID.
+ *   3. Critical-identifier confidence of "low" on name or age for a
+ *      note type that will paste into Chameleon. SOAP/admission/discharge/
+ *      consult all go through Chameleon — case-conference notes are
+ *      English-language handouts that Eias reviews visually and are
+ *      exempt from this gate.
+ *
+ * The doctor-name matcher uses substring containment against NFC-normalized,
+ * whitespace-collapsed input so "אשרב  איאס" (two spaces) and "אשרב איאס,"
+ * both match "אשרב איאס". It is not a full name-parser — the goal is to
+ * catch the specific capture pattern ("Eitan 4 <doctor> <pcode>" read as
+ * the patient card), not to enforce a universal name blacklist.
+ */
+const KNOWN_SZMC_DOCTOR_NAMES = [
+  'אשרב איאס',
+  'אבו זיד גיהאד',
+  'אסלן אורי',
+  'אחמרו מאלק',
+] as const;
+
+const CHAMELEON_PATIENT_CODE_RE = /^p\d{3,}$/i;
+
+export class ExtractCapturedDoctorError extends Error {
+  constructor(public readonly capturedName: string) {
+    super(
+      `זוהה שם רופא במקום שם מטופל (${capturedName}). כנראה צולמה שורת הכותרת של AZMA במקום כרטיס המטופל. צלם שוב עם כרטיס המטופל בפריים.`,
+    );
+    this.name = 'ExtractCapturedDoctorError';
+  }
+}
+
+export class ExtractCapturedPatientCodeError extends Error {
+  constructor(public readonly code: string) {
+    super(
+      `זוהה קוד מטופל פנימי (${code}) במקום תעודת זהות. ת.ז. ישראלית חייבת להיות 9 ספרות. בדוק שכרטיס המטופל בפריים, לא רק שורת הכותרת.`,
+    );
+    this.name = 'ExtractCapturedPatientCodeError';
+  }
+}
+
+export class ExtractLowConfidenceError extends Error {
+  constructor(public readonly fields: readonly string[]) {
+    super(
+      `ביטחון נמוך בזיהוי (${fields.join(', ')}). מסוכן להפיק רשומה קלינית מערכים לא ודאיים — תקן ידנית או צלם מחדש.`,
+    );
+    this.name = 'ExtractLowConfidenceError';
+  }
+}
+
+function normalizeForNameMatch(s: string): string {
+  return s.normalize('NFC').replace(/\s+/g, ' ').trim();
+}
+
+export function assertExtractIsSafe(
+  noteType: NoteType,
+  validated: ParseResult,
+): void {
+  // 1. Doctor-name capture.
+  const rawName = validated.fields.name;
+  if (rawName && typeof rawName === 'string') {
+    const normName = normalizeForNameMatch(rawName);
+    for (const doc of KNOWN_SZMC_DOCTOR_NAMES) {
+      if (normName.includes(doc)) {
+        throw new ExtractCapturedDoctorError(rawName);
+      }
+    }
+  }
+
+  // 2. Chameleon patient-code mistake.
+  const tz = validated.fields.teudatZehut?.trim();
+  if (tz && CHAMELEON_PATIENT_CODE_RE.test(tz)) {
+    throw new ExtractCapturedPatientCodeError(tz);
+  }
+
+  // 3. Low-confidence critical identifier gate — Chameleon-bound notes only.
+  if (noteType !== 'case') {
+    const low: string[] = [];
+    if (validated.confidence['name'] === 'low') low.push('שם');
+    if (validated.confidence['age'] === 'low') low.push('גיל');
+    if (low.length > 0) {
+      throw new ExtractLowConfidenceError(low);
+    }
+  }
+}
+
 export async function generateNote(
   noteType: NoteType,
   validated: ParseResult,
   continuity: ContinuityContext | null = null,
 ): Promise<string> {
+  assertExtractIsSafe(noteType, validated);
+
   const skills = NOTE_SKILL_MAP[noteType];
   const skillContent = await loadSkills([...skills]);
 

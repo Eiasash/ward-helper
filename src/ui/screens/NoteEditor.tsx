@@ -45,6 +45,14 @@ export function NoteEditor() {
       try {
         const nt = (sessionStorage.getItem('noteType') ?? 'admission') as NoteType;
         const validated: ParseFields = JSON.parse(sessionStorage.getItem('validated') ?? '{}');
+        // Review.tsx persists the original extract confidence alongside the
+        // validated fields so the orchestrator's safety guard can see "low"
+        // flags on name/age. Missing (older session, direct navigation) falls
+        // back to {} — the guard's doctor-name + patient-code rules still run,
+        // only the low-confidence rule degrades.
+        const confidence: Record<string, 'low' | 'med' | 'high'> = JSON.parse(
+          sessionStorage.getItem('validatedConfidence') ?? '{}',
+        );
         setNoteType(nt);
 
         // Use the cached body if the user already generated this exact draft
@@ -70,7 +78,7 @@ export function NoteEditor() {
         const continuity = continuityTz ? await resolveContinuity(continuityTz) : null;
         const text = await generateNote(
           nt,
-          { fields: validated, confidence: {} },
+          { fields: validated, confidence },
           continuity,
         );
         if (cancelled) return;

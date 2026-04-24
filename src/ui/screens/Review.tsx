@@ -214,6 +214,10 @@ export function Review() {
 
   function onProceed() {
     sessionStorage.setItem('validated', JSON.stringify(fields));
+    sessionStorage.setItem(
+      'validatedConfidence',
+      JSON.stringify(parsed?.confidence ?? {}),
+    );
     if (isSoap && continuity?.patient && continuityEnabled) {
       sessionStorage.setItem('continuityTeudatZehut', continuity.patient.teudatZehut);
     } else {
