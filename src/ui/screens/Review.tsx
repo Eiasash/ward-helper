@@ -124,7 +124,7 @@ export function Review() {
           <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 12 }}>
             לוקח זמן מעל הרגיל. אם זה נתקע, בדוק:
             <br />• חיבור אינטרנט
-            <br />• שהפרוקסי toranot.netlify.app פעיל
+            <br />• שמפתח ה-API בהגדרות תקין (פנייה ישירה ל-Anthropic)
             <br />• תמונות קטנות יותר (פחות מ-3 MB כל אחת)
           </p>
         )}

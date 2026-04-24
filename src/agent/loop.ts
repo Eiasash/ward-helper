@@ -101,14 +101,22 @@ export async function runExtractTurn(
     { type: 'text', text: EXTRACT_JSON_INSTRUCTIONS },
   ];
 
-  const res = await callAnthropic({
-    messages: [{ role: 'user', content }],
-    // 1500 is plenty for a compact ParseResult. With a user-direct path this
-    // comfortably fits the Anthropic non-streaming envelope; with the proxy
-    // fallback it stays under the 10s budget too.
-    max_tokens: 1500,
-    system: skillContent,
-  });
+  const res = await callAnthropic(
+    {
+      messages: [{ role: 'user', content }],
+      // 1500 is plenty for a compact ParseResult. With a user-direct path this
+      // comfortably fits the Anthropic non-streaming envelope; with the proxy
+      // fallback it stays under the 10s budget too.
+      max_tokens: 1500,
+      system: skillContent,
+    },
+    // One retry on transient network / 5xx. Extract is the user's first
+    // real wait after hitting Proceed; a single transient failure forcing
+    // them back to Capture is a worse UX than 2-3 extra seconds here.
+    // We cap at 1 (not 2 like emit) because extract is much shorter — a
+    // retry landing a cold proxy function usually works on the first try.
+    { retryOnTransient: 1 },
+  );
 
   addTurn({
     input_tokens: res.usage.input_tokens,

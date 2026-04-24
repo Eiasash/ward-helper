@@ -74,21 +74,34 @@ describe('runExtractTurn — JSON-mode via proxy', () => {
     ).rejects.toThrow('invalid data URL');
   });
 
-  it('throws on HTTP error from proxy', { timeout: 15_000 }, async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({
-        ok: false,
-        status: 500,
-        json: async () => ({}),
-        text: async () => 'internal server error',
-      })),
-    );
-    // Extract does NOT set retryOnTransient, so 500 fails after one attempt.
-    await expect(
-      runExtractTurn(['data:image/jpeg;base64,/9j/'], 'skill'),
-    ).rejects.toThrow(/HTTP 500/);
-  });
+  it(
+    'retries transient 500 once, then reports the final HTTP error',
+    { timeout: 15_000 },
+    async () => {
+      let calls = 0;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => {
+          calls++;
+          return {
+            ok: false,
+            status: 500,
+            json: async () => ({}),
+            text: async () => 'internal server error',
+          };
+        }),
+      );
+      // Extract sets retryOnTransient: 1 (see loop.ts). So 2 attempts total
+      // on 500, then the real error surfaces. Friendly Hebrew re-wrap only
+      // fires when no API key is set AND retries exhausted — which is
+      // exactly what happens in this test (no keystore mock), so we expect
+      // the Hebrew message OR the raw HTTP 500, depending on keystore state.
+      await expect(
+        runExtractTurn(['data:image/jpeg;base64,/9j/'], 'skill'),
+      ).rejects.toThrow(/500|הפרוקסי/);
+      expect(calls).toBe(2);
+    },
+  );
 
   it('sends image with media_type jpeg for jpeg data URL', async () => {
     const fetchFn = mockProxyResponse(
