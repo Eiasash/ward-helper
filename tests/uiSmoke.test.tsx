@@ -140,12 +140,6 @@ describe('PriorNotesBanner', () => {
   // seeded patients don't leak into the no-match case (and vice versa).
   beforeEach(async () => {
     await resetDbForTests();
-    await new Promise<void>((resolve) => {
-      const req = indexedDB.deleteDatabase('ward-helper');
-      req.onsuccess = () => resolve();
-      req.onerror = () => resolve();
-      req.onblocked = () => resolve();
-    });
   });
 
   it('renders when teudatZehut matches existing patient in IDB', async () => {
