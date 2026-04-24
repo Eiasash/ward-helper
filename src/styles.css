@@ -162,3 +162,41 @@ h2 { font-size: 17px; margin: 20px 0 8px; color: var(--muted); }
   text-align: center;
   cursor: pointer;
 }
+
+/* History: tappable note rows. 44px min height for thumb targets. */
+.note-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: start;
+  padding: 8px 10px;
+  min-height: 44px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  color: var(--fg);
+  font-family: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.note-row:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+.note-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Version footer. Muted, doesn't compete with content. */
+.app-version {
+  margin-top: 24px;
+  padding: 12px 0 4px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  opacity: 0.55;
+  user-select: text;
+}
