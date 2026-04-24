@@ -1,19 +1,27 @@
 /**
  * Downsize large images to a reasonable upload size.
  *
- * AZMA screenshots at native phone resolution (e.g. 2412 x 1080 on Oppo
- * Find X9 Pro) are ~2-3 MB PNG each. Three of them at full res = a
- * 6-12 MB upload, which mobile Chrome silently chokes on when the page
+ * Primary workflow: phone photos of a desktop AZMA/Chameleon monitor —
+ * NOT clean screenshots. Those are ~3-5 MB JPEG at native phone resolution
+ * (4080x3072 on Oppo Find X9 Pro). Three of them at full res = an
+ * 12-18 MB upload, which mobile Chrome silently chokes on when the page
  * is backgrounded mid-upload.
  *
- * Strategy: resize longest edge to 1600px (plenty for OCR on AZMA text,
- * which is large and high-contrast), re-encode as JPEG quality 0.85.
- * A 2412 x 1080 PNG becomes ~300-500 kB JPEG — a 20x reduction in
- * upload size, with no OCR quality loss for this use case.
+ * Strategy: resize longest edge to 1600px, re-encode as JPEG quality 0.85.
+ * On a phone photo of a monitor the extra 400px (vs 1200) and the extra
+ * 10% quality (vs 0.75) meaningfully improve OCR on ID numbers and lab
+ * values — the thing that matters most. A 4080x3072 phone JPEG becomes
+ * ~400-700 kB — still small enough for mobile Chrome + Anthropic direct
+ * path, big enough that the model can read smeared digits.
+ *
+ * Rule of thumb: for phone-of-monitor, every 200px of longest edge and
+ * every 0.05 of JPEG quality is worth keeping. We only downsize at all
+ * because uploading full-res JPEGs breaks on mobile Chrome when the
+ * screen sleeps during upload.
  */
 
-const MAX_LONG_EDGE = 1200;
-const JPEG_QUALITY = 0.75;
+const MAX_LONG_EDGE = 1600;
+const JPEG_QUALITY = 0.85;
 
 export async function compressImage(dataUrl: string): Promise<string> {
   // Parse the data URL to a bitmap.
