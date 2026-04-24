@@ -13,9 +13,20 @@
  * issue real network calls during mount.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, cleanup, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import 'fake-indexeddb/auto';
+
+/** Drain microtasks + the next macro-task so any setState scheduled by mount
+ * effects (e.g. Review's async extract, History's listPatients) lands BEFORE
+ * we unmount. Otherwise a stray callback fires after happy-dom tears down
+ * `window`, surfacing as an unhandled "window is not defined" rejection that
+ * fails CI even though the assertions pass. */
+async function flushEffects() {
+  await act(async () => {
+    await new Promise<void>((r) => setTimeout(r, 0));
+  });
+}
 
 vi.mock('@/storage/cloud', () => ({
   encryptForCloud: vi.fn(),
@@ -43,7 +54,9 @@ beforeEach(() => {
   localStorage.clear();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await flushEffects();
+  cleanup();
   vi.clearAllMocks();
 });
 
@@ -52,8 +65,9 @@ function renderAt(path: string, ui: React.ReactNode) {
 }
 
 describe('App shell', () => {
-  it('renders the bottom nav with the three Hebrew labels (no router wrapper — App owns its HashRouter)', () => {
+  it('renders the bottom nav with the three Hebrew labels (no router wrapper — App owns its HashRouter)', async () => {
     render(<App />);
+    await flushEffects();
     expect(screen.getByText('צלם')).toBeInTheDocument();
     expect(screen.getByText('היסטוריה')).toBeInTheDocument();
     expect(screen.getByText('הגדרות')).toBeInTheDocument();
@@ -61,9 +75,9 @@ describe('App shell', () => {
 });
 
 describe('Capture screen', () => {
-  it('mounts and shows the 5 note-type selector labels in Hebrew', () => {
+  it('mounts and shows the 5 note-type selector labels in Hebrew', async () => {
     renderAt('/', <Capture />);
-    // The note-type selector in Capture.tsx exposes these 5 labels.
+    await flushEffects();
     expect(screen.getByText('קבלה')).toBeInTheDocument();
     expect(screen.getByText('שחרור')).toBeInTheDocument();
     expect(screen.getByText('ייעוץ')).toBeInTheDocument();
@@ -73,35 +87,36 @@ describe('Capture screen', () => {
 });
 
 describe('Review screen', () => {
-  it('mounts without crashing when no shots have been captured', () => {
-    // No sessionStorage state, no shots queued — Review should render its
-    // empty/error state, not throw.
+  it('mounts without crashing when no shots have been captured', async () => {
     expect(() => renderAt('/review', <Review />)).not.toThrow();
+    await flushEffects();
   });
 });
 
 describe('NoteEditor screen', () => {
-  it('mounts in generation state when no validated payload is in sessionStorage', () => {
-    // The editor starts in 'gen' status — verifies the initial-mount path
-    // doesn't crash and at least one Hebrew or status indicator is shown.
+  it('mounts in generation state when no validated payload is in sessionStorage', async () => {
     expect(() => renderAt('/edit', <NoteEditor />)).not.toThrow();
+    await flushEffects();
   });
 });
 
 describe('Save screen', () => {
-  it('mounts without crashing in idle state', () => {
+  it('mounts without crashing in idle state', async () => {
     expect(() => renderAt('/save', <Save />)).not.toThrow();
+    await flushEffects();
   });
 });
 
 describe('History screen', () => {
-  it('mounts and shows search-input affordance even when no patients exist', () => {
+  it('mounts and shows search-input affordance even when no patients exist', async () => {
     expect(() => renderAt('/history', <History />)).not.toThrow();
+    await flushEffects();
   });
 });
 
 describe('Settings screen', () => {
-  it('mounts without crashing (no saved API key, no passphrase)', () => {
+  it('mounts without crashing (no saved API key, no passphrase)', async () => {
     expect(() => renderAt('/settings', <Settings />)).not.toThrow();
+    await flushEffects();
   });
 });
