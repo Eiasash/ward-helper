@@ -4,12 +4,6 @@ import { resetDbForTests } from '@/storage/indexed';
 
 beforeEach(async () => {
   await resetDbForTests();
-  await new Promise<void>((resolve) => {
-    const req = indexedDB.deleteDatabase('ward-helper');
-    req.onsuccess = () => resolve();
-    req.onerror = () => resolve();
-    req.onblocked = () => resolve();
-  });
 });
 
 describe('keystore', () => {

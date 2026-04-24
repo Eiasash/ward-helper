@@ -32,15 +32,7 @@ import * as costs from '@/agent/costs';
 import * as settings from '@/ui/hooks/useSettings';
 
 beforeEach(async () => {
-  // resetDbForTests only closes the connection; we need to delete the DB
-  // to actually wipe data between test cases.
   await resetDbForTests();
-  await new Promise<void>((resolve, reject) => {
-    const req = indexedDB.deleteDatabase('ward-helper');
-    req.onsuccess = () => resolve();
-    req.onerror = () => reject(req.error);
-    req.onblocked = () => resolve();
-  });
   vi.clearAllMocks();
 });
 
