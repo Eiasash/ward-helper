@@ -89,19 +89,22 @@ function filterToCriticalThree(
   return out;
 }
 
-function parseJsonStrict<T>(text: string): T {
-  // Strip ```json fences if the model ignored instructions.
-  let s = text.trim();
-  if (s.startsWith('```')) {
-    s = s.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
-  }
-  // Find the outermost { ... } if there's extra prose before/after.
-  const first = s.indexOf('{');
-  const last = s.lastIndexOf('}');
-  if (first >= 0 && last > first) {
-    s = s.slice(first, last + 1);
-  }
-  return JSON.parse(s) as T;
+/**
+ * Strip ```json ... ``` or ``` ... ``` fences the model sometimes adds.
+ * Idempotent: safe to call on already-clean JSON.
+ *
+ * Why centralized: admission emits in v1.18.0 occasionally returned the JSON
+ * envelope wrapped in fences, JSON.parse threw, the old runEmitTurn silently
+ * returned the raw fenced string as the note body, and the user could then
+ * copy literal "```json" into Chameleon. Both extract and emit parsers go
+ * through this now.
+ */
+export function stripMarkdownFence(s: string): string {
+  if (!s) return s;
+  let out = s.trim();
+  out = out.replace(/^\s*```(?:json|JSON)?\s*\r?\n?/, '');
+  out = out.replace(/\r?\n?\s*```\s*$/, '');
+  return out.trim();
 }
 
 export async function runExtractTurn(
@@ -156,23 +159,27 @@ export async function runExtractTurn(
     throw err;
   }
 
+  const clean = stripMarkdownFence(text);
+  let parsed: ParseResult;
   try {
-    const parsed = parseJsonStrict<ParseResult>(text);
-    return {
-      fields: (parsed.fields ?? {}) as ParseFields,
-      // Enforce the critical-3 scope on read. Models sometimes emit extra
-      // confidence keys despite the prompt (e.g. room, chiefComplaint — we
-      // observed this in production on v1.6.0). The UI trust boundary is the
-      // ParseResult, so strip unknown keys here instead of letting them leak
-      // into FieldRow and render pills where we don't want them.
-      confidence: filterToCriticalThree(parsed.confidence),
-    };
+    parsed = JSON.parse(clean) as ParseResult;
   } catch (e) {
-    recordError(e, { phase: 'extract', context: text.slice(0, 200) });
+    recordError(e, { phase: 'extract-parse', context: clean.slice(0, 200) });
     throw new Error(
       `failed to parse JSON from model: ${(e as Error).message}. First 200 chars: ${text.slice(0, 200)}`,
     );
   }
+  return {
+    fields: (parsed.fields ?? {}) as ParseFields,
+    // Enforce the critical-3 scope on read. Models sometimes emit extra
+    // confidence keys despite the prompt (e.g. room, chiefComplaint — we
+    // observed this in production on v1.6.0). The UI trust boundary is the
+    // ParseResult, so strip unknown keys here instead of letting them leak
+    // into FieldRow and render pills where we don't want them.
+    confidence: filterToCriticalThree(
+      parsed.confidence as Record<string, unknown> | undefined,
+    ),
+  };
 }
 
 const EMIT_JSON_INSTRUCTIONS = `
@@ -244,19 +251,21 @@ export async function runEmitTurn(
     throw err;
   }
 
+  // No silent fallback to raw text — if parsing fails, throw and let the UI
+  // surface a regenerate prompt. The pre-v1.18.1 fallback let users paste a
+  // literal "```json" wrapper into Chameleon.
+  const clean = stripMarkdownFence(text);
+  let parsed: { noteHebrew?: string };
   try {
-    const parsed = parseJsonStrict<{ noteHebrew: string }>(text);
-    if (typeof parsed.noteHebrew !== 'string' || parsed.noteHebrew.length === 0) {
-      throw new Error('missing noteHebrew field');
-    }
-    return parsed.noteHebrew;
+    parsed = JSON.parse(clean) as { noteHebrew?: string };
   } catch (e) {
-    // If JSON parsing fails, fall back to treating the whole response as
-    // the note body — the model may have ignored the JSON instruction.
-    if ((e as Error).message.includes('JSON')) {
-      return text;
-    }
-    recordError(e, { phase: 'emit', context: noteType });
-    throw e;
+    recordError(e, { phase: 'emit-parse', context: clean.slice(0, 200) });
+    throw new Error('emit response was not valid JSON even after fence strip');
   }
+  if (typeof parsed?.noteHebrew !== 'string' || parsed.noteHebrew.length === 0) {
+    const err = new Error('emit response missing noteHebrew field');
+    recordError(err, { phase: 'emit-parse', context: clean.slice(0, 200) });
+    throw err;
+  }
+  return parsed.noteHebrew;
 }
