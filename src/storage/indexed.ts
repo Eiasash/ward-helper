@@ -1,6 +1,8 @@
 import { openDB, type IDBPDatabase } from 'idb';
 
-export type NoteType = 'admission' | 'discharge' | 'consult' | 'case' | 'soap';
+import type { SafetyFlags } from '@/safety/types';
+
+export type NoteType = 'admission' | 'discharge' | 'consult' | 'case' | 'soap' | 'census';
 
 export interface Patient {
   id: string;
@@ -29,6 +31,15 @@ export interface Note {
    * existing note.
    */
   sentToEmrAt?: number | null;
+  /**
+   * Drug-safety hits computed at extract time and frozen with the note.
+   * Optional + non-indexed: old rows have it absent, new rows carry the
+   * snapshot the doctor saw when generating the note. We snapshot rather
+   * than recompute on read because the rule set itself versions; a rerun
+   * months later under new rules would silently change the displayed
+   * hits without the doctor having re-reviewed.
+   */
+  safetyFlags?: SafetyFlags;
 }
 
 export interface Settings {
@@ -49,7 +60,7 @@ let dbPromise: Promise<IDBPDatabase> | null = null;
 // loops. If you need to migrate data, use a cursor and batch; don't
 // getAll()/putAll() in one go on a user who has 500 notes.
 //
-// Current schema (v3):
+// Current schema (v4):
 //   patients [keyPath: id]
 //   notes    [keyPath: id, index: by-patient (patientId), by-tz (teudatZehut)]
 //   settings [no keyPath, uses string keys ('singleton')]
@@ -62,7 +73,11 @@ let dbPromise: Promise<IDBPDatabase> | null = null;
 // needs no schema work. We still bump DB_VERSION: it documents that the
 // Note shape changed, future indexes on sentToEmrAt branch off v3, and
 // any data-migration for old notes would land in the v3 upgrade block.
-const DB_VERSION = 3;
+//
+// v4 adds Note.safetyFlags (optional SafetyFlags from src/safety). Same
+// shape contract as sentToEmrAt — no migration, no index, just a
+// version bump so future safety-flag queries have a place to land.
+const DB_VERSION = 4;
 
 export function getDb(): Promise<IDBPDatabase> {
   if (!dbPromise) {
@@ -96,6 +111,11 @@ export function getDb(): Promise<IDBPDatabase> {
           // Schema unchanged — Note.sentToEmrAt is an optional non-indexed
           // field. Block kept intentionally so future v3 data migrations
           // (backfills, index adds on sentToEmrAt) have a landing spot.
+        }
+        if (oldVersion < 4) {
+          // Schema unchanged — Note.safetyFlags is an optional non-indexed
+          // field. Block kept intentionally so future v4 data migrations
+          // (backfills, rule-version stamping) have a landing spot.
         }
       },
     });

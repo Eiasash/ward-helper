@@ -8,6 +8,7 @@ import { FieldRow } from '../components/FieldRow';
 import { resolveContinuity, type ContinuityContext } from '@/notes/continuity';
 import { ContinuityBanner } from '../components/ContinuityBanner';
 import { PriorNotesBanner } from '../components/PriorNotesBanner';
+import type { SafetyFlags } from '@/safety/types';
 
 type Status = 'loading' | 'ready' | 'error';
 
@@ -45,6 +46,8 @@ export function Review() {
   const [fields, setFields] = useState<ParseFields>({});
   const [continuity, setContinuity] = useState<ContinuityContext | null>(null);
   const [continuityEnabled, setContinuityEnabled] = useState<boolean>(true);
+  const [safetyFlags, setSafetyFlags] = useState<SafetyFlags | null>(null);
+  const [safetyOpen, setSafetyOpen] = useState(false);
   const isSoap = sessionStorage.getItem('noteType') === 'soap';
 
   // Elapsed-time counter while loading — gives user feedback that work is
@@ -92,6 +95,31 @@ export function Review() {
       cancelled = true;
     };
   }, []);
+
+  // Lazy-load the safety engine only when there's something to check. The
+  // dynamic import puts run.ts (and its rule data) in its own chunk —
+  // `import('@/safety/run')`. Recompute when the meds list edits change.
+  useEffect(() => {
+    const meds = fields.meds ?? [];
+    if (meds.length === 0) {
+      setSafetyFlags(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const { runSafetyChecks } = await import('@/safety/run');
+      const result = runSafetyChecks(meds, {
+        age: fields.age,
+        sex: fields.sex === 'M' || fields.sex === 'F' ? fields.sex : undefined,
+        conditions: fields.pmh ?? [],
+      });
+      if (cancelled) return;
+      setSafetyFlags(result);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fields.meds, fields.age, fields.sex, fields.pmh]);
 
   useEffect(() => {
     if (!isSoap) return;
@@ -223,6 +251,11 @@ export function Review() {
     } else {
       sessionStorage.removeItem('continuityTeudatZehut');
     }
+    if (safetyFlags) {
+      sessionStorage.setItem('validatedSafety', JSON.stringify(safetyFlags));
+    } else {
+      sessionStorage.removeItem('validatedSafety');
+    }
     nav('/edit');
   }
 
@@ -332,6 +365,65 @@ export function Review() {
           }}
         >
           ⚠ צלם שוב את כרטיסיית התרופות כדי לאמת רשומה בעלת ביטחון נמוך לפני המשך
+        </div>
+      )}
+
+      {safetyFlags && (
+        <div
+          style={{
+            background: 'var(--card)',
+            padding: 10,
+            borderRadius: 8,
+            marginTop: 12,
+            border: '1px solid var(--border, rgba(255,255,255,0.08))',
+          }}
+        >
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => setSafetyOpen((v) => !v)}
+            style={{
+              width: '100%',
+              textAlign: 'start',
+              padding: '6px 10px',
+              minHeight: 36,
+              fontSize: 14,
+            }}
+            aria-expanded={safetyOpen}
+          >
+            🚨 בדיקת בטיחות תרופתית: Beers ×{safetyFlags.beers.length} · STOPP ×{safetyFlags.stopp.length} · START ×{safetyFlags.start.length} · ACB={safetyFlags.acbScore}
+          </button>
+          {safetyOpen && (
+            <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.5 }}>
+              {(['beers', 'stopp', 'start'] as const).flatMap((kind) =>
+                safetyFlags[kind].map((h) => (
+                  <div
+                    key={`${kind}-${h.code}`}
+                    style={{
+                      display: 'flex',
+                      gap: 8,
+                      alignItems: 'baseline',
+                      paddingBlock: 4,
+                      borderBottom: '1px dashed var(--border, rgba(255,255,255,0.08))',
+                    }}
+                  >
+                    <code dir="ltr" style={{ fontSize: 11, color: 'var(--muted)' }}>
+                      {h.code}
+                    </code>
+                    <bdi dir="ltr" style={{ fontWeight: 600 }}>{h.drug}</bdi>
+                    <span dir="auto" style={{ flex: 1 }}>{h.recommendation}</span>
+                  </div>
+                )),
+              )}
+              {safetyFlags.beers.length === 0 &&
+                safetyFlags.stopp.length === 0 &&
+                safetyFlags.start.length === 0 && (
+                  <p style={{ color: 'var(--muted)', margin: 4 }}>
+                    אין הצעות מנוע הבטיחות לרשימת התרופות הנוכחית.
+                  </p>
+                )}
+            </div>
+          )}
         </div>
       )}
 

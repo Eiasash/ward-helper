@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { listPatients, listAllNotes, type Patient, type Note } from '@/storage/indexed';
 import { NOTE_LABEL } from '@/notes/templates';
 import { loadPerPatient, type Totals } from '@/agent/costs';
+import { SafetyPills } from '../components/SafetyPills';
 
 /**
  * History screen. Each patient card shows:
@@ -117,6 +118,8 @@ export function History() {
                 עלות: ${cost.usd.toFixed(3)} · {cost.inputTokens + cost.outputTokens} tokens
               </div>
             )}
+
+            <SafetyPills notes={notes} />
 
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
               {notes.map((n) => (

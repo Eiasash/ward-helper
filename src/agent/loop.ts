@@ -269,3 +269,112 @@ export async function runEmitTurn(
   }
   return parsed.noteHebrew;
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Census extraction (AZMA "ניהול מחלקה" department grid)
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface CensusRow {
+  name: string;
+  teudatZehut: string | null;
+  room: string;
+  isolation: boolean;
+  ventilation: boolean;
+  bloodBankColor: 'green' | 'purple' | 'yellow' | null;
+  unsignedAdmission: boolean;
+  unsignedShiftSummary: boolean;
+}
+
+export interface CensusResult {
+  rows: CensusRow[];
+  parsedAt: number;
+}
+
+const CENSUS_JSON_INSTRUCTIONS = `
+You are extracting the AZMA "ניהול מחלקה" department patient grid. Return EXACTLY ONE valid JSON object — no prose, no markdown fences, no preamble — matching this shape:
+
+{
+  "rows": [
+    {
+      "name": string,                       // patient full name from the row
+      "teudatZehut": string | null,         // 9-digit Israeli ID; null if not visible/legible
+      "room": string,                       // e.g. "12", "12-A", "ICU-3"
+      "isolation": boolean,                 // diagnosis text rendered RED
+      "ventilation": boolean,               // column 2 "מ" flag set
+      "bloodBankColor": "green" | "purple" | "yellow" | null,
+      "unsignedAdmission": boolean,         // blue pen icon
+      "unsignedShiftSummary": boolean       // green circle icon
+    }
+  ]
+}
+
+Extract EVERY visible patient row in the grid. Do not skip rows. If a row is partially cut off at the edge of the image, include what you can read and set teudatZehut: null when the ID is not legible.
+
+DO NOT confuse the patient grid (one row per patient, fixed columns) with the application title bar, the visit-history side pane, or the doctor-name strip. The grid has consistent column structure — name + ID + room + colored flags repeat per row.
+
+DO NOT invent rows. If a screenshot only shows 3 rows clearly (rest blurred), return only those 3 — better to under-report than to fabricate a 4th from blurred pixels.
+
+Return ONLY the JSON.
+`.trim();
+
+export async function runCensusExtractTurn(
+  images: string[],
+  skillContent: string,
+): Promise<CensusResult> {
+  if (images.length === 0) throw new Error('census extract requires at least one image');
+  const imageBlocks = images.map(dataUrlToImageBlock);
+  const content: AnthropicContentBlock[] = [
+    ...imageBlocks,
+    { type: 'text', text: CENSUS_JSON_INSTRUCTIONS },
+  ];
+
+  const started = Date.now();
+  let res;
+  try {
+    res = await callAnthropic(
+      {
+        messages: [{ role: 'user', content }],
+        // 4096 tokens fits a 30-row grid with all flags. Direct path easily
+        // handles this; proxy path may 504 on cold starts — caller should
+        // retry from Census.tsx if needed.
+        max_tokens: 4096,
+        system: skillContent,
+      },
+      { retryOnTransient: 1 },
+    );
+  } catch (e) {
+    recordError(e, { phase: 'census-extract' });
+    throw e;
+  }
+
+  addTurn({
+    input_tokens: res.usage.input_tokens,
+    output_tokens: res.usage.output_tokens,
+  } as { input_tokens: number; output_tokens: number });
+
+  const text = res.content.map((b) => b.text).join('\n').trim();
+  recordExtract(text, {
+    images: images.length,
+    in_tokens: res.usage.input_tokens,
+    out_tokens: res.usage.output_tokens,
+    ms: Date.now() - started,
+  });
+  if (!text) {
+    const err = new Error('empty response from proxy (census)');
+    recordError(err, { phase: 'census-extract' });
+    throw err;
+  }
+
+  const clean = stripMarkdownFence(text);
+  let parsed: { rows?: unknown };
+  try {
+    parsed = JSON.parse(clean) as { rows?: unknown };
+  } catch (e) {
+    recordError(e, { phase: 'census-parse', context: clean.slice(0, 200) });
+    throw new Error(
+      `failed to parse census JSON: ${(e as Error).message}. First 200 chars: ${text.slice(0, 200)}`,
+    );
+  }
+  const rows = Array.isArray(parsed.rows) ? (parsed.rows as CensusRow[]) : [];
+  return { rows, parsedAt: Date.now() };
+}

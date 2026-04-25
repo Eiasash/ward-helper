@@ -20,20 +20,31 @@
  * screen sleeps during upload.
  */
 
-const MAX_LONG_EDGE = 1600;
+const MAX_LONG_EDGE_PATIENT = 1600;
+// Census shots photograph the whole department grid (20-40 rows, dense
+// text). 1600px keeps tiny ID digits readable; below that, OCR drops
+// rows. Patient mode stays at 1600 — it's the documented invariant.
+const MAX_LONG_EDGE_CENSUS = 1600;
 const JPEG_QUALITY = 0.85;
 
-export async function compressImage(dataUrl: string): Promise<string> {
+export type CompressMode = 'patient' | 'census';
+
+export async function compressImage(
+  dataUrl: string,
+  mode: CompressMode = 'patient',
+): Promise<string> {
+  const maxLongEdge = mode === 'census' ? MAX_LONG_EDGE_CENSUS : MAX_LONG_EDGE_PATIENT;
+
   // Parse the data URL to a bitmap.
   const img = await loadImage(dataUrl);
   const { width: w0, height: h0 } = img;
 
   // If already small enough, return as-is.
-  if (Math.max(w0, h0) <= MAX_LONG_EDGE) {
+  if (Math.max(w0, h0) <= maxLongEdge) {
     return dataUrl;
   }
 
-  const scale = MAX_LONG_EDGE / Math.max(w0, h0);
+  const scale = maxLongEdge / Math.max(w0, h0);
   const w = Math.round(w0 * scale);
   const h = Math.round(h0 * scale);
 

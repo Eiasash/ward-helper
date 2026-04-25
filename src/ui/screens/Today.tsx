@@ -10,6 +10,7 @@ import {
 } from '@/storage/indexed';
 import { NOTE_LABEL } from '@/notes/templates';
 import { EPISODE_WINDOW_MS } from '@/notes/continuity';
+import { SafetyPills } from '../components/SafetyPills';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SOAP_INTERVAL_MS = 18 * 60 * 60 * 1000;
@@ -141,6 +142,17 @@ export function Today() {
     <section>
       <h1>היום</h1>
 
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => nav('/census')}
+          style={{ fontSize: 13, padding: '6px 10px', minHeight: 32 }}
+        >
+          📋 רשימת מחלקה
+        </button>
+      </div>
+
       {totalActive === 0 && (
         <div className="empty">
           <div className="empty-icon">✓</div>
@@ -218,6 +230,7 @@ export function Today() {
                   </span>
                 )}
               </div>
+              <SafetyPills notes={notes} />
               <div
                 style={{
                   marginTop: 8,
