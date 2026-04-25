@@ -6,11 +6,15 @@
  * predicted-vs-actual hits side by side. Validates the engine without
  * the camera/extract/emit/IDB/Supabase pipeline.
  *
- * Run: node scripts/test-scenarios.mjs
+ * Run:    npx tsx scripts/test-scenarios.mjs > scripts/scenarios/latest.txt
+ * Diff:   diff scripts/scenarios/baseline.txt scripts/scenarios/latest.txt
+ *
+ * baseline.txt is the frozen reference — every safety-engine change should
+ * rerun this and the diff should be reviewed before deploy. When new
+ * behavior is intentional, `cp latest.txt baseline.txt` and commit.
  *
  * Each scenario lists what *should* fire (per Beers 2023, STOPP/START v3).
  * If the actual output diverges, that's a coverage gap or a rule bug.
- * Log divergences for Sprint 3.
  */
 
 import { runSafetyChecks } from '../src/safety/run.ts';
@@ -40,7 +44,7 @@ const cases = [
       conditions: ['hip-fracture-postop', 'AKI', 'CKD-3b', 'UTI', 'delirium',
                    'AF', 'CHF-EF40', 'dementia-mixed', 'osteoporosis',
                    'HTN', 'T2DM', 'depression', 'chronic-pain'],
-      gfr: 32,
+      egfr: 32,
     },
     predicted: {
       beers: ['BENZO-ELDER (lorazepam)', 'ANTICHOLINERGIC (diphenhydramine, oxybutynin)',
@@ -84,7 +88,6 @@ const cases = [
     patient: {
       age: 72, sex: 'M',
       conditions: ['post-MI', 'CAD', 'HTN'],
-      lvef: 45,
     },
     predicted: {
       beers: [],
@@ -107,7 +110,7 @@ const cases = [
     patient: {
       age: 74, sex: 'M',
       conditions: ['T2DM', 'AF', 'HLD', 'HTN'],
-      gfr: 65,
+      egfr: 65,
     },
     predicted: {
       beers: [],
