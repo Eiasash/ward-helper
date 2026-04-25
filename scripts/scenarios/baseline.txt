@@ -1,7 +1,6 @@
-npm warn exec The following package was not found and will be installed: tsx@4.21.0
 ===========================================
 ward-helper safety engine — synthetic test
-Date: 2026-04-25T18:56:06.594Z
+Date: 2026-04-25T19:01:15.208Z
 ===========================================
 
 
