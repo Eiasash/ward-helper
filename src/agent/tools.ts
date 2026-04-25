@@ -32,6 +32,8 @@ export interface ParseFields {
   age?: number;
   sex?: 'M' | 'F' | 'unknown';
   room?: string;
+  /** Date of birth as the source rendered it (no normalization). */
+  dob?: string;
   chiefComplaint?: string;
   pmh?: string[];
   meds?: Med[];

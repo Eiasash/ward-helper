@@ -27,6 +27,17 @@ function dataUrlToImageBlock(dataUrl: string): AnthropicContentBlock {
 const EXTRACT_JSON_INSTRUCTIONS = `
 Extract patient data from the attached image(s). Return EXACTLY ONE valid JSON object, with no prose, no markdown fences, no preamble.
 
+REQUIRED FIELDS — extract from ANY input format (AZMA grid, freeform Hebrew prose, phone-consult dictation, SOAP narrative). If mentioned ANYWHERE in the input, populate. If truly absent, omit (do not invent).
+
+  fields.name        ← "שם:" / "מטופל:" / "מטופלת:" / name before "ת.ז."
+  fields.teudatZehut ← 9-digit number after "ת.ז." / "תעודת זהות" / "ID:"
+  fields.age         ← number after "גיל:" / "בת" / "בן" / "age:"
+  fields.sex         ← "מטופל"=M, "מטופלת"=F, "בן"=M, "בת"=F, "ז"=M, "נ"=F
+  fields.room        ← "חדר:" / "חדר " + number/letter
+  fields.dob         ← date after "תאריך לידה" / "ת.ל."
+
+These are HARD requirements. Read the input TWICE — pass 1 for identity, pass 2 for clinical. Do not skip identity fields just because the input doesn't look like an AZMA screen.
+
 Image context: the images are often PHONE PHOTOS of a desktop monitor displaying AZMA/Chameleon EMR, not clean digital screenshots. Expect keystone distortion, moiré patterns, glare, partial reflections, monitor bezel, and slight blur. Read through these — the underlying data is SZMC AZMA/Chameleon. Hebrew column headers and English medication names are high-contrast and reliable; numeric values (ID numbers, lab values, doses) are what you should be most careful about. When a digit is genuinely ambiguous due to photo quality (not just "could be 0 or O"), lower the confidence on that field instead of guessing.
 
 AZMA / Chameleon — identity traps you MUST respect (these override anything else in the image):
@@ -49,6 +60,7 @@ Shape (ALL fields optional — OMIT anything not clearly visible, do NOT invent)
     "age"?: number,
     "sex"?: "M" | "F",
     "room"?: string,
+    "dob"?: string,
     "chiefComplaint"?: string,
     "pmh"?: string[],
     "meds"?: [{ "name": string, "dose"?: string, "freq"?: string }],
