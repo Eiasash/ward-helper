@@ -17,6 +17,8 @@ function fmtDate(ts: number): string {
  * anyway, but the prompt prevents them from happening in the first place.
  */
 const CHAMELEON_RULES = `
+החזר טקסט בלבד. ללא JSON, ללא code fences, ללא עטיפת אובייקטים.
+
 Chameleon paste rules — these are hard constraints:
 - NEVER use Unicode arrows (→ ← ↑ ↓). Use a single ">" with spaces for trends/transitions: "Cr: 1.55 > 1.03".
 - NEVER use ** for bold or -- as dividers. Plain text only.
@@ -68,6 +70,7 @@ Admission (קבלה רפואית) — emit these sections in order, each under i
     אבחנות בעבר: English UPPERCASE list.
 7. רגישויות: list with reactions, or "לא ידוע".
 8. תרופות בבית: SZMC format: "Generic ( Brand ) Route Dose Unit X Freq / Period".
+   בסעיף ריבוי תרופות, כל תרופה מופיעה פעם אחת בלבד.
 9. הרגלים: "מעשן: לא / שימוש באלכוהול: לא / שימוש בסמים: לא".
 10. תפקוד: pre-morbid baseline + current (mobility aid, cognitive, caregiver, living situation).
 11. בדיקה גופנית: vitals + systems. Short positives/negatives.

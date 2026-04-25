@@ -1,4 +1,11 @@
-import { putPatient, putNote, type Patient, type Note, type NoteType } from '@/storage/indexed';
+import {
+  putPatient,
+  putNote,
+  upsertPatientByTz,
+  type Patient,
+  type Note,
+  type NoteType,
+} from '@/storage/indexed';
 import { encryptForCloud, pushBlob } from '@/storage/cloud';
 import { deriveAesKey } from '@/crypto/pbkdf2';
 import { getPassphrase } from '@/ui/hooks/useSettings';
@@ -25,19 +32,21 @@ export async function saveBoth(
   safetyFlags?: SafetyFlags,
 ): Promise<SaveResult> {
   const now = Date.now();
-  const patientId = crypto.randomUUID();
   const noteId = crypto.randomUUID();
 
-  const patient: Patient = {
-    id: patientId,
+  // Dedupe by ת.ז. so a second admission for the same patient lands on
+  // the existing patient row instead of forking a duplicate. With no tz
+  // (rare — extract failed on identity), upsertPatientByTz mints a new id.
+  const patient = await upsertPatientByTz({
     name: patientFields.name ?? '',
     teudatZehut: patientFields.teudatZehut ?? '',
-    dob: '',
+    dob: patientFields.dob ?? '',
     room: patientFields.room ?? null,
     tags: [],
     createdAt: now,
     updatedAt: now,
-  };
+  });
+  const patientId = patient.id;
 
   const note: Note = {
     id: noteId,
@@ -50,7 +59,6 @@ export async function saveBoth(
     ...(safetyFlags ? { safetyFlags } : {}),
   };
 
-  await putPatient(patient);
   await putNote(note);
 
   // Attribute this session's extract + emit token spend to the patient now

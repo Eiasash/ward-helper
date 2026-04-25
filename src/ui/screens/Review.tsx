@@ -273,6 +273,22 @@ export function Review() {
         />
       )}
 
+      {!fields.name && !fields.teudatZehut && (
+        <div
+          role="alert"
+          style={{
+            background: 'var(--err-soft)',
+            color: 'var(--err)',
+            padding: '10px 12px',
+            borderRadius: 8,
+            marginBottom: 12,
+            border: '1px solid var(--err)',
+          }}
+        >
+          ⚠️ לא זוהו פרטי מטופל (שם / ת.ז.) — מלא ידנית לפני המעבר ליצירת הערה.
+        </div>
+      )}
+
       <FieldRow
         label="שם"
         value={fields.name ?? ''}
