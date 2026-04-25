@@ -105,7 +105,44 @@ describe('saveBoth — local-only path (no passphrase)', () => {
     expect(r2.patientId).toBe(r1.patientId);
     const patients = await listPatients();
     expect(patients).toHaveLength(1);
-    expect(patients[0]!.room).toBe('12B'); // latest extract wins on update
+    expect(patients[0]!.room).toBe('12B'); // latest non-empty value wins
+  });
+
+  it('preserves existing fields when a follow-up save has sparse extract', async () => {
+    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue(null);
+    const r1 = await saveBoth(
+      { name: 'מרים גולן', teudatZehut: '987654321', room: '5A' },
+      'admission',
+      'first body',
+    );
+    // Second save: extract lost name + room (only tz survived).
+    const r2 = await saveBoth(
+      { teudatZehut: '987654321' },
+      'soap',
+      'second body',
+    );
+    expect(r2.patientId).toBe(r1.patientId);
+    const [p] = await listPatients();
+    expect(p!.name).toBe('מרים גולן'); // not clobbered to ''
+    expect(p!.room).toBe('5A');         // not clobbered to null
+  });
+
+  it('normalizes whitespace in teudatZehut on write so the index resolves consistently', async () => {
+    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue(null);
+    const r1 = await saveBoth(
+      { name: 'A', teudatZehut: '  111111111  ' },
+      'admission',
+      'b1',
+    );
+    const r2 = await saveBoth(
+      { name: 'A', teudatZehut: '111111111' },
+      'soap',
+      'b2',
+    );
+    expect(r2.patientId).toBe(r1.patientId);
+    const patients = await listPatients();
+    expect(patients).toHaveLength(1);
+    expect(patients[0]!.teudatZehut).toBe('111111111'); // stored normalized
   });
 });
 
