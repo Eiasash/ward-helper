@@ -17,7 +17,7 @@ function fmtDate(ts: number): string {
  * anyway, but the prompt prevents them from happening in the first place.
  */
 const CHAMELEON_RULES = `
-החזר טקסט בלבד. ללא JSON, ללא code fences, ללא עטיפת אובייקטים.
+בתוך השדה noteHebrew: ללא JSON מקונן, ללא code fences, ללא עטיפת אובייקטים. תוכן השדה הוא טקסט עברי בלבד.
 
 Chameleon paste rules — these are hard constraints:
 - NEVER use Unicode arrows (→ ← ↑ ↓). Use a single ">" with spaces for trends/transitions: "Cr: 1.55 > 1.03".

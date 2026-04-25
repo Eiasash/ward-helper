@@ -151,10 +151,23 @@ export async function putPatient(p: Patient): Promise<void> {
  * Resolve a patient by teudatZehut and persist the row.
  *
  * Looks up the by-tz index first: if a patient with this ת.ז. already
- * exists, the new fields are written to the existing row (preserving
- * the original id and createdAt), so a second admission for the same
- * person doesn't fork into a duplicate patient. Without tz to key on,
- * a fresh id is minted — there's nothing to dedupe against.
+ * exists, the new fields are MERGED onto the existing row (preserving
+ * id + createdAt), so a second admission for the same person doesn't
+ * fork into a duplicate. Without tz to key on, a fresh id is minted —
+ * there's nothing to dedupe against.
+ *
+ * Merge semantics on a match: a new value wins only when it's actually
+ * present (non-empty string / non-null / non-empty array). A blank
+ * field on a follow-up save (sparse extract — OCR couldn't read the
+ * patient card this time) preserves whatever was on the existing row.
+ * Tags are unioned so accumulated isolation/ventilation flags from the
+ * census parser survive a subsequent note-save with empty tags.
+ *
+ * Stored teudatZehut is always the trimmed form. Without normalization
+ * on write, "  123456789  " gets indexed as the trimmed value but
+ * stored with whitespace; subsequent lookups (which trim first) miss
+ * the row and re-mint a duplicate id — splitting the patient across
+ * two rows with the same effective ID.
  *
  * Returns the row that was actually written so callers (saveBoth) can
  * encrypt the same shape they persisted locally — without a second IDB
@@ -163,7 +176,7 @@ export async function putPatient(p: Patient): Promise<void> {
 export async function upsertPatientByTz(p: Omit<Patient, 'id'>): Promise<Patient> {
   const tz = p.teudatZehut.trim();
   if (!tz) {
-    const row: Patient = { ...p, id: crypto.randomUUID() };
+    const row: Patient = { ...p, id: crypto.randomUUID(), teudatZehut: tz };
     await putPatient(row);
     return row;
   }
@@ -172,11 +185,20 @@ export async function upsertPatientByTz(p: Omit<Patient, 'id'>): Promise<Patient
   if (matches.length > 0) {
     matches.sort((a, b) => b.updatedAt - a.updatedAt);
     const existing = matches[0]!;
-    const row: Patient = { ...p, id: existing.id, createdAt: existing.createdAt };
+    const row: Patient = {
+      id: existing.id,
+      name: p.name || existing.name,
+      teudatZehut: tz,
+      dob: p.dob || existing.dob,
+      room: p.room || existing.room,
+      tags: Array.from(new Set([...existing.tags, ...p.tags])),
+      createdAt: existing.createdAt,
+      updatedAt: p.updatedAt,
+    };
     await putPatient(row);
     return row;
   }
-  const row: Patient = { ...p, id: crypto.randomUUID() };
+  const row: Patient = { ...p, id: crypto.randomUUID(), teudatZehut: tz };
   await putPatient(row);
   return row;
 }
