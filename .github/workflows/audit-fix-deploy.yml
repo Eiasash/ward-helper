@@ -18,12 +18,22 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
-      - name: Bundle size (150 kB gzipped)
+      - name: Bundle size (entry 180 kB gz, all assets 400 kB gz)
+        # Entry budget headroom for lazy-loaded route + safety engine. Total
+        # assets ceiling prevents lazy chunks from growing unbounded. Cold-
+        # start measurement on real device pending.
         run: |
           MAIN=$(find dist/assets -name 'index-*.js' | head -1)
           SIZE=$(gzip -c "$MAIN" | wc -c)
-          echo "main chunk gzipped: $SIZE bytes"
-          [ "$SIZE" -le 153600 ] || { echo "FAIL: main chunk exceeds 150 kB"; exit 1; }
+          echo "entry chunk gzipped: $SIZE bytes"
+          [ "$SIZE" -le 184320 ] || { echo "FAIL: entry chunk exceeds 180 kB"; exit 1; }
+          TOTAL=0
+          for f in dist/assets/*.js; do
+            S=$(gzip -c "$f" | wc -c)
+            TOTAL=$((TOTAL + S))
+          done
+          echo "total JS gzipped: $TOTAL bytes"
+          [ "$TOTAL" -le 409600 ] || { echo "FAIL: total assets exceed 400 kB"; exit 1; }
       - name: CSP + no-analytics greps
         run: |
           grep -q 'Content-Security-Policy' index.html
