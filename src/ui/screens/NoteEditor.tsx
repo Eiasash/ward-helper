@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { generateNote } from '@/notes/orchestrate';
 import type { NoteType } from '@/storage/indexed';
@@ -8,6 +8,15 @@ import { resolveContinuity } from '@/notes/continuity';
 import { auditChameleonRules, sanitizeForChameleon } from '@/i18n/bidi';
 import { useBidiAudit } from '../hooks/useSettings';
 import { snapshot as debugSnapshot } from '@/agent/debugLog';
+import {
+  splitIntoSections,
+  type NoteSection,
+} from '@/notes/sections';
+import {
+  loadSnippets,
+  expandSnippetAt,
+  type SnippetMap,
+} from '@/notes/snippets';
 
 type Status = 'gen' | 'ready' | 'error';
 
@@ -34,6 +43,9 @@ export function NoteEditor() {
   const [body, setBody] = useState('');
   const [noteType, setNoteType] = useState<NoteType>('admission');
   const [copied, setCopied] = useState(false);
+  const [copiedSection, setCopiedSection] = useState<number | null>(null);
+  const [snippetMap, setSnippetMap] = useState<SnippetMap>({});
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [bidiAuditOn] = useBidiAudit();
   // Bumping this forces the generate effect to re-run and ignore the cache.
   // Wired to the "Regenerate" button — explicit user intent, unlike the
@@ -102,6 +114,24 @@ export function NoteEditor() {
     if (body) sessionStorage.setItem('body', body);
   }, [body]);
 
+  // Load snippets once on mount. Failure → empty map (no expansion), which
+  // is the safe degrade — typing `/nc ` just stays as `/nc `.
+  useEffect(() => {
+    let cancelled = false;
+    loadSnippets()
+      .then((m) => {
+        if (!cancelled) setSnippetMap(m);
+      })
+      .catch(() => {
+        /* ignore — degrade silently to no snippets */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const sections = useMemo(() => splitIntoSections(body), [body]);
+
   // Live audit is a dev-time affordance, opt-in via Settings. In normal use
   // the clipboard sanitizer handles violations silently; the banner exists
   // so prompt tuners can see what the model produced before sanitization.
@@ -120,8 +150,34 @@ export function NoteEditor() {
     setTimeout(() => setCopied(false), 2000);
   }
 
+  async function onCopySection(idx: number, sectionBody: string) {
+    const clean = sanitizeForChameleon(sectionBody);
+    await navigator.clipboard.writeText(clean);
+    setCopiedSection(idx);
+    setTimeout(() => setCopiedSection((c) => (c === idx ? null : c)), 1500);
+  }
+
   function onAutoClean() {
     setBody(sanitizeForChameleon(body));
+  }
+
+  // Snippet expansion fires on KeyUp after a space is typed. Replacing the
+  // textarea content via React reset the cursor — we restore it manually
+  // after React applies the new value.
+  function onTextareaKeyUp(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key !== ' ') return;
+    const el = e.currentTarget;
+    const cursor = el.selectionStart ?? 0;
+    const result = expandSnippetAt(el.value, cursor, snippetMap);
+    if (result.text === el.value && result.cursorIndex === cursor) return;
+    setBody(result.text);
+    // Set caret on the next tick so React's value update has landed.
+    requestAnimationFrame(() => {
+      const ta = textareaRef.current;
+      if (!ta) return;
+      ta.selectionStart = result.cursorIndex;
+      ta.selectionEnd = result.cursorIndex;
+    });
   }
 
   if (status === 'gen') {
@@ -162,7 +218,7 @@ export function NoteEditor() {
           >
             🔄 צור מחדש
           </button>
-          <button className="ghost" onClick={() => nav('/')}>
+          <button className="ghost" onClick={() => nav('/capture')}>
             חזרה
           </button>
         </div>
@@ -206,15 +262,50 @@ export function NoteEditor() {
         </div>
       )}
 
+      {sections.length > 1 && (
+        <div
+          className="section-copy-row"
+          role="toolbar"
+          aria-label="העתק לפי קטע"
+          style={{
+            display: 'flex',
+            gap: 8,
+            overflowX: 'auto',
+            paddingBlock: 8,
+            marginBottom: 8,
+          }}
+        >
+          {sections.map((s, i) => (
+            <button
+              key={`${i}:${s.name}`}
+              type="button"
+              className="ghost"
+              onClick={() => onCopySection(i, s.body)}
+              style={{
+                whiteSpace: 'nowrap',
+                fontSize: 13,
+                padding: '6px 10px',
+                minHeight: 32,
+                flex: '0 0 auto',
+              }}
+            >
+              {copiedSection === i ? '✓ הועתק' : s.name}
+            </button>
+          ))}
+        </div>
+      )}
+
       <textarea
+        ref={textareaRef}
         dir="auto"
         rows={18}
         value={body}
         onChange={(e) => setBody(e.target.value)}
+        onKeyUp={onTextareaKeyUp}
         style={{ minHeight: 400, fontSize: 15, lineHeight: 1.6 }}
       />
       <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-        <button onClick={onCopy}>{copied ? '✓ הועתק ל-AZMA' : '📋 העתק ל-AZMA'}</button>
+        <button onClick={onCopy}>{copied ? '✓ הועתק' : '📋 העתק הכל'}</button>
         <button className="ghost" onClick={() => nav('/save')}>המשך לשמירה ←</button>
         <button
           type="button"

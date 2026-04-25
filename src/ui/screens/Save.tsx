@@ -168,7 +168,7 @@ export function Save() {
 
         <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
           <button onClick={() => nav('/history')}>ראה היסטוריה</button>
-          <button className="ghost" onClick={() => nav('/')}>מטופל חדש</button>
+          <button className="ghost" onClick={() => nav('/capture')}>מטופל חדש</button>
         </div>
       </section>
     );

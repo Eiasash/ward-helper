@@ -106,7 +106,7 @@ export function NoteViewer() {
     sessionStorage.setItem('continuityTeudatZehut', patient.teudatZehut);
     sessionStorage.setItem('continuityNoteType', 'soap');
     sessionStorage.setItem('noteType', 'soap');
-    nav('/');
+    nav('/capture');
   }
 
   if (err) {

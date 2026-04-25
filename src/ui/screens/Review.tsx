@@ -130,7 +130,7 @@ export function Review() {
           </p>
         )}
         {elapsed > 40 && (
-          <button className="ghost" onClick={() => nav('/')} style={{ marginTop: 12 }}>
+          <button className="ghost" onClick={() => nav('/capture')} style={{ marginTop: 12 }}>
             חזרה
           </button>
         )}
@@ -172,7 +172,7 @@ export function Review() {
           </ul>
         </details>
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-          <button onClick={() => nav('/')}>חזרה לצילום</button>
+          <button onClick={() => nav('/capture')}>חזרה לצילום</button>
           <button className="ghost" onClick={() => nav('/settings')}>הגדרות</button>
         </div>
       </section>
