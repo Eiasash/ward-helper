@@ -244,6 +244,10 @@ export function buildPromptPrefix(noteType: NoteType, continuity: ContinuityCont
       // template; Chameleon paste rules still apply as a hedge (in case the user
       // requests Hebrew — the same arrow/bold/qNh landmines can still ride in).
       return [CHAMELEON_RULES, CASE_STYLE].join('\n\n');
+    case 'census':
+      // Census never reaches this path — generateNote is not called for
+      // census records. Return an empty prefix as a defensive default.
+      return '';
   }
 }
 

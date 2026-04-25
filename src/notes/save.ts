@@ -4,6 +4,7 @@ import { deriveAesKey } from '@/crypto/pbkdf2';
 import { getPassphrase } from '@/ui/hooks/useSettings';
 import { finalizeSessionFor } from '@/agent/costs';
 import type { ParseFields } from '@/agent/tools';
+import type { SafetyFlags } from '@/safety/types';
 
 export interface SaveResult {
   patientId: string;
@@ -21,6 +22,7 @@ export async function saveBoth(
   patientFields: ParseFields,
   noteType: NoteType,
   bodyHebrew: string,
+  safetyFlags?: SafetyFlags,
 ): Promise<SaveResult> {
   const now = Date.now();
   const patientId = crypto.randomUUID();
@@ -45,6 +47,7 @@ export async function saveBoth(
     structuredData: patientFields as Record<string, unknown>,
     createdAt: now,
     updatedAt: now,
+    ...(safetyFlags ? { safetyFlags } : {}),
   };
 
   await putPatient(patient);

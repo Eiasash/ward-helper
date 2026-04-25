@@ -82,7 +82,7 @@ export function Capture() {
     const dataUrls = await Promise.all(readers);
     // Downsize before storing — cuts upload size ~20x and avoids mobile
     // Chrome stalling on multi-MB POSTs to the Claude proxy.
-    const compressed = await Promise.all(dataUrls.map(compressImage));
+    const compressed = await Promise.all(dataUrls.map((d) => compressImage(d)));
     for (const d of compressed) addShot(d);
     setShots([...listShots()]);
     // Reset so the same file can be picked again if user wants.

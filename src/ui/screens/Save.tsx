@@ -42,7 +42,12 @@ export function Save() {
       const noteType = (sessionStorage.getItem('noteType') ?? 'admission') as NoteType;
       const validated: ParseFields = JSON.parse(sessionStorage.getItem('validated') ?? '{}');
       const body = sessionStorage.getItem('body') ?? '';
-      const result = await saveBoth(validated, noteType, body);
+      // Safety flags computed in Review and persisted to sessionStorage. Absent
+      // for older sessions or when no meds were extracted — the saveBoth call
+      // omits the field rather than writing an empty placeholder.
+      const safetyRaw = sessionStorage.getItem('validatedSafety');
+      const safetyFlags = safetyRaw ? JSON.parse(safetyRaw) : undefined;
+      const result = await saveBoth(validated, noteType, body, safetyFlags);
       setCloudPushed(result.cloudPushed);
       setCloudError(
         result.cloudSkippedReason && result.cloudSkippedReason !== 'no-passphrase'
@@ -53,6 +58,7 @@ export function Save() {
       clearShots();
       sessionStorage.removeItem('body');
       sessionStorage.removeItem('validated');
+      sessionStorage.removeItem('validatedSafety');
       setStatus('done');
     } catch (e: unknown) {
       setErr((e as Error).message);

@@ -28,6 +28,12 @@ export const NOTE_SKILL_MAP: Record<NoteType, readonly SkillName[]> = {
   // SOAP is driven entirely by orchestrate.ts's SOAP_STYLE prefix —
   // ship ONLY the glossary for Hebrew term consistency.
   soap: ['hebrew-medical-glossary'],
+  // Census is not a clinical note — it's grid extraction. AZMA-UI is the
+  // primary reference (column semantics, color codes, icon meanings); the
+  // glossary rides along to keep the every-note-type invariant in
+  // tests/templates.test.ts intact (and Hebrew patient names benefit from
+  // the bidi/transliteration hints anyway).
+  census: ['azma-ui', 'hebrew-medical-glossary'],
 };
 
 export const NOTE_LABEL: Record<NoteType, string> = {
@@ -36,4 +42,5 @@ export const NOTE_LABEL: Record<NoteType, string> = {
   consult: 'ייעוץ',
   case: 'מקרה מעניין',
   soap: 'SOAP יומי',
+  census: 'רשימת מחלקה',
 };
