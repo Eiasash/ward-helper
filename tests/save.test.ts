@@ -89,6 +89,24 @@ describe('saveBoth — local-only path (no passphrase)', () => {
     expect(p!.room).toBeNull();
     expect(result.cloudPushed).toBe(false);
   });
+
+  it('dedupes by ת.ז. — second save for the same teudatZehut reuses the patientId', async () => {
+    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue(null);
+    const r1 = await saveBoth(
+      { name: 'דוד כהן', teudatZehut: '123456789', room: '12A' },
+      'admission',
+      'first body',
+    );
+    const r2 = await saveBoth(
+      { name: 'דוד כהן', teudatZehut: '123456789', room: '12B' },
+      'soap',
+      'second body',
+    );
+    expect(r2.patientId).toBe(r1.patientId);
+    const patients = await listPatients();
+    expect(patients).toHaveLength(1);
+    expect(patients[0]!.room).toBe('12B'); // latest extract wins on update
+  });
 });
 
 describe('saveBoth — cloud-push path (passphrase set)', () => {
