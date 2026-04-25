@@ -12,6 +12,11 @@ import { load as loadCosts, reset as resetCosts } from '@/agent/costs';
 import { restoreFromCloud, type RestoreResult } from '@/notes/save';
 import { activePath, type RequestPath } from '@/agent/client';
 import { DebugPanel } from '../components/DebugPanel';
+import {
+  loadSnippets,
+  saveSnippets,
+  type SnippetMap,
+} from '@/notes/snippets';
 
 export function Settings() {
   const { present, save, clear } = useApiKey();
@@ -26,6 +31,48 @@ export function Settings() {
   const [restoreResult, setRestoreResult] = useState<RestoreResult | null>(null);
   const [restoreErr, setRestoreErr] = useState('');
   const [path, setPath] = useState<RequestPath | null>(null);
+  // Snippet editor: rows are mutable until "Save". Loaded once on mount and
+  // kept as an array of pairs for ordered rendering — Object would lose
+  // insertion order under JSON round-trip in some IDB implementations.
+  const [snippetRows, setSnippetRows] = useState<{ key: string; val: string }[]>([]);
+  const [snippetMsg, setSnippetMsg] = useState('');
+
+  useEffect(() => {
+    loadSnippets().then((m) => {
+      setSnippetRows(Object.entries(m).map(([key, val]) => ({ key, val })));
+    });
+  }, []);
+
+  function updateRow(i: number, patch: Partial<{ key: string; val: string }>) {
+    setSnippetRows((rows) =>
+      rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)),
+    );
+  }
+
+  function addRow() {
+    setSnippetRows((rows) => [...rows, { key: '', val: '' }]);
+  }
+
+  function removeRow(i: number) {
+    setSnippetRows((rows) => rows.filter((_, idx) => idx !== i));
+  }
+
+  async function onSaveSnippets() {
+    const map: SnippetMap = {};
+    for (const r of snippetRows) {
+      const k = r.key.trim();
+      if (!k) continue;
+      // Validate trigger pattern at save-time so users see a clear error
+      // rather than silent "snippet doesn't fire" later.
+      if (!/^\/[a-z]{1,4}$/.test(k)) {
+        setSnippetMsg(`טריגר לא תקין: "${k}" — חייב להיות /a עד /abcd`);
+        return;
+      }
+      map[k] = r.val;
+    }
+    await saveSnippets(map);
+    setSnippetMsg('קטעי טקסט נשמרו ✓');
+  }
 
   // Re-runs whenever `present` flips (save/clear in useApiKey bumps it).
   // No polling, no refresh button — the path only changes when the key changes.
@@ -257,6 +304,57 @@ export function Settings() {
           </button>
         )}
       </div>
+
+      <h2>קטעי טקסט</h2>
+      <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>
+        הקלד טריגר (למשל <code>/nc</code>) ואחריו רווח בעורך — הטקסט המתאים יתפרס אוטומטית.
+        טריגר חייב להתחיל ב-<code>/</code> ולהכיל 1-4 אותיות אנגליות קטנות.
+      </p>
+      {snippetRows.map((r, i) => (
+        <div
+          key={i}
+          style={{ display: 'flex', gap: 8, marginBottom: 6, alignItems: 'center' }}
+        >
+          <input
+            dir="ltr"
+            placeholder="/nc"
+            value={r.key}
+            onChange={(e) => updateRow(i, { key: e.target.value })}
+            style={{ flex: '0 0 90px' }}
+            aria-label={`טריגר שורה ${i + 1}`}
+          />
+          <input
+            dir="auto"
+            placeholder="טקסט להחלפה"
+            value={r.val}
+            onChange={(e) => updateRow(i, { val: e.target.value })}
+            style={{ flex: 1 }}
+            aria-label={`טקסט שורה ${i + 1}`}
+          />
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => removeRow(i)}
+            aria-label={`מחק שורה ${i + 1}`}
+            style={{ flex: '0 0 auto', minHeight: 32, padding: '4px 10px', fontSize: 13 }}
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <button type="button" className="ghost" onClick={addRow}>
+          + הוסף קטע
+        </button>
+        <button type="button" onClick={onSaveSnippets}>
+          שמור קטעים
+        </button>
+      </div>
+      {snippetMsg && (
+        <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 6 }}>
+          {snippetMsg}
+        </p>
+      )}
 
       <h2>אבחון מפתחים</h2>
       <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14 }}>

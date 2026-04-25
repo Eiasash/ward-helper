@@ -26,7 +26,7 @@ export function History() {
     sessionStorage.setItem('continuityTeudatZehut', p.teudatZehut);
     sessionStorage.setItem('continuityNoteType', 'soap');
     sessionStorage.setItem('noteType', 'soap');
-    nav('/');
+    nav('/capture');
   }
 
   function openNote(n: Note) {
@@ -88,7 +88,7 @@ export function History() {
           <p className="empty-sub">
             {patients.length === 0 ? 'צלם AZMA כדי להתחיל' : 'נסה חיפוש אחר'}
           </p>
-          {patients.length === 0 && <button onClick={() => nav('/')}>↤ צלם</button>}
+          {patients.length === 0 && <button onClick={() => nav('/capture')}>↤ צלם</button>}
         </div>
       )}
 
