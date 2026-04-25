@@ -8,7 +8,7 @@
  *   - mark-as-sent flow flips IDB sentToEmrAt and re-renders without the badge
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, act, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, act, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import 'fake-indexeddb/auto';
 
@@ -166,13 +166,12 @@ describe('Today — notes generated today lane', () => {
     await act(async () => {
       fireEvent.click(markBtn);
     });
-    // Two flushes: first lets markNoteSent + setTick land, second lets the
-    // tick-triggered useEffect re-fetch IDB and re-render with the fresh
-    // sentToEmrAt value.
-    await flushEffects();
-    await flushEffects();
-
-    expect(screen.queryByText(/לא נשלח/)).not.toBeInTheDocument();
+    // markNoteSent + setTick + tick-triggered useEffect IDB re-fetch is a
+    // multi-step async chain. Fixed flushEffects() pairs flaked under slower
+    // CI runners — waitFor polls until the badge actually clears.
+    await waitFor(() => {
+      expect(screen.queryByText(/לא נשלח/)).not.toBeInTheDocument();
+    });
     const after = await getNote('n-mark');
     expect(typeof after?.sentToEmrAt).toBe('number');
   });

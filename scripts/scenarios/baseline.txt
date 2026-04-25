@@ -1,0 +1,154 @@
+===========================================
+ward-helper safety engine — synthetic test
+Date: 2026-04-25T19:01:15.208Z
+===========================================
+
+
+━━━ A1-polypharmacy-postop ━━━
+88F post-ORIF hip, AKI on CKD3b, UTI, delirium, 14-med polypharmacy
+
+PREDICTED:
+  Beers:
+  - BENZO-ELDER (lorazepam)
+  - ANTICHOLINERGIC (diphenhydramine, oxybutynin)
+  - PPI-LONG (omeprazole >8wk)
+  - SU-ELDER (gliclazide hypoglycemia risk)
+  - TRAMADOL-SSRI (sertraline + tramadol = serotonin)
+  STOPP:
+  - OPIOID-NO-LAX (tramadol no scheduled laxative)
+  - AChEI-ANTICHOL (donepezil + oxybutynin/diphenhydramine = direct antagonism)
+  - PPI-LONG-NO-INDIC
+  START:
+  - CHF-NO-ACEI (EF40 no ACEi/ARB documented)
+  - OP-NO-BISPHOS (osteoporosis on Ca+VitD only, no bisphosphonate)
+  ACB ≥ 6
+
+ACTUAL:
+  Beers:
+  - BEERS-PPI-LONG: PPI מעל 8 שבועות — שקול הפחתה הדרגתית ובדוק אינדיקציה
+  - BEERS-BENZO-ELDER: בנזודיאזפין בקשיש — סיכון נפילות ובלבול. שקול גמילה הדרגתית
+  - BEERS-AC-DEMENTIA: אנטיכולינרגי חזק במטופל עם דמנציה — החלף לחלופה לא-אנטיכולינרגית
+  STOPP:
+  - STOPP-OPIOID-NO-LAX: אופיואיד ללא לקסטיב — הוסף Movicol או Lactulose קבוע
+  - STOPP-PPI-LONG: PPI מעל 8 שבועות — תעד אינדיקציה או הפחת
+  START:
+  - START-CHF-NO-RAAS: CHF ללא ACEi/ARB — הוסף ACEi (Enalapril) או ARB
+  - START-OP-NO-BISPHOS: אוסטיאופורוזיס ללא טיפול ספציפי — שקול Alendronate + Vit D + Calcium
+  ACB = 8
+
+✓ No auto-flags (manual review still required).
+
+━━━ A2-comfort-care-suppress ━━━
+89F metastatic pancreatic CA, comfort-care, AF, T2DM
+NOTE: START must return [] — this is the v1.20.1 fix. If START fires, the comfort-care logic broke.
+
+PREDICTED:
+  Beers:
+  - BENZO-ELDER
+  - ANTICHOLINERGIC (diphenhydramine)
+  STOPP:
+  - OPIOID-NO-LAX (oxycodone scheduled, no laxative)
+  START:
+(none)
+  ACB ≥ 3
+
+ACTUAL:
+  Beers:
+  - BEERS-BENZO-ELDER: בנזודיאזפין בקשיש — סיכון נפילות ובלבול. שקול גמילה הדרגתית
+  STOPP:
+  - STOPP-OPIOID-NO-LAX: אופיואיד ללא לקסטיב — הוסף Movicol או Lactulose קבוע
+  START:
+(none)
+  ACB = 3
+
+✓ No auto-flags (manual review still required).
+
+━━━ A3-postMI-undertreated ━━━
+72M 2 weeks post-NSTEMI, on aspirin only, missing statin + BB + ACEi
+NOTE: Pure START coverage test. If only one START hit fires, two rules are missing.
+
+PREDICTED:
+  Beers:
+(none)
+  STOPP:
+(none)
+  START:
+  - POST-MI-STATIN
+  - POST-MI-BB
+  - POST-MI-ACEI (HTN + post-MI)
+  ACB ≥ 0
+
+ACTUAL:
+  Beers:
+(none)
+  STOPP:
+(none)
+  START:
+  - START-POSTMI-NO-STATIN: Post-MI ללא סטטין — הוסף Atorvastatin 80mg למניעה משנית
+  - START-POSTMI-NO-BB: Post-MI ללא חוסם בטא — שקול Bisoprolol או Metoprolol
+  ACB = 0
+
+✓ No auto-flags (manual review still required).
+
+━━━ A4-clean-polypharmacy ━━━
+74M T2DM + AF + HLD, on guideline-correct regimen
+NOTE: Negative control. ALL four engines must return empty. Any hit = false positive.
+
+PREDICTED:
+  Beers:
+(none)
+  STOPP:
+(none)
+  START:
+(none)
+  ACB ≥ 0
+
+ACTUAL:
+  Beers:
+(none)
+  STOPP:
+(none)
+  START:
+(none)
+  ACB = 0
+
+✓ No auto-flags (manual review still required).
+
+━━━ A5-falls-med-cocktail ━━━
+82F recurrent falls, taking sedating cocktail
+NOTE: Falls scenario. If <3 Beers hits OR <2 STOPP hits, fall-risk rules are thin.
+
+PREDICTED:
+  Beers:
+  - Z-DRUG-ELDER (zopiclone)
+  - TCA-ELDER (amitriptyline anticholinergic+orthostatic)
+  - ANTICHOLINERGIC-FALLS
+  - ALPHA-BLOCKER-ELDER-FEMALE (tamsulosin off-label, falls)
+  STOPP:
+  - BENZO-Z-DRUG-FALLS
+  - TCA-FALLS
+  - TIZANIDINE-FALLS
+  - CITALOPRAM-DOSE (>20mg in elder QT risk — borderline at 20mg)
+  START:
+  - OP-NO-BISPHOS
+  ACB ≥ 6
+
+ACTUAL:
+  Beers:
+(none)
+  STOPP:
+(none)
+  START:
+  - START-OP-NO-BISPHOS: אוסטיאופורוזיס ללא טיפול ספציפי — שקול Alendronate + Vit D + Calcium
+  ACB = 3
+
+⚠️  AUTO-FLAGS:
+    Beers: predicted hits, got none
+    STOPP: predicted hits, got none
+    ACB: 3 < expected 6
+
+===========================================
+Total auto-flagged divergences: 3
+Manual review of every ACTUAL block is still required —
+the auto-flags only catch coarse coverage gaps.
+===========================================

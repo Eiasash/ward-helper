@@ -9,6 +9,10 @@ Mobile-first Hebrew-RTL PWA for SZMC ward rounds. Camera an AZMA screen → revi
 - `npm run build` — prebuild (skill sync) + tsc + vite build
 - `node scripts/sync-skills.mjs` — refresh `public/skills/` from `~/.claude/skills/`
 
+## Deploy flow
+PR-based. Do not push directly to main. Open a draft PR, let CI run,
+mark ready when green, merge via squash. Branch protection enforces this.
+
 ## Invariants — do not break
 
 - Screenshots never written to any storage. In-memory only, revoked via `URL.revokeObjectURL` after API call.
