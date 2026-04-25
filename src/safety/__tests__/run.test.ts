@@ -70,3 +70,83 @@ describe('runSafetyChecks — orchestrator integration', () => {
     expect(r.acbScore).toBe(0);
   });
 });
+
+describe('runSafetyChecks — comfort-care suppression', () => {
+  // Same fixture as the polypharmacy admission, then with comfort-care
+  // appended. Beers/STOPP/ACB outputs must stay identical; only START
+  // collapses to []. Asserts the suppression is scoped, not blanket.
+  const meds: Med[] = [
+    { name: 'ibuprofen 400mg tid' },
+    { name: 'omeprazole 40mg', durationMonths: 18 },
+    { name: 'lorazepam 1mg qhs' },
+    { name: 'oxycodone 5mg q6h prn' },
+    { name: 'furosemide 40mg' },
+  ];
+  const baseConditions = ['atrial fibrillation', 'CKD stage 3', 'osteoporosis'];
+
+  it('suppresses START hits when "comfort care" is in conditions', () => {
+    const r = runSafetyChecks(meds, {
+      age: 88,
+      conditions: [...baseConditions, 'comfort care'],
+      egfr: 42,
+    });
+    expect(r.start).toEqual([]);
+    // But Beers + STOPP still fire — drug harm doesn't pause for goals.
+    expect(r.beers.find((h) => h.code === 'BEERS-NSAID-CKD')).toBeTruthy();
+    expect(r.stopp.find((h) => h.code === 'STOPP-OPIOID-NO-LAX')).toBeTruthy();
+  });
+
+  it('matches "hospice" token', () => {
+    const r = runSafetyChecks(meds, {
+      age: 88,
+      conditions: [...baseConditions, 'Hospice'],
+      egfr: 42,
+    });
+    expect(r.start).toEqual([]);
+  });
+
+  it('matches Hebrew tokens (טיפול תומך, הוספיס, פליאטיבי)', () => {
+    for (const tag of ['טיפול תומך', 'הוספיס', 'פליאטיבי']) {
+      const r = runSafetyChecks(meds, {
+        age: 88,
+        conditions: [...baseConditions, tag],
+        egfr: 42,
+      });
+      expect(r.start).toEqual([]);
+    }
+  });
+
+  it('does NOT suppress on a substring match (deliberate false-negative bias)', () => {
+    // "transitioning to comfort care" is a substring of the comfort token
+    // but is NOT an exact match — the rule must NOT suppress here.
+    const r = runSafetyChecks(meds, {
+      age: 88,
+      conditions: [...baseConditions, 'transitioning to comfort care'],
+      egfr: 42,
+    });
+    expect(r.start.length).toBeGreaterThan(0);
+  });
+
+  // End-of-life vignette: 89F with metastatic pancreatic cancer transitioned
+  // to comfort care. Documented AF (would normally flag START-AF-NO-AC) and
+  // T2DM (would normally flag START-T2DM-NO-STATIN). On comfort care those
+  // gaps aren't gaps — symptom control is the goal. But Beers (benzo) and
+  // ACB (diphenhydramine=3) still describe real harm and should fire.
+  it('comfort-care patient: START suppressed, Beers+ACB still fire', () => {
+    const result = runSafetyChecks(
+      [
+        { name: 'Lorazepam', dose: '1mg', freq: 'q8h prn' },
+        { name: 'Oxycodone', dose: '5mg', freq: 'q4h' },
+        { name: 'Diphenhydramine', dose: '25mg', freq: 'qhs' },
+      ],
+      {
+        age: 89,
+        sex: 'F',
+        conditions: ['metastatic-pancreatic-cancer', 'comfort-care', 'AF', 'T2DM'],
+      },
+    );
+    expect(result.start).toEqual([]); // no "you should be on anticoag for AF"
+    expect(result.beers.length).toBeGreaterThan(0); // benzo-elder still flags
+    expect(result.acbScore).toBeGreaterThanOrEqual(3); // diphenhydramine = 3
+  });
+});
