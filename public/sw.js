@@ -1,4 +1,4 @@
-const VERSION = 'ward-v1.20.0';
+const VERSION = 'ward-v1.20.1';
 const SHELL = ['/ward-helper/', '/ward-helper/index.html'];
 
 self.addEventListener('install', (e) => {
