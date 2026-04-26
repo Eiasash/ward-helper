@@ -4,7 +4,7 @@ import { saveBoth } from '@/notes/save';
 import { getPassphrase, getEmailTarget } from '../hooks/useSettings';
 import type { NoteType } from '@/storage/indexed';
 import { NOTE_LABEL } from '@/notes/templates';
-import { clearShots } from '@/camera/session';
+import { clearBlocks } from '@/camera/session';
 import { sendNoteEmail, defaultEmailSubject } from '@/notes/email';
 import { openMailCompose, openShareSheet } from '@/notes/share';
 import type { ParseFields } from '@/agent/tools';
@@ -55,7 +55,7 @@ export function Save() {
           : null,
       );
       setSnapshot({ noteType, patientName: validated.name ?? '', body });
-      clearShots();
+      clearBlocks();
       sessionStorage.removeItem('body');
       sessionStorage.removeItem('validated');
       sessionStorage.removeItem('validatedSafety');

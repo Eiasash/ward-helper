@@ -1,5 +1,21 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { runExtractTurn, runEmitTurn } from '@/agent/loop';
+import type { CaptureBlock } from '@/camera/session';
+
+/**
+ * Build a single-image CaptureBlock list from a data URL — keeps tests that
+ * predate the blocks API readable while still exercising the new signature.
+ */
+function imageBlocks(...urls: string[]): CaptureBlock[] {
+  return urls.map((url) => ({
+    kind: 'image',
+    id: 'img-' + Math.random(),
+    dataUrl: url,
+    blobUrl: 'blob:fake',
+    sourceLabel: 'gallery',
+    addedAt: 0,
+  }));
+}
 
 /** Build a fake fetch that returns a proxy-shaped text response. */
 function mockProxyResponse(text: string, usage = { input_tokens: 10, output_tokens: 5 }) {
@@ -31,7 +47,7 @@ describe('runExtractTurn — JSON-mode via proxy', () => {
     });
     vi.stubGlobal('fetch', mockProxyResponse(payload));
     const result = await runExtractTurn(
-      ['data:image/jpeg;base64,/9j/'],
+      imageBlocks('data:image/jpeg;base64,/9j/'),
       'SKILL CONTENT azma-ui',
     );
     expect(result.fields.name).toBe('דוד כהן');
@@ -42,7 +58,7 @@ describe('runExtractTurn — JSON-mode via proxy', () => {
   it('strips ```json code fences if the model ignored instructions', async () => {
     const payload = '```json\n{"fields":{"name":"X"},"confidence":{}}\n```';
     vi.stubGlobal('fetch', mockProxyResponse(payload));
-    const result = await runExtractTurn(['data:image/jpeg;base64,/9j/'], 'skill');
+    const result = await runExtractTurn(imageBlocks('data:image/jpeg;base64,/9j/'), 'skill');
     expect(result.fields.name).toBe('X');
   });
 
@@ -53,28 +69,28 @@ describe('runExtractTurn — JSON-mode via proxy', () => {
     const payload = 'Here is the JSON:\n{"fields":{"age":77},"confidence":{}}\nHope that helps!';
     vi.stubGlobal('fetch', mockProxyResponse(payload));
     await expect(
-      runExtractTurn(['data:image/jpeg;base64,/9j/'], 'skill'),
+      runExtractTurn(imageBlocks('data:image/jpeg;base64,/9j/'), 'skill'),
     ).rejects.toThrow(/failed to parse JSON/);
   });
 
   it('backfills missing confidence to empty object', async () => {
     const payload = JSON.stringify({ fields: { name: 'Y' } });
     vi.stubGlobal('fetch', mockProxyResponse(payload));
-    const result = await runExtractTurn(['data:image/jpeg;base64,/9j/'], 'skill');
+    const result = await runExtractTurn(imageBlocks('data:image/jpeg;base64,/9j/'), 'skill');
     expect(result.confidence).toEqual({});
   });
 
   it('throws on truly non-JSON response', async () => {
     vi.stubGlobal('fetch', mockProxyResponse('plain text, no JSON at all'));
     await expect(
-      runExtractTurn(['data:image/jpeg;base64,/9j/'], 'skill'),
+      runExtractTurn(imageBlocks('data:image/jpeg;base64,/9j/'), 'skill'),
     ).rejects.toThrow(/failed to parse JSON/);
   });
 
   it('throws on invalid data URL', async () => {
     vi.stubGlobal('fetch', mockProxyResponse('{}'));
     await expect(
-      runExtractTurn(['not-a-data-url'], 'skill'),
+      runExtractTurn(imageBlocks('not-a-data-url'), 'skill'),
     ).rejects.toThrow('invalid data URL');
   });
 
@@ -101,7 +117,7 @@ describe('runExtractTurn — JSON-mode via proxy', () => {
       // exactly what happens in this test (no keystore mock), so we expect
       // the Hebrew message OR the raw HTTP 500, depending on keystore state.
       await expect(
-        runExtractTurn(['data:image/jpeg;base64,/9j/'], 'skill'),
+        runExtractTurn(imageBlocks('data:image/jpeg;base64,/9j/'), 'skill'),
       ).rejects.toThrow(/500|הפרוקסי/);
       expect(calls).toBe(2);
     },
@@ -112,11 +128,13 @@ describe('runExtractTurn — JSON-mode via proxy', () => {
       JSON.stringify({ fields: {}, confidence: {} }),
     );
     vi.stubGlobal('fetch', fetchFn);
-    await runExtractTurn(['data:image/jpeg;base64,/9j/'], 'skill');
+    await runExtractTurn(imageBlocks('data:image/jpeg;base64,/9j/'), 'skill');
     const body = JSON.parse((fetchFn as ReturnType<typeof vi.fn>).mock.calls[0]![1].body) as {
-      messages: Array<{ content: Array<{ source?: { media_type: string } }> }>;
+      messages: Array<{ content: Array<{ type: string; source?: { media_type: string } }> }>;
     };
-    expect(body.messages[0]!.content[0]!.source?.media_type).toBe('image/jpeg');
+    // v1.21.0: content array no longer puts image first; find by type.
+    const imageItem = body.messages[0]!.content.find((c) => c.type === 'image');
+    expect(imageItem?.source?.media_type).toBe('image/jpeg');
   });
 
   it('falls back to image/jpeg for unknown media type', async () => {
@@ -124,12 +142,13 @@ describe('runExtractTurn — JSON-mode via proxy', () => {
       JSON.stringify({ fields: {}, confidence: {} }),
     );
     vi.stubGlobal('fetch', fetchFn);
-    await runExtractTurn(['data:image/bmp;base64,abc'], 'skill');
+    await runExtractTurn(imageBlocks('data:image/bmp;base64,abc'), 'skill');
     const body = JSON.parse((fetchFn as ReturnType<typeof vi.fn>).mock.calls[0]![1].body) as {
-      messages: Array<{ content: Array<{ source?: { media_type: string } }> }>;
+      messages: Array<{ content: Array<{ type: string; source?: { media_type: string } }> }>;
     };
-    // Unknown media type -> default (image/jpeg in new code)
-    expect(body.messages[0]!.content[0]!.source?.media_type).toBe('image/jpeg');
+    // v1.21.0: content array no longer puts image first; find by type.
+    const imageItem = body.messages[0]!.content.find((c) => c.type === 'image');
+    expect(imageItem?.source?.media_type).toBe('image/jpeg');
   });
 });
 
@@ -149,7 +168,7 @@ describe('runExtractTurn — confidence filter', () => {
       },
     });
     vi.stubGlobal('fetch', mockProxyResponse(payload));
-    const result = await runExtractTurn(['data:image/jpeg;base64,/9j/'], 'skill');
+    const result = await runExtractTurn(imageBlocks('data:image/jpeg;base64,/9j/'), 'skill');
     expect(Object.keys(result.confidence).sort()).toEqual(['age', 'name', 'teudatZehut']);
     expect(result.confidence['room']).toBeUndefined();
     expect(result.confidence['chiefComplaint']).toBeUndefined();
@@ -162,7 +181,7 @@ describe('runExtractTurn — confidence filter', () => {
       confidence: { name: 'high', age: 'very-high', teudatZehut: null },
     });
     vi.stubGlobal('fetch', mockProxyResponse(payload));
-    const result = await runExtractTurn(['data:image/jpeg;base64,/9j/'], 'skill');
+    const result = await runExtractTurn(imageBlocks('data:image/jpeg;base64,/9j/'), 'skill');
     expect(result.confidence['name']).toBe('high');
     expect(result.confidence['age']).toBeUndefined();
     expect(result.confidence['teudatZehut']).toBeUndefined();
