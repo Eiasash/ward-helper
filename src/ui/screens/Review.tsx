@@ -15,6 +15,20 @@ type Status = 'loading' | 'ready' | 'error';
 const EXTRACT_TIMEOUT_MS = 45_000;
 
 /**
+ * Hebrew labels for the three critical-identifier field keys, mirroring the
+ * label= props used in the FieldRow declarations below. Used by the Proceed
+ * gate to surface "נדרש אישור ידני בשדה: שם" with the same vocabulary the
+ * doctor sees on the FieldRow itself, so the message is unambiguous.
+ */
+function labelFor(key: 'name' | 'teudatZehut' | 'age'): string {
+  switch (key) {
+    case 'name': return 'שם';
+    case 'teudatZehut': return 'ת.ז.';
+    case 'age': return 'גיל';
+  }
+}
+
+/**
  * Wrap a promise with a hard timeout. On timeout, the promise rejects with
  * a diagnostic message so the Review screen can surface "what went wrong"
  * rather than sitting on "מנתח את המסך..." forever.
@@ -48,6 +62,18 @@ export function Review() {
   const [continuityEnabled, setContinuityEnabled] = useState<boolean>(true);
   const [safetyFlags, setSafetyFlags] = useState<SafetyFlags | null>(null);
   const [safetyOpen, setSafetyOpen] = useState(false);
+  // Per-critical-row confirmation state, populated by FieldRow's onConfirmChange
+  // callback. Keyed by field name. `undefined` means we haven't received a
+  // signal yet (FieldRow's mount-effect hasn't fired) — treated as
+  // not-yet-confirmed for safety. `true` means high/med confidence OR the
+  // doctor tapped אישור ידני נדרש. `false` means low/missing confidence and
+  // not yet acknowledged.
+  //
+  // Gates the Proceed button below. Closes the v1.21.0-era gap where doctors
+  // could ignore the 0.6-opacity visual cue and proceed past unverified
+  // extracts. The wire-up was always intended (FieldRow exports
+  // isRowConfirmed) but never connected until v1.21.3.
+  const [criticalConfirmed, setCriticalConfirmed] = useState<Record<string, boolean>>({});
   const isSoap = sessionStorage.getItem('noteType') === 'soap';
 
   // Elapsed-time counter while loading — gives user feedback that work is
@@ -292,6 +318,9 @@ export function Review() {
         confidence={parsed.confidence['name']}
         onChange={update('name')}
         critical
+        onConfirmChange={(c) =>
+          setCriticalConfirmed((s) => (s.name === c ? s : { ...s, name: c }))
+        }
       />
       <FieldRow
         label="ת.ז."
@@ -299,6 +328,9 @@ export function Review() {
         confidence={parsed.confidence['teudatZehut']}
         onChange={update('teudatZehut')}
         critical
+        onConfirmChange={(c) =>
+          setCriticalConfirmed((s) => (s.teudatZehut === c ? s : { ...s, teudatZehut: c }))
+        }
       />
       <FieldRow
         label="גיל"
@@ -306,6 +338,9 @@ export function Review() {
         confidence={parsed.confidence['age']}
         onChange={update('age')}
         critical
+        onConfirmChange={(c) =>
+          setCriticalConfirmed((s) => (s.age === c ? s : { ...s, age: c }))
+        }
       />
       <FieldRow
         label="חדר"
@@ -440,9 +475,37 @@ export function Review() {
         </div>
       )}
 
-      <div style={{ marginTop: 16 }}>
-        <button onClick={onProceed}>צור טיוטת רשימה ←</button>
-      </div>
+      {(() => {
+        // Block Proceed until all 3 critical rows (name, teudatZehut, age) are
+        // confirmed. A row is confirmed when it has high/med confidence OR the
+        // doctor explicitly tapped אישור ידני נדרש. State is populated by
+        // FieldRow's onConfirmChange callback above.
+        //
+        // `undefined` (FieldRow hasn't reported yet) is treated as
+        // not-yet-confirmed so we fail closed during the brief mount window.
+        // FieldRow's mount-effect fires on the first render, so this gate
+        // self-resolves within one tick for the high-confidence path.
+        const allCriticalReady = (['name', 'teudatZehut', 'age'] as const).every(
+          (k) => criticalConfirmed[k] === true,
+        );
+        const blockedFields = (['name', 'teudatZehut', 'age'] as const).filter(
+          (k) => criticalConfirmed[k] !== true,
+        );
+        return (
+          <div style={{ marginTop: 16 }}>
+            <button onClick={onProceed} disabled={!allCriticalReady}>
+              צור טיוטת רשימה ←
+            </button>
+            {!allCriticalReady && (
+              <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 8 }}>
+                {blockedFields.length === 1 && blockedFields[0]
+                  ? `נדרש אישור ידני בשדה: ${labelFor(blockedFields[0])}`
+                  : `נדרש אישור ידני בשדות: ${blockedFields.map(labelFor).join(', ')}`}
+              </p>
+            )}
+          </div>
+        );
+      })()}
     </section>
   );
 }
