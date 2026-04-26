@@ -121,6 +121,83 @@ export function stripMarkdownFence(s: string): string {
 }
 
 /**
+ * Extract a JSON object from a model response that may include prose preamble,
+ * "Pass 1 / Pass 2" reasoning, markdown fences, or postamble. Returns a string
+ * the caller will JSON.parse — does not parse itself, so caller controls the
+ * error path.
+ *
+ * Strategy in order:
+ *   1. Fast path — if stripMarkdownFence yields a `{...}`-shaped string, use it.
+ *   2. Find a ```json ... ``` (or bare ``` ... ```) block anywhere in the body
+ *      and extract its content.
+ *   3. Balanced-brace fallback — walk from the first `{` matching depth, while
+ *      respecting JSON string literals so a quoted `{` doesn't throw off depth.
+ *   4. If nothing extractable, return stripped output and let JSON.parse throw
+ *      a real error message — preserves the existing failure mode for callers.
+ *
+ * Why centralized: as of 2026-04 Sonnet still emits multi-paragraph "Pass 1
+ * Identity / Pass 2 Clinical" preambles before the JSON envelope, even when the
+ * system prompt explicitly forbids prose. The original v1.18.1 stripMarkdownFence
+ * only stripped fences anchored at start/end of the body, so any preamble made
+ * `JSON.parse` throw "Unexpected token 'I'..." (debug-panel issue, ward-helper
+ * v1.21.0). All three response parsers (extract, emit, census) now go through
+ * this.
+ */
+export function extractJsonObject(s: string): string {
+  if (!s) return s;
+
+  // 1. Fast path: already-clean JSON, or pure fence-wrapped JSON.
+  const stripped = stripMarkdownFence(s);
+  if (stripped.startsWith('{') && stripped.endsWith('}')) {
+    return stripped;
+  }
+
+  // 2. Fenced block anywhere in the body. Greedy on outer match, lazy on inner
+  // content — `[\s\S]*?` so we stop at the FIRST closing fence, not the last
+  // (which would swallow trailing prose-with-backticks if any).
+  const fenced = s.match(/```(?:json|JSON)?\s*\r?\n([\s\S]*?)\r?\n?\s*```/);
+  if (fenced && fenced[1]) {
+    const inner = fenced[1].trim();
+    if (inner.startsWith('{') && inner.endsWith('}')) return inner;
+  }
+
+  // 3. Balanced-brace fallback. Track string-literal state so '{' or '}' inside
+  // a JSON string value doesn't throw off the depth count.
+  const start = s.indexOf('{');
+  if (start !== -1) {
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    for (let i = start; i < s.length; i++) {
+      const ch = s[i];
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (inString) {
+        if (ch === '\\') escape = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+      if (ch === '{') depth++;
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) return s.slice(start, i + 1).trim();
+      }
+    }
+  }
+
+  // 4. Nothing extractable — return stripped so caller's JSON.parse throws a
+  // real "Unexpected token..." error with the bad payload, matching the
+  // pre-v1.21.1 failure mode for genuinely malformed responses.
+  return stripped;
+}
+
+/**
  * Build the Anthropic content array from a CaptureBlock list. Order is
  * preserved so a text block AFTER an image is read by the model as a caption
  * or commentary on the preceding image; a text block BEFORE an image is read
@@ -193,7 +270,7 @@ export async function runExtractTurn(
     throw err;
   }
 
-  const clean = stripMarkdownFence(text);
+  const clean = extractJsonObject(text);
   let parsed: ParseResult;
   try {
     parsed = JSON.parse(clean) as ParseResult;
@@ -287,8 +364,9 @@ export async function runEmitTurn(
 
   // No silent fallback to raw text — if parsing fails, throw and let the UI
   // surface a regenerate prompt. The pre-v1.18.1 fallback let users paste a
-  // literal "```json" wrapper into Chameleon.
-  const clean = stripMarkdownFence(text);
+  // literal "```json" wrapper into Chameleon. v1.21.1 upgraded fence-strip to
+  // full JSON-extraction so prose preamble doesn't break parsing either.
+  const clean = extractJsonObject(text);
   let parsed: { noteHebrew?: string };
   try {
     parsed = JSON.parse(clean) as { noteHebrew?: string };
@@ -399,7 +477,7 @@ export async function runCensusExtractTurn(
     throw err;
   }
 
-  const clean = stripMarkdownFence(text);
+  const clean = extractJsonObject(text);
   let parsed: { rows?: unknown };
   try {
     parsed = JSON.parse(clean) as { rows?: unknown };
