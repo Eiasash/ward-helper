@@ -135,20 +135,20 @@ describe('Capture — hard cap enforcement on file pick', () => {
     expect(pill!.textContent).toMatch(/10\/10/);
   });
 
-  it('blocks further picks once the cap is reached', async () => {
+  it('blocks further picks once the cap is reached: file inputs are replaced with disabled buttons', async () => {
     seedShots(IMAGE_HARD_CAP);
     const { container } = renderCapture();
     await flush();
 
-    const galleryInput = container.querySelector(
-      'input[type="file"][multiple]',
-    ) as HTMLInputElement;
-    const files = [new File(['x'], 's.jpg', { type: 'image/jpeg' })];
-    await act(async () => {
-      fireEvent.change(galleryInput, { target: { files } });
-    });
-    await flush();
-    expect(screen.getByText(/הגעת לתקרה של 10 תמונות/)).toBeInTheDocument();
+    // v1.21.0: at cap, the label/input pair is replaced with a disabled
+    // button rather than relying on input[disabled] (which can still
+    // open the picker on some Chromium builds).
+    const galleryInput = container.querySelector('input[type="file"][multiple]');
+    expect(galleryInput).toBeNull();
+    const cameraInput = container.querySelector('input[type="file"][capture]');
+    expect(cameraInput).toBeNull();
+    const galleryBtn = screen.getByLabelText('גלריה — תקרה') as HTMLButtonElement;
+    expect(galleryBtn.disabled).toBe(true);
   });
 });
 

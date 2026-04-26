@@ -132,7 +132,7 @@ describe('runExtractTurn — JSON-mode via proxy', () => {
     const body = JSON.parse((fetchFn as ReturnType<typeof vi.fn>).mock.calls[0]![1].body) as {
       messages: Array<{ content: Array<{ type: string; source?: { media_type: string } }> }>;
     };
-    // content[0] is the leading prompt text; image follows.
+    // v1.21.0: content array no longer puts image first; find by type.
     const imageItem = body.messages[0]!.content.find((c) => c.type === 'image');
     expect(imageItem?.source?.media_type).toBe('image/jpeg');
   });
@@ -146,6 +146,7 @@ describe('runExtractTurn — JSON-mode via proxy', () => {
     const body = JSON.parse((fetchFn as ReturnType<typeof vi.fn>).mock.calls[0]![1].body) as {
       messages: Array<{ content: Array<{ type: string; source?: { media_type: string } }> }>;
     };
+    // v1.21.0: content array no longer puts image first; find by type.
     const imageItem = body.messages[0]!.content.find((c) => c.type === 'image');
     expect(imageItem?.source?.media_type).toBe('image/jpeg');
   });

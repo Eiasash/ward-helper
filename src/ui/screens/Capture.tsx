@@ -8,7 +8,9 @@ import {
   reorderBlocks,
   listBlocks,
   clearBlocks,
+  CapExceededError,
   IMAGE_HARD_CAP as SESSION_IMAGE_HARD_CAP,
+  TEXT_HARD_CAP as SESSION_TEXT_HARD_CAP,
   type CaptureBlock,
   type ImageSource,
   type TextSource,
@@ -28,6 +30,10 @@ const NOTE_TYPES: { type: NoteType; label: string }[] = [
 
 export const IMAGE_SOFT_CAP = 6;
 export const IMAGE_HARD_CAP = SESSION_IMAGE_HARD_CAP;
+export const TEXT_HARD_CAP = SESSION_TEXT_HARD_CAP;
+
+/** Auto-clear pickWarn this many ms after it's set. Long enough for a glance, short enough that stale warnings don't linger past the next user action. */
+const PICK_WARN_TTL_MS = 4000;
 
 const IMAGE_SOURCE_LABEL: Record<ImageSource, string> = {
   camera: 'מצלמה',
@@ -66,6 +72,13 @@ export function Capture() {
     hasApiKey().then(setKeyPresent);
   }, []);
 
+  // Auto-clear the cap-warn banner so it doesn't linger past the next action.
+  useEffect(() => {
+    if (!pickWarn) return;
+    const t = setTimeout(() => setPickWarn(''), PICK_WARN_TTL_MS);
+    return () => clearTimeout(t);
+  }, [pickWarn]);
+
   // Window-level paste handler: works regardless of focus on the Capture
   // screen. Image items become image blocks with sourceLabel='clipboard';
   // plain text becomes a text block with sourceLabel='paste'. If clipboard
@@ -85,20 +98,36 @@ export function Capture() {
       const textPayload = cd.getData('text');
       if (imageFiles.length === 0 && !textPayload) return;
       e.preventDefault();
+      let imageDropped = 0;
+      let textDropped = 0;
       if (imageFiles.length > 0) {
         const dataUrls = await Promise.all(imageFiles.map(readAsDataUrl));
         const compressed = await Promise.all(dataUrls.map((d) => compressImage(d)));
-        let dropped = 0;
         for (const d of compressed) {
-          const added = addImageBlock(d, 'clipboard');
-          if (!added) dropped++;
-        }
-        if (dropped > 0) {
-          setPickWarn(`הגעת לתקרה של ${IMAGE_HARD_CAP} תמונות. ${dropped} לא נוספו.`);
+          try {
+            addImageBlock(d, 'clipboard');
+          } catch (err) {
+            if (err instanceof CapExceededError) imageDropped++;
+            else throw err;
+          }
         }
       }
       if (textPayload && textPayload.trim().length > 0) {
-        addTextBlock(textPayload, 'paste');
+        try {
+          addTextBlock(textPayload, 'paste');
+        } catch (err) {
+          if (err instanceof CapExceededError) textDropped++;
+          else throw err;
+        }
+      }
+      // Image cap warning takes precedence (more likely with bulk paste);
+      // fall back to the text cap warning if only text was rejected.
+      if (imageDropped > 0) {
+        setPickWarn(
+          `הגעת לתקרה של ${IMAGE_HARD_CAP} תמונות. ${imageDropped} לא נוספו.`,
+        );
+      } else if (textDropped > 0) {
+        setPickWarn(`הגעת לתקרה של ${TEXT_HARD_CAP} בלוקי טקסט.`);
       }
       refreshRef.current();
     }
@@ -125,7 +154,23 @@ export function Capture() {
     }
     const dataUrls = await Promise.all(toAdd.map(readAsDataUrl));
     const compressed = await Promise.all(dataUrls.map((d) => compressImage(d)));
-    for (const d of compressed) addImageBlock(d, source);
+    let raceDropped = 0;
+    for (const d of compressed) {
+      try {
+        addImageBlock(d, source);
+      } catch (err) {
+        // Pre-slicing keeps the loop within `remaining`, but a concurrent
+        // paste could push us past the cap before the loop runs. Defensive:
+        // count the throw, surface a warning, keep what we have.
+        if (err instanceof CapExceededError) raceDropped++;
+        else throw err;
+      }
+    }
+    if (raceDropped > 0) {
+      setPickWarn(
+        `הגעת לתקרה של ${IMAGE_HARD_CAP} תמונות. ${dropped + raceDropped} לא נוספו.`,
+      );
+    }
     refresh();
     e.target.value = '';
   }
@@ -137,9 +182,14 @@ export function Capture() {
       setAddTextDraft('');
       return;
     }
-    const added = addTextBlock(addTextDraft, 'typed');
-    if (!added) {
-      setPickWarn('הגעת לתקרת בלוקי טקסט.');
+    try {
+      addTextBlock(addTextDraft, 'typed');
+    } catch (err) {
+      if (err instanceof CapExceededError) {
+        setPickWarn(`הגעת לתקרה של ${TEXT_HARD_CAP} בלוקי טקסט.`);
+      } else {
+        throw err;
+      }
     }
     setAddTextDraft('');
     setShowAddText(false);
@@ -191,6 +241,9 @@ export function Capture() {
   }
 
   const imageCount = blocks.filter((b) => b.kind === 'image').length;
+  const textCount = blocks.filter((b) => b.kind === 'text').length;
+  const imageAtCap = imageCount >= IMAGE_HARD_CAP;
+  const textAtCap = textCount >= TEXT_HARD_CAP;
   const pillClass =
     imageCount <= IMAGE_SOFT_CAP
       ? 'pill pill-info'
@@ -430,31 +483,62 @@ export function Capture() {
           Label-wrapped inputs are required on mobile Chrome — programmatic
           .click() on display:none inputs fails silently in PWA standalone
           mode. Tapping a <label> dispatches a trusted click directly.
+
+          When the image cap is reached we render a disabled button instead
+          of the label/input pair: a label with `disabled` on the input
+          would still expand the file picker visually on some browsers,
+          and we want the affordance to be unmistakably inert.
         */}
-        <label className="btn-like" aria-label="צלם">
-          📷 צלם
-          <input
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="visually-hidden"
-            onChange={(e) => onPickFiles(e, 'camera')}
-          />
-        </label>
-        <label className="btn-like ghost" aria-label="בחר מהגלריה">
-          🖼️ גלריה
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            className="visually-hidden"
-            onChange={(e) => onPickFiles(e, 'gallery')}
-          />
-        </label>
+        {imageAtCap ? (
+          <button
+            type="button"
+            className="btn-like"
+            aria-label="צלם — תקרה"
+            title={`הגעת לתקרה של ${IMAGE_HARD_CAP} תמונות`}
+            disabled
+          >
+            📷 צלם
+          </button>
+        ) : (
+          <label className="btn-like" aria-label="צלם">
+            📷 צלם
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="visually-hidden"
+              onChange={(e) => onPickFiles(e, 'camera')}
+            />
+          </label>
+        )}
+        {imageAtCap ? (
+          <button
+            type="button"
+            className="btn-like ghost"
+            aria-label="גלריה — תקרה"
+            title={`הגעת לתקרה של ${IMAGE_HARD_CAP} תמונות`}
+            disabled
+          >
+            🖼️ גלריה
+          </button>
+        ) : (
+          <label className="btn-like ghost" aria-label="בחר מהגלריה">
+            🖼️ גלריה
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              className="visually-hidden"
+              onChange={(e) => onPickFiles(e, 'gallery')}
+            />
+          </label>
+        )}
         <button
           type="button"
           className="ghost"
           onClick={() => setShowAddText((v) => !v)}
+          disabled={textAtCap}
+          title={textAtCap ? `הגעת לתקרה של ${TEXT_HARD_CAP} בלוקי טקסט` : undefined}
         >
           📝 הוסף טקסט
         </button>

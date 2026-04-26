@@ -46,6 +46,22 @@ export const IMAGE_HARD_CAP = 10;
  */
 export const TEXT_HARD_CAP = 8;
 
+/**
+ * Thrown by `addImageBlock` / `addTextBlock` when the per-kind cap is hit.
+ * We throw rather than returning null because silent drops are exactly the
+ * UX failure caps exist to prevent — every caller should either pre-check
+ * counts or wrap in try/catch and surface a warning to the user.
+ */
+export class CapExceededError extends Error {
+  constructor(
+    public readonly kind: 'image' | 'text',
+    public readonly cap: number,
+  ) {
+    super(`capture cap exceeded for ${kind} blocks (${cap})`);
+    this.name = 'CapExceededError';
+  }
+}
+
 /** Backcompat shape for callers that haven't migrated to blocks yet. */
 export interface Shot {
   id: string;
@@ -68,8 +84,8 @@ function countTexts(): number {
   return n;
 }
 
-export function addImageBlock(dataUrl: string, source: ImageSource): ImageBlock | null {
-  if (countImages() >= IMAGE_HARD_CAP) return null;
+export function addImageBlock(dataUrl: string, source: ImageSource): ImageBlock {
+  if (countImages() >= IMAGE_HARD_CAP) throw new CapExceededError('image', IMAGE_HARD_CAP);
   const blob = dataUrlToBlob(dataUrl);
   const blobUrl = URL.createObjectURL(blob);
   const block: ImageBlock = {
@@ -84,8 +100,8 @@ export function addImageBlock(dataUrl: string, source: ImageSource): ImageBlock 
   return block;
 }
 
-export function addTextBlock(content: string, source: TextSource): TextBlock | null {
-  if (countTexts() >= TEXT_HARD_CAP) return null;
+export function addTextBlock(content: string, source: TextSource): TextBlock {
+  if (countTexts() >= TEXT_HARD_CAP) throw new CapExceededError('text', TEXT_HARD_CAP);
   const block: TextBlock = {
     kind: 'text',
     id: crypto.randomUUID(),

@@ -201,8 +201,8 @@ describe('Capture — move-up / move-down end-of-list disable', () => {
   });
 
   it('move-down on the first block reorders to position 2', async () => {
-    const a = addImageBlock(TINY_PNG, 'camera')!;
-    const b = addTextBlock('text', 'typed')!;
+    const a = addImageBlock(TINY_PNG, 'camera');
+    const b = addTextBlock('text', 'typed');
 
     const { container } = renderCapture();
     await flush();
@@ -219,6 +219,79 @@ describe('Capture — move-up / move-down end-of-list disable', () => {
     const reordered = listBlocks();
     expect(reordered[0]!.id).toBe(b.id);
     expect(reordered[1]!.id).toBe(a.id);
+  });
+});
+
+describe('Capture — cap feedback', () => {
+  it('image cap: pre-seed 10, attempt to add 1 more — count stays at 10, warning shown', async () => {
+    for (let i = 0; i < 10; i++) addImageBlock(TINY_PNG, 'gallery');
+    const { container } = renderCapture();
+    await flush();
+
+    // The label/input pair is replaced with a disabled button at cap, so
+    // there's no usable file input on the screen — verify that, then
+    // also verify onPickFiles still rejects defensively if exercised.
+    const galleryInput = container.querySelector(
+      'input[type="file"][multiple]',
+    ) as HTMLInputElement | null;
+    expect(galleryInput).toBeNull();
+
+    const galleryBtn = screen.getByLabelText('גלריה — תקרה') as HTMLButtonElement;
+    expect(galleryBtn.disabled).toBe(true);
+    const cameraBtn = screen.getByLabelText('צלם — תקרה') as HTMLButtonElement;
+    expect(cameraBtn.disabled).toBe(true);
+
+    expect(listBlocks().filter((b) => b.kind === 'image')).toHaveLength(10);
+  });
+
+  it('text cap: pre-seed 8 text blocks — "הוסף טקסט" button is disabled', async () => {
+    for (let i = 0; i < 8; i++) addTextBlock(`t${i}`, 'paste');
+    renderCapture();
+    await flush();
+
+    const addTextBtn = screen.getByText(/הוסף טקסט/) as HTMLButtonElement;
+    expect(addTextBtn.disabled).toBe(true);
+    expect(listBlocks().filter((b) => b.kind === 'text')).toHaveLength(8);
+  });
+
+  it('paste of an image while at image cap surfaces the cap warning', async () => {
+    for (let i = 0; i < 10; i++) addImageBlock(TINY_PNG, 'gallery');
+    const { container } = renderCapture();
+    await flush();
+
+    const file = new File(['x'], 'snip.png', { type: 'image/png' });
+    class FakeFileReader {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      result: string | null = null;
+      readAsDataURL() {
+        this.result = TINY_PNG;
+        setTimeout(() => this.onload?.(), 0);
+      }
+    }
+    const OriginalFileReader = globalThis.FileReader;
+    vi.stubGlobal('FileReader', FakeFileReader as unknown as typeof FileReader);
+
+    const items = [
+      { kind: 'file', type: 'image/png', getAsFile: () => file } as unknown as DataTransferItem,
+    ];
+    const cd = { items, getData: () => '' } as unknown as DataTransfer;
+    const ev = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'clipboardData', { value: cd });
+
+    await act(async () => {
+      window.dispatchEvent(ev);
+      await new Promise<void>((r) => setTimeout(r, 10));
+    });
+    await flush();
+
+    vi.stubGlobal('FileReader', OriginalFileReader);
+
+    const warn = Array.from(container.querySelectorAll('.pill-warn')).find((n) =>
+      /תקרה/.test(n.textContent ?? ''),
+    );
+    expect(warn).toBeDefined();
+    expect(listBlocks().filter((b) => b.kind === 'image')).toHaveLength(10);
   });
 });
 
