@@ -14,6 +14,18 @@ export interface ExtractMeta {
   in_tokens?: number;
   out_tokens?: number;
   ms?: number;
+  /**
+   * Which strategy in extractJsonStrategy resolved the parse:
+   *   'fast'     — clean JSON (good model day)
+   *   'fenced'   — ```json fence inside prose preamble (the v1.21.0 case)
+   *   'brace'    — raw {...} inside prose, no fence (most misbehaved)
+   *   'fallback' — no JSON found; the caller's JSON.parse throws
+   *
+   * Surfacing this lets you see at a glance how often the model is ignoring
+   * the "no preamble" prompt instruction. Set when present; older entries
+   * may omit it entirely.
+   */
+  parseStrategy?: 'fast' | 'fenced' | 'brace' | 'fallback';
 }
 
 export interface EmitMeta {
@@ -21,6 +33,7 @@ export interface EmitMeta {
   in_tokens?: number;
   out_tokens?: number;
   ms?: number;
+  parseStrategy?: 'fast' | 'fenced' | 'brace' | 'fallback';
 }
 
 export interface ErrorMeta {
