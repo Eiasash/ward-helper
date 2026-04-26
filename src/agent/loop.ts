@@ -3,6 +3,7 @@ import type { ParseResult, ParseFields } from './tools';
 import { addTurn } from './costs';
 import { recordExtract, recordEmit, recordError } from './debugLog';
 import type { NoteType } from '@/storage/indexed';
+import type { CaptureBlock } from '@/camera/session';
 
 /**
  * Extract structured AZMA data. Uses JSON-mode prompting (not tool_use)
@@ -119,15 +120,36 @@ export function stripMarkdownFence(s: string): string {
   return out.trim();
 }
 
-export async function runExtractTurn(
-  images: string[],
-  skillContent: string,
-): Promise<ParseResult> {
-  const imageBlocks = images.map(dataUrlToImageBlock);
-  const content: AnthropicContentBlock[] = [
-    ...imageBlocks,
+/**
+ * Build the Anthropic content array from a CaptureBlock list. Order is
+ * preserved so a text block AFTER an image is read by the model as a caption
+ * or commentary on the preceding image; a text block BEFORE an image is read
+ * as priming context. The extract JSON instructions are prepended as the
+ * leading text block so the model always sees the schema first.
+ */
+function blocksToContent(blocks: readonly CaptureBlock[]): AnthropicContentBlock[] {
+  const out: AnthropicContentBlock[] = [
     { type: 'text', text: EXTRACT_JSON_INSTRUCTIONS },
   ];
+  for (const b of blocks) {
+    if (b.kind === 'image') {
+      out.push(dataUrlToImageBlock(b.dataUrl));
+    } else {
+      const header =
+        b.sourceLabel === 'paste' ? '## נתונים מודבקים\n' : '## הערות נוספות\n';
+      out.push({ type: 'text', text: header + b.content });
+    }
+  }
+  return out;
+}
+
+export async function runExtractTurn(
+  blocks: readonly CaptureBlock[],
+  skillContent: string,
+): Promise<ParseResult> {
+  if (blocks.length === 0) throw new Error('אין קלט לעיבוד');
+  const content = blocksToContent(blocks);
+  const imageCount = blocks.reduce((n, b) => n + (b.kind === 'image' ? 1 : 0), 0);
 
   const started = Date.now();
   let res;
@@ -160,7 +182,7 @@ export async function runExtractTurn(
 
   const text = res.content.map((b) => b.text).join('\n').trim();
   recordExtract(text, {
-    images: images.length,
+    images: imageCount,
     in_tokens: res.usage.input_tokens,
     out_tokens: res.usage.output_tokens,
     ms: Date.now() - started,

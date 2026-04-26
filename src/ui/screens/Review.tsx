@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { listShots, getPastedText } from '@/camera/session';
+import { listBlocks } from '@/camera/session';
 import { runExtractTurn } from '@/agent/loop';
 import { loadSkills } from '@/skills/loader';
 import type { ParseResult, ParseFields, Med } from '@/agent/tools';
@@ -63,16 +63,11 @@ export function Review() {
     let cancelled = false;
     (async () => {
       try {
-        const images = listShots().map((s) => s.dataUrl);
-        const pasted = getPastedText();
-        if (images.length === 0 && !pasted) throw new Error('אין קלט לעיבוד');
+        const blocks = listBlocks();
+        if (blocks.length === 0) throw new Error('אין קלט לעיבוד');
         const skillContent = await loadSkills(['azma-ui', 'hebrew-medical-glossary']);
-        const imagePayload = images.length > 0 ? images : [];
         const result = await withTimeout(
-          runExtractTurn(
-            imagePayload,
-            skillContent + (pasted ? `\n\n## Pasted AZMA text\n${pasted}` : ''),
-          ),
+          runExtractTurn(blocks, skillContent),
           EXTRACT_TIMEOUT_MS,
           'Anthropic extract call',
         );
@@ -168,7 +163,9 @@ export function Review() {
 
   if (status === 'error') {
     const is504 = /504|Upstream timeout/i.test(error);
-    const imageCount = listShots().length;
+    const allBlocks = listBlocks();
+    const imageCount = allBlocks.filter((b) => b.kind === 'image').length;
+    const hasPastedText = allBlocks.some((b) => b.kind === 'text');
     return (
       <section>
         <h1>שגיאה</h1>
@@ -195,7 +192,7 @@ export function Review() {
           <summary>אבחון</summary>
           <ul style={{ paddingInlineStart: 18 }}>
             <li>תמונות בסשן: {imageCount}</li>
-            <li>טקסט דבוק: {getPastedText() ? 'כן' : 'לא'}</li>
+            <li>טקסט דבוק: {hasPastedText ? 'כן' : 'לא'}</li>
             <li>זמן מקסימלי: {EXTRACT_TIMEOUT_MS / 1000}s</li>
           </ul>
         </details>
