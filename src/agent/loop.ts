@@ -121,35 +121,39 @@ export function stripMarkdownFence(s: string): string {
 }
 
 /**
- * Extract a JSON object from a model response that may include prose preamble,
- * "Pass 1 / Pass 2" reasoning, markdown fences, or postamble. Returns a string
- * the caller will JSON.parse — does not parse itself, so caller controls the
- * error path.
+ * Which strategy in extractJsonObject ended up resolving the parse. Logged
+ * to the debug panel so a user (or future me) can tell at a glance how often
+ * the model is misbehaving and forcing us into the recovery paths.
  *
- * Strategy in order:
- *   1. Fast path — if stripMarkdownFence yields a `{...}`-shaped string, use it.
- *   2. Find a ```json ... ``` (or bare ``` ... ```) block anywhere in the body
- *      and extract its content.
- *   3. Balanced-brace fallback — walk from the first `{` matching depth, while
- *      respecting JSON string literals so a quoted `{` doesn't throw off depth.
- *   4. If nothing extractable, return stripped output and let JSON.parse throw
- *      a real error message — preserves the existing failure mode for callers.
- *
- * Why centralized: as of 2026-04 Sonnet still emits multi-paragraph "Pass 1
- * Identity / Pass 2 Clinical" preambles before the JSON envelope, even when the
- * system prompt explicitly forbids prose. The original v1.18.1 stripMarkdownFence
- * only stripped fences anchored at start/end of the body, so any preamble made
- * `JSON.parse` throw "Unexpected token 'I'..." (debug-panel issue, ward-helper
- * v1.21.0). All three response parsers (extract, emit, census) now go through
- * this.
+ *   'fast'     — model emitted clean JSON or fence-bookended JSON. Good model day.
+ *   'fenced'   — model emitted prose preamble + ```json fence. The v1.21.0
+ *                production case. If you see this regularly the model is
+ *                ignoring the "no preamble" prompt instruction.
+ *   'brace'    — model emitted prose with raw {...} (no fences). Even more
+ *                misbehaved; safer recovery thanks to string-literal-aware walker.
+ *   'fallback' — no JSON-shaped content found. Caller's JSON.parse will throw
+ *                with a real diagnostic for the extract-parse error path.
  */
-export function extractJsonObject(s: string): string {
-  if (!s) return s;
+export type ExtractStrategy = 'fast' | 'fenced' | 'brace' | 'fallback';
+
+export interface ExtractResult {
+  json: string;
+  strategy: ExtractStrategy;
+}
+
+/**
+ * Same logic as extractJsonObject but reports which strategy resolved the
+ * parse. New callers should prefer this for observability. extractJsonObject
+ * is the legacy string-returning shim and stays unchanged for backwards-compat
+ * with existing tests and call sites.
+ */
+export function extractJsonStrategy(s: string): ExtractResult {
+  if (!s) return { json: s, strategy: 'fast' };
 
   // 1. Fast path: already-clean JSON, or pure fence-wrapped JSON.
   const stripped = stripMarkdownFence(s);
   if (stripped.startsWith('{') && stripped.endsWith('}')) {
-    return stripped;
+    return { json: stripped, strategy: 'fast' };
   }
 
   // 2. Fenced block anywhere in the body. Greedy on outer match, lazy on inner
@@ -158,7 +162,9 @@ export function extractJsonObject(s: string): string {
   const fenced = s.match(/```(?:json|JSON)?\s*\r?\n([\s\S]*?)\r?\n?\s*```/);
   if (fenced && fenced[1]) {
     const inner = fenced[1].trim();
-    if (inner.startsWith('{') && inner.endsWith('}')) return inner;
+    if (inner.startsWith('{') && inner.endsWith('}')) {
+      return { json: inner, strategy: 'fenced' };
+    }
   }
 
   // 3. Balanced-brace fallback. Track string-literal state so '{' or '}' inside
@@ -186,7 +192,7 @@ export function extractJsonObject(s: string): string {
       if (ch === '{') depth++;
       else if (ch === '}') {
         depth--;
-        if (depth === 0) return s.slice(start, i + 1).trim();
+        if (depth === 0) return { json: s.slice(start, i + 1).trim(), strategy: 'brace' };
       }
     }
   }
@@ -194,7 +200,38 @@ export function extractJsonObject(s: string): string {
   // 4. Nothing extractable — return stripped so caller's JSON.parse throws a
   // real "Unexpected token..." error with the bad payload, matching the
   // pre-v1.21.1 failure mode for genuinely malformed responses.
-  return stripped;
+  return { json: stripped, strategy: 'fallback' };
+}
+
+/**
+ * Extract a JSON object from a model response that may include prose preamble,
+ * "Pass 1 / Pass 2" reasoning, markdown fences, or postamble. Returns a string
+ * the caller will JSON.parse — does not parse itself, so caller controls the
+ * error path.
+ *
+ * Strategy in order:
+ *   1. Fast path — if stripMarkdownFence yields a `{...}`-shaped string, use it.
+ *   2. Find a ```json ... ``` (or bare ``` ... ```) block anywhere in the body
+ *      and extract its content.
+ *   3. Balanced-brace fallback — walk from the first `{` matching depth, while
+ *      respecting JSON string literals so a quoted `{` doesn't throw off depth.
+ *   4. If nothing extractable, return stripped output and let JSON.parse throw
+ *      a real error message — preserves the existing failure mode for callers.
+ *
+ * Why centralized: as of 2026-04 Sonnet still emits multi-paragraph "Pass 1
+ * Identity / Pass 2 Clinical" preambles before the JSON envelope, even when the
+ * system prompt explicitly forbids prose. The original v1.18.1 stripMarkdownFence
+ * only stripped fences anchored at start/end of the body, so any preamble made
+ * `JSON.parse` throw "Unexpected token 'I'..." (debug-panel issue, ward-helper
+ * v1.21.0). All three response parsers (extract, emit, census) now go through
+ * this.
+ *
+ * For observability, prefer extractJsonStrategy() which also returns which
+ * strategy resolved the parse. This shim is preserved for the legacy
+ * single-string contract that tests assert on directly.
+ */
+export function extractJsonObject(s: string): string {
+  return extractJsonStrategy(s).json;
 }
 
 /**
@@ -258,19 +295,23 @@ export async function runExtractTurn(
   } as { input_tokens: number; output_tokens: number });
 
   const text = res.content.map((b) => b.text).join('\n').trim();
-  recordExtract(text, {
-    images: imageCount,
-    in_tokens: res.usage.input_tokens,
-    out_tokens: res.usage.output_tokens,
-    ms: Date.now() - started,
-  });
   if (!text) {
     const err = new Error('empty response from proxy');
     recordError(err, { phase: 'extract' });
     throw err;
   }
 
-  const clean = extractJsonObject(text);
+  const { json: clean, strategy } = extractJsonStrategy(text);
+  // Record the extract body BEFORE parsing so a parse failure still leaves
+  // the full body in the debug panel slot — the parse error itself goes via
+  // recordError below, but a copy-snapshot bug-report needs the body too.
+  recordExtract(text, {
+    images: imageCount,
+    in_tokens: res.usage.input_tokens,
+    out_tokens: res.usage.output_tokens,
+    ms: Date.now() - started,
+    parseStrategy: strategy,
+  });
   let parsed: ParseResult;
   try {
     parsed = JSON.parse(clean) as ParseResult;
@@ -350,12 +391,6 @@ export async function runEmitTurn(
   } as { input_tokens: number; output_tokens: number });
 
   const text = res.content.map((b) => b.text).join('\n').trim();
-  recordEmit(text, {
-    noteType,
-    in_tokens: res.usage.input_tokens,
-    out_tokens: res.usage.output_tokens,
-    ms: Date.now() - started,
-  });
   if (!text) {
     const err = new Error('empty response from proxy');
     recordError(err, { phase: 'emit', context: noteType });
@@ -366,7 +401,14 @@ export async function runEmitTurn(
   // surface a regenerate prompt. The pre-v1.18.1 fallback let users paste a
   // literal "```json" wrapper into Chameleon. v1.21.1 upgraded fence-strip to
   // full JSON-extraction so prose preamble doesn't break parsing either.
-  const clean = extractJsonObject(text);
+  const { json: clean, strategy } = extractJsonStrategy(text);
+  recordEmit(text, {
+    noteType,
+    in_tokens: res.usage.input_tokens,
+    out_tokens: res.usage.output_tokens,
+    ms: Date.now() - started,
+    parseStrategy: strategy,
+  });
   let parsed: { noteHebrew?: string };
   try {
     parsed = JSON.parse(clean) as { noteHebrew?: string };
