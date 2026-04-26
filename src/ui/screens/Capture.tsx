@@ -1,13 +1,17 @@
-import { useState, useEffect, type ChangeEvent } from 'react';
+import { useState, useEffect, useRef, type ChangeEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
-  addShot,
-  listShots,
-  clearShots,
-  removeShot,
-  setPastedText,
-  getPastedText,
-  type Shot,
+  addImageBlock,
+  addTextBlock,
+  updateTextBlock,
+  removeBlock,
+  reorderBlocks,
+  listBlocks,
+  clearBlocks,
+  IMAGE_HARD_CAP as SESSION_IMAGE_HARD_CAP,
+  type CaptureBlock,
+  type ImageSource,
+  type TextSource,
 } from '@/camera/session';
 import { compressImage } from '@/camera/compress';
 import { startSession as startCostSession } from '@/agent/costs';
@@ -23,19 +27,34 @@ const NOTE_TYPES: { type: NoteType; label: string }[] = [
 ];
 
 export const IMAGE_SOFT_CAP = 6;
-export const IMAGE_HARD_CAP = 10;
+export const IMAGE_HARD_CAP = SESSION_IMAGE_HARD_CAP;
 
-type Mode = 'camera' | 'paste';
+const IMAGE_SOURCE_LABEL: Record<ImageSource, string> = {
+  camera: 'מצלמה',
+  gallery: 'גלריה',
+  clipboard: 'מהלוח',
+};
+const TEXT_SOURCE_LABEL: Record<TextSource, string> = {
+  typed: 'הוקלד',
+  paste: 'מודבק',
+};
+
+const TEXT_PREVIEW_CHARS = 120;
 
 export function Capture() {
   const nav = useNavigate();
   const [noteType, setNoteType] = useState<NoteType>('admission');
-  const [mode, setMode] = useState<Mode>('camera');
-  const [shots, setShots] = useState<readonly Shot[]>(listShots());
-  const [paste, setPaste] = useState<string>(getPastedText() ?? '');
+  const [blocks, setBlocks] = useState<readonly CaptureBlock[]>(listBlocks());
   const [pickWarn, setPickWarn] = useState('');
-  // null until the first async check resolves — avoids flashing the banner.
   const [keyPresent, setKeyPresent] = useState<boolean | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingDraft, setEditingDraft] = useState('');
+  const [showAddText, setShowAddText] = useState(false);
+  const [addTextDraft, setAddTextDraft] = useState('');
+
+  const refresh = () => setBlocks([...listBlocks()]);
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
 
   useEffect(() => {
     const seeded = sessionStorage.getItem('continuityNoteType');
@@ -43,20 +62,54 @@ export function Capture() {
       setNoteType('soap');
       sessionStorage.removeItem('continuityNoteType');
     }
-    // Open a fresh cost-attribution window for this capture session. Extract +
-    // emit turns accumulate into it; Save attributes the total to the patient.
     startCostSession();
-    // Pre-flight check: is the direct-to-Anthropic path usable? Show a banner
-    // NOW rather than letting the user photograph, wait, and then hit the
-    // "proxy is too slow" error. Banner is soft — doesn't block capture, just
-    // tells the user to go set a key before they hit Proceed.
     hasApiKey().then(setKeyPresent);
   }, []);
 
-  async function onPickFiles(e: ChangeEvent<HTMLInputElement>) {
+  // Window-level paste handler: works regardless of focus on the Capture
+  // screen. Image items become image blocks with sourceLabel='clipboard';
+  // plain text becomes a text block with sourceLabel='paste'. If clipboard
+  // contains both (e.g. a screenshot copied alongside a caption), both are
+  // added. We do NOT auto-navigate to /review — the user still hits Proceed.
+  useEffect(() => {
+    async function handlePaste(e: ClipboardEvent) {
+      const cd = e.clipboardData;
+      if (!cd) return;
+      const imageFiles: File[] = [];
+      for (const item of Array.from(cd.items ?? [])) {
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          const f = item.getAsFile();
+          if (f) imageFiles.push(f);
+        }
+      }
+      const textPayload = cd.getData('text');
+      if (imageFiles.length === 0 && !textPayload) return;
+      e.preventDefault();
+      if (imageFiles.length > 0) {
+        const dataUrls = await Promise.all(imageFiles.map(readAsDataUrl));
+        const compressed = await Promise.all(dataUrls.map((d) => compressImage(d)));
+        let dropped = 0;
+        for (const d of compressed) {
+          const added = addImageBlock(d, 'clipboard');
+          if (!added) dropped++;
+        }
+        if (dropped > 0) {
+          setPickWarn(`הגעת לתקרה של ${IMAGE_HARD_CAP} תמונות. ${dropped} לא נוספו.`);
+        }
+      }
+      if (textPayload && textPayload.trim().length > 0) {
+        addTextBlock(textPayload, 'paste');
+      }
+      refreshRef.current();
+    }
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, []);
+
+  async function onPickFiles(e: ChangeEvent<HTMLInputElement>, source: ImageSource) {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    const current = listShots().length;
+    const current = listBlocks().filter((b) => b.kind === 'image').length;
     const remaining = IMAGE_HARD_CAP - current;
     if (remaining <= 0) {
       setPickWarn(`הגעת לתקרה של ${IMAGE_HARD_CAP} תמונות.`);
@@ -70,65 +123,86 @@ export function Capture() {
     } else {
       setPickWarn('');
     }
-    const readers = toAdd.map(
-      (f) =>
-        new Promise<string>((res, rej) => {
-          const r = new FileReader();
-          r.onload = () => res(r.result as string);
-          r.onerror = () => rej(r.error);
-          r.readAsDataURL(f);
-        }),
-    );
-    const dataUrls = await Promise.all(readers);
-    // Downsize before storing — cuts upload size ~20x and avoids mobile
-    // Chrome stalling on multi-MB POSTs to the Claude proxy.
+    const dataUrls = await Promise.all(toAdd.map(readAsDataUrl));
     const compressed = await Promise.all(dataUrls.map((d) => compressImage(d)));
-    for (const d of compressed) addShot(d);
-    setShots([...listShots()]);
-    // Reset so the same file can be picked again if user wants.
+    for (const d of compressed) addImageBlock(d, source);
+    refresh();
     e.target.value = '';
   }
 
-  function onPasteChange(v: string) {
-    setPaste(v);
-    setPastedText(v.length > 0 ? v : null);
+  function onCommitAddText() {
+    const v = addTextDraft.trim();
+    if (!v) {
+      setShowAddText(false);
+      setAddTextDraft('');
+      return;
+    }
+    const added = addTextBlock(addTextDraft, 'typed');
+    if (!added) {
+      setPickWarn('הגעת לתקרת בלוקי טקסט.');
+    }
+    setAddTextDraft('');
+    setShowAddText(false);
+    refresh();
   }
 
-  function onDeleteShot(id: string) {
-    removeShot(id);
-    setShots([...listShots()]);
+  function onStartEdit(b: CaptureBlock) {
+    if (b.kind !== 'text') return;
+    setEditingId(b.id);
+    setEditingDraft(b.content);
   }
 
-  function canProceed(): boolean {
-    return mode === 'camera' ? shots.length > 0 : paste.trim().length > 0;
+  function onCommitEdit() {
+    if (!editingId) return;
+    updateTextBlock(editingId, editingDraft);
+    setEditingId(null);
+    setEditingDraft('');
+    refresh();
+  }
+
+  function onRemove(id: string) {
+    removeBlock(id);
+    if (editingId === id) {
+      setEditingId(null);
+      setEditingDraft('');
+    }
+    refresh();
+  }
+
+  function onMove(idx: number, delta: number) {
+    reorderBlocks(idx, idx + delta);
+    refresh();
   }
 
   function onProceed() {
-    if (!canProceed()) return;
+    if (blocks.length === 0) return;
     sessionStorage.setItem('noteType', noteType);
     nav('/review');
   }
 
   function onReset() {
-    clearShots();
-    setShots([]);
-    setPaste('');
+    clearBlocks();
+    setBlocks([]);
     setPickWarn('');
+    setShowAddText(false);
+    setAddTextDraft('');
+    setEditingId(null);
+    setEditingDraft('');
   }
 
-  const n = shots.length;
+  const imageCount = blocks.filter((b) => b.kind === 'image').length;
   const pillClass =
-    n <= IMAGE_SOFT_CAP
+    imageCount <= IMAGE_SOFT_CAP
       ? 'pill pill-info'
-      : n < IMAGE_HARD_CAP
+      : imageCount < IMAGE_HARD_CAP
         ? 'pill pill-warn'
         : 'pill pill-err';
   const pillText =
-    n <= IMAGE_SOFT_CAP
-      ? `${n} תמונות`
-      : n < IMAGE_HARD_CAP
-        ? `${n} תמונות — אטי יותר, אך פעיל`
-        : `${n}/${IMAGE_HARD_CAP} — תקרה`;
+    imageCount <= IMAGE_SOFT_CAP
+      ? `${imageCount} תמונות`
+      : imageCount < IMAGE_HARD_CAP
+        ? `${imageCount} תמונות — אטי יותר, אך פעיל`
+        : `${imageCount}/${IMAGE_HARD_CAP} — תקרה`;
 
   return (
     <section>
@@ -170,98 +244,252 @@ export function Capture() {
         ))}
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <button className={mode === 'camera' ? '' : 'ghost'} onClick={() => setMode('camera')}>
-          📷 מצלמה
-        </button>
-        <button className={mode === 'paste' ? '' : 'ghost'} onClick={() => setMode('paste')}>
-          📋 הדבק
+      {imageCount > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          <span className={pillClass}>{pillText}</span>
+        </div>
+      )}
+
+      {pickWarn && (
+        <div className="pill pill-warn" style={{ marginBlock: 4 }}>
+          {pickWarn}
+        </div>
+      )}
+
+      {blocks.length === 0 ? (
+        <div className="empty">
+          <div className="empty-icon">📥</div>
+          <p className="empty-title">אין קלט. הוסף תמונה, צילום מסך או טקסט למטה.</p>
+        </div>
+      ) : (
+        <ol
+          aria-label="block-list"
+          style={{
+            listStyle: 'none',
+            padding: 0,
+            margin: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+          }}
+        >
+          {blocks.map((b, i) => {
+            const isFirst = i === 0;
+            const isLast = i === blocks.length - 1;
+            return (
+              <li
+                key={b.id}
+                data-block-kind={b.kind}
+                style={{
+                  display: 'flex',
+                  gap: 8,
+                  alignItems: 'flex-start',
+                  padding: 8,
+                  border: '1px solid var(--border, rgba(255,255,255,0.08))',
+                  borderRadius: 8,
+                  background: 'var(--card)',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4,
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="ghost"
+                    aria-label="העלה למעלה"
+                    disabled={isFirst}
+                    onClick={() => onMove(i, -1)}
+                    style={{ minHeight: 32, padding: '4px 8px' }}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost"
+                    aria-label="הורד למטה"
+                    disabled={isLast}
+                    onClick={() => onMove(i, 1)}
+                    style={{ minHeight: 32, padding: '4px 8px' }}
+                  >
+                    ↓
+                  </button>
+                </div>
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {b.kind === 'image' ? (
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                      <img
+                        src={b.blobUrl}
+                        alt="block"
+                        style={{
+                          width: 140,
+                          height: 140,
+                          objectFit: 'cover',
+                          borderRadius: 6,
+                          flexShrink: 0,
+                        }}
+                      />
+                      <span className="pill pill-info" style={{ alignSelf: 'flex-start' }}>
+                        {IMAGE_SOURCE_LABEL[b.sourceLabel]}
+                      </span>
+                    </div>
+                  ) : (
+                    <div>
+                      <span
+                        className="pill pill-info"
+                        style={{ display: 'inline-block', marginBottom: 6 }}
+                      >
+                        {TEXT_SOURCE_LABEL[b.sourceLabel]}
+                      </span>
+                      {editingId === b.id ? (
+                        <>
+                          <textarea
+                            dir="auto"
+                            rows={6}
+                            value={editingDraft}
+                            onChange={(e) => setEditingDraft(e.target.value)}
+                            style={{ width: '100%' }}
+                          />
+                          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                            <button type="button" onClick={onCommitEdit}>
+                              סיים
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost"
+                              onClick={() => {
+                                setEditingId(null);
+                                setEditingDraft('');
+                              }}
+                            >
+                              ביטול
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <p
+                            dir="auto"
+                            style={{
+                              margin: 0,
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-word',
+                              fontSize: 13,
+                              lineHeight: 1.4,
+                            }}
+                          >
+                            {previewText(b.content)}
+                          </p>
+                          <button
+                            type="button"
+                            className="ghost"
+                            onClick={() => onStartEdit(b)}
+                            style={{ marginTop: 4, padding: '4px 10px', minHeight: 32 }}
+                          >
+                            ערוך
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  className="ghost"
+                  aria-label="הסר בלוק"
+                  onClick={() => onRemove(b.id)}
+                  style={{ padding: '4px 10px', minHeight: 32 }}
+                >
+                  ✕
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+
+      <div
+        style={{
+          display: 'flex',
+          gap: 8,
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          marginTop: 16,
+          paddingBlock: 8,
+          position: 'sticky',
+          bottom: 0,
+          background: 'var(--bg, transparent)',
+        }}
+      >
+        {/*
+          Label-wrapped inputs are required on mobile Chrome — programmatic
+          .click() on display:none inputs fails silently in PWA standalone
+          mode. Tapping a <label> dispatches a trusted click directly.
+        */}
+        <label className="btn-like" aria-label="צלם">
+          📷 צלם
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="visually-hidden"
+            onChange={(e) => onPickFiles(e, 'camera')}
+          />
+        </label>
+        <label className="btn-like ghost" aria-label="בחר מהגלריה">
+          🖼️ גלריה
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            className="visually-hidden"
+            onChange={(e) => onPickFiles(e, 'gallery')}
+          />
+        </label>
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => setShowAddText((v) => !v)}
+        >
+          📝 הוסף טקסט
         </button>
       </div>
 
-      {mode === 'camera' ? (
-        <>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            {/*
-              Label-wrapped inputs are the reliable pattern on mobile Chrome.
-              Programmatic .click() on display:none inputs is flaky in PWA/standalone mode
-              because the browser's user-activation check can reject the synthesized click.
-              Tapping a <label> dispatches a trusted click to the input directly.
-            */}
-            <label className="btn-like" aria-label="צלם AZMA">
-              📷 צלם AZMA
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="visually-hidden"
-                onChange={onPickFiles}
-              />
-            </label>
-            <label className="btn-like ghost" aria-label="בחר מהגלריה">
-              🖼️ מהגלריה
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                className="visually-hidden"
-                onChange={onPickFiles}
-              />
-            </label>
-            {n > 0 && <span className={pillClass}>{pillText}</span>}
-          </div>
-
-          {pickWarn && (
-            <div className="pill pill-warn" style={{ marginBlock: 4 }}>
-              {pickWarn}
-            </div>
-          )}
-
-          {n === 0 ? (
-            <div className="empty">
-              <div className="empty-icon">📷</div>
-              <p className="empty-title">אין תמונות AZMA</p>
-              <p className="empty-sub">
-                עד {IMAGE_HARD_CAP} תמונות — כפתור "הוסף תמונה" למטה
-              </p>
-            </div>
-          ) : (
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(2, 1fr)',
-                gap: 8,
-                marginTop: 16,
+      {showAddText && (
+        <div style={{ marginTop: 8 }}>
+          <textarea
+            dir="auto"
+            rows={6}
+            placeholder="הקלד טקסט AZMA / רקע / הערות..."
+            value={addTextDraft}
+            onChange={(e) => setAddTextDraft(e.target.value)}
+            style={{ width: '100%' }}
+          />
+          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+            <button type="button" onClick={onCommitAddText}>
+              הוסף
+            </button>
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => {
+                setShowAddText(false);
+                setAddTextDraft('');
               }}
             >
-              {shots.map((s) => (
-                <div key={s.id} className="shot-thumb">
-                  <img src={s.blobUrl} alt="shot" />
-                  <button
-                    type="button"
-                    className="shot-delete"
-                    aria-label="הסר תמונה"
-                    onClick={() => onDeleteShot(s.id)}
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </>
-      ) : (
-        <textarea
-          dir="auto"
-          rows={10}
-          placeholder="הדבק טקסט AZMA כאן..."
-          value={paste}
-          onChange={(e) => onPasteChange(e.target.value)}
-        />
+              ביטול
+            </button>
+          </div>
+        </div>
       )}
 
       <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-        <button onClick={onProceed} disabled={!canProceed()}>
+        <button onClick={onProceed} disabled={blocks.length === 0}>
           המשך לבדיקה ←
         </button>
         <button className="ghost" onClick={onReset}>
@@ -270,4 +498,18 @@ export function Capture() {
       </div>
     </section>
   );
+}
+
+function previewText(s: string): string {
+  if (s.length <= TEXT_PREVIEW_CHARS) return s;
+  return s.slice(0, TEXT_PREVIEW_CHARS).trimEnd() + '…';
+}
+
+function readAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result as string);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
 }

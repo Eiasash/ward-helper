@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { runExtractTurn } from '@/agent/loop';
+import type { CaptureBlock } from '@/camera/session';
 
 /**
  * Identity-field regression: given a well-formed model response for each of
@@ -21,6 +22,17 @@ function mockProxyResponse(text: string, usage = { input_tokens: 10, output_toke
   })) as unknown as typeof fetch;
 }
 
+function imageBlock(dataUrl: string): CaptureBlock {
+  return {
+    kind: 'image',
+    id: 'img-' + Math.random(),
+    dataUrl,
+    blobUrl: 'blob:fake',
+    sourceLabel: 'gallery',
+    addedAt: 0,
+  };
+}
+
 beforeEach(() => {
   vi.restoreAllMocks();
 });
@@ -31,7 +43,6 @@ afterEach(() => {
 
 describe('runExtractTurn — identity fields across input archetypes', () => {
   it('AZMA grid fixture — preserves teudatZehut / age / room', async () => {
-    // Source text the model saw (in image): "שם מטופל: דוד כהן | ת.ז.: 123456789 | גיל: 82 | חדר: 12A"
     const payload = JSON.stringify({
       fields: {
         name: 'דוד כהן',
@@ -44,7 +55,7 @@ describe('runExtractTurn — identity fields across input archetypes', () => {
     });
     vi.stubGlobal('fetch', mockProxyResponse(payload));
     const result = await runExtractTurn(
-      ['data:image/jpeg;base64,/9j/'],
+      [imageBlock('data:image/jpeg;base64,/9j/')],
       'azma-ui',
     );
     expect(result.fields.teudatZehut).toBe('123456789');
@@ -53,7 +64,6 @@ describe('runExtractTurn — identity fields across input archetypes', () => {
   });
 
   it('phone-consult freeform fixture — preserves teudatZehut / age / room', async () => {
-    // Source: "מטופלת בת 79, ת.ז. 305412678, מאושפזת חדר 7B במחלקה הפנימית..."
     const payload = JSON.stringify({
       fields: {
         name: 'שרה לוי',
@@ -66,7 +76,7 @@ describe('runExtractTurn — identity fields across input archetypes', () => {
     });
     vi.stubGlobal('fetch', mockProxyResponse(payload));
     const result = await runExtractTurn(
-      ['data:image/jpeg;base64,/9j/'],
+      [imageBlock('data:image/jpeg;base64,/9j/')],
       'azma-ui',
     );
     expect(result.fields.teudatZehut).toBe('305412678');
@@ -75,7 +85,6 @@ describe('runExtractTurn — identity fields across input archetypes', () => {
   });
 
   it('SOAP narrative fixture — preserves teudatZehut / age / room', async () => {
-    // Source: "S: בן 88 (ת.ז. 029384756), חדר 14, מתלונן על קוצר נשימה מאתמול..."
     const payload = JSON.stringify({
       fields: {
         name: 'יעקב גרין',
@@ -89,7 +98,7 @@ describe('runExtractTurn — identity fields across input archetypes', () => {
     });
     vi.stubGlobal('fetch', mockProxyResponse(payload));
     const result = await runExtractTurn(
-      ['data:image/jpeg;base64,/9j/'],
+      [imageBlock('data:image/jpeg;base64,/9j/')],
       'azma-ui',
     );
     expect(result.fields.teudatZehut).toBe('029384756');

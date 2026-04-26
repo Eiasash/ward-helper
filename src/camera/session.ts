@@ -1,9 +1,52 @@
 /**
- * In-memory multi-shot session state. Shots are held as data URLs (for agent
- * upload) + blob URLs (for UI preview). Nothing is persisted. clearShots()
- * revokes all blob URLs so memory is released.
+ * Capture session — ordered blocks of image + text inputs.
+ *
+ * Blocks are held in a single ordered array. Image blocks store both a data
+ * URL (for the agent extract upload) and a blob URL (for cheap UI preview).
+ * Text blocks store the literal content. Nothing is persisted to disk; on
+ * `clearBlocks()` every blob URL is revoked so memory is released.
+ *
+ * Order is meaningful: a text block that follows an image block is
+ * interpreted by the extract turn as commentary on that image. Reordering
+ * via `reorderBlocks` lets the user re-arrange before the extract call.
  */
 
+export type ImageSource = 'camera' | 'gallery' | 'clipboard';
+export type TextSource = 'typed' | 'paste';
+
+export interface ImageBlock {
+  kind: 'image';
+  id: string;
+  dataUrl: string;
+  blobUrl: string;
+  sourceLabel: ImageSource;
+  addedAt: number;
+}
+
+export interface TextBlock {
+  kind: 'text';
+  id: string;
+  content: string;
+  sourceLabel: TextSource;
+  addedAt: number;
+}
+
+export type CaptureBlock = ImageBlock | TextBlock;
+
+/**
+ * Image-kind blocks above this cap are rejected. A real ward round rarely
+ * needs more than 3-4 photos; the cap is a safety net against runaway
+ * gallery picks blowing up the extract call.
+ */
+export const IMAGE_HARD_CAP = 10;
+
+/**
+ * Text-kind blocks above this cap are rejected. Multi-page paste is rare;
+ * 8 is a sane upper bound that doesn't constrain real-world flows.
+ */
+export const TEXT_HARD_CAP = 8;
+
+/** Backcompat shape for callers that haven't migrated to blocks yet. */
 export interface Shot {
   id: string;
   blobUrl: string;
@@ -11,45 +54,98 @@ export interface Shot {
   capturedAt: number;
 }
 
-let shots: Shot[] = [];
-let pastedText: string | null = null;
+let blocks: CaptureBlock[] = [];
 
-export function addShot(dataUrl: string): Shot {
+function countImages(): number {
+  let n = 0;
+  for (const b of blocks) if (b.kind === 'image') n++;
+  return n;
+}
+
+function countTexts(): number {
+  let n = 0;
+  for (const b of blocks) if (b.kind === 'text') n++;
+  return n;
+}
+
+export function addImageBlock(dataUrl: string, source: ImageSource): ImageBlock | null {
+  if (countImages() >= IMAGE_HARD_CAP) return null;
   const blob = dataUrlToBlob(dataUrl);
   const blobUrl = URL.createObjectURL(blob);
-  const shot: Shot = {
+  const block: ImageBlock = {
+    kind: 'image',
     id: crypto.randomUUID(),
-    blobUrl,
     dataUrl,
-    capturedAt: Date.now(),
+    blobUrl,
+    sourceLabel: source,
+    addedAt: Date.now(),
   };
-  shots.push(shot);
-  return shot;
+  blocks.push(block);
+  return block;
 }
 
-export function listShots(): readonly Shot[] {
-  return shots;
+export function addTextBlock(content: string, source: TextSource): TextBlock | null {
+  if (countTexts() >= TEXT_HARD_CAP) return null;
+  const block: TextBlock = {
+    kind: 'text',
+    id: crypto.randomUUID(),
+    content,
+    sourceLabel: source,
+    addedAt: Date.now(),
+  };
+  blocks.push(block);
+  return block;
 }
 
-export function removeShot(id: string): void {
-  const idx = shots.findIndex((s) => s.id === id);
+export function updateTextBlock(id: string, content: string): void {
+  const idx = blocks.findIndex((b) => b.id === id && b.kind === 'text');
   if (idx === -1) return;
-  const [s] = shots.splice(idx, 1);
-  if (s) URL.revokeObjectURL(s.blobUrl);
+  const existing = blocks[idx] as TextBlock;
+  blocks[idx] = { ...existing, content };
 }
 
-export function clearShots(): void {
-  for (const s of shots) URL.revokeObjectURL(s.blobUrl);
-  shots = [];
-  pastedText = null;
+export function removeBlock(id: string): void {
+  const idx = blocks.findIndex((b) => b.id === id);
+  if (idx === -1) return;
+  const [removed] = blocks.splice(idx, 1);
+  if (removed && removed.kind === 'image') URL.revokeObjectURL(removed.blobUrl);
 }
 
-export function setPastedText(t: string | null): void {
-  pastedText = t;
+export function reorderBlocks(fromIndex: number, toIndex: number): void {
+  if (fromIndex < 0 || fromIndex >= blocks.length) return;
+  if (toIndex < 0 || toIndex >= blocks.length) return;
+  if (fromIndex === toIndex) return;
+  const [moved] = blocks.splice(fromIndex, 1);
+  if (!moved) return;
+  blocks.splice(toIndex, 0, moved);
 }
 
+export function listBlocks(): readonly CaptureBlock[] {
+  return blocks;
+}
+
+export function clearBlocks(): void {
+  for (const b of blocks) if (b.kind === 'image') URL.revokeObjectURL(b.blobUrl);
+  blocks = [];
+}
+
+/**
+ * @deprecated Use `listBlocks()` and filter by `kind === 'image'`. Kept for
+ * straggler callers (tests, etc.) that haven't been migrated.
+ */
+export function listShots(): readonly Shot[] {
+  return blocks
+    .filter((b): b is ImageBlock => b.kind === 'image')
+    .map((b) => ({ id: b.id, blobUrl: b.blobUrl, dataUrl: b.dataUrl, capturedAt: b.addedAt }));
+}
+
+/**
+ * @deprecated Use `listBlocks()` and read text blocks directly. Returns the
+ * first text block's content (concatenation would lose ordering metadata).
+ */
 export function getPastedText(): string | null {
-  return pastedText;
+  const t = blocks.find((b): b is TextBlock => b.kind === 'text');
+  return t ? t.content : null;
 }
 
 function dataUrlToBlob(dataUrl: string): Blob {

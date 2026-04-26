@@ -28,16 +28,16 @@ import {
   IMAGE_SOFT_CAP,
   IMAGE_HARD_CAP,
 } from '@/ui/screens/Capture';
-import { addShot, clearShots } from '@/camera/session';
+import { addImageBlock, clearBlocks } from '@/camera/session';
 
 beforeEach(() => {
   sessionStorage.clear();
-  clearShots();
+  clearBlocks();
 });
 
 afterEach(() => {
   cleanup();
-  clearShots();
+  clearBlocks();
 });
 
 describe('Capture — image caps (constants)', () => {
@@ -53,13 +53,13 @@ async function flush() {
   });
 }
 
-// 1×1 transparent PNG — atob(b64) in session.addShot needs valid base64.
+// 1×1 transparent PNG — atob(b64) in addImageBlock needs valid base64.
 const TINY_PNG =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 
 function seedShots(n: number): void {
   for (let i = 0; i < n; i++) {
-    addShot(TINY_PNG);
+    addImageBlock(TINY_PNG, 'gallery');
   }
 }
 
@@ -152,10 +152,10 @@ describe('Capture — hard cap enforcement on file pick', () => {
   });
 });
 
-describe('Capture — empty state when no shots', () => {
-  it('shows the "אין תמונות AZMA" empty card', async () => {
+describe('Capture — empty state when no blocks', () => {
+  it('shows the "אין קלט" empty card', async () => {
     renderCapture();
     await flush();
-    expect(screen.getByText('אין תמונות AZMA')).toBeInTheDocument();
+    expect(screen.getByText(/אין קלט/)).toBeInTheDocument();
   });
 });
