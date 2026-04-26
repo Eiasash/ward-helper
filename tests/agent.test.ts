@@ -62,15 +62,22 @@ describe('runExtractTurn — JSON-mode via proxy', () => {
     expect(result.fields.name).toBe('X');
   });
 
-  it('throws when the model wraps JSON in prose (no brace-extraction fallback in v1.18.1)', async () => {
+  it('extracts JSON when the model wraps it in prose (v1.21.1 restored brace-extraction)', async () => {
     // v1.18.0 silently extracted the outermost {...} from prose-wrapped responses.
-    // v1.18.1 enforces fence-only tolerance: model must comply with the
-    // "no preamble" instruction or the UI shows a regenerate prompt.
+    // v1.18.1 removed that on the theory that the model should comply with the
+    // "no preamble" instruction. By 2026-04 (ward-helper v1.21.0 in production),
+    // current Sonnet routinely emits "Pass 1 / Pass 2" reasoning preamble + a
+    // fenced JSON block regardless of prompt instructions. The strict policy
+    // threw away correct extractions and surfaced as "extract-parse: Unexpected
+    // token 'I'..." in the debug panel. v1.21.1 restored brace-extraction with
+    // string-literal awareness (safer than the v1.18.0 implementation). The
+    // "truly non-JSON" path below still throws — strict mode preserved for
+    // genuinely garbage output.
     const payload = 'Here is the JSON:\n{"fields":{"age":77},"confidence":{}}\nHope that helps!';
     vi.stubGlobal('fetch', mockProxyResponse(payload));
-    await expect(
-      runExtractTurn(imageBlocks('data:image/jpeg;base64,/9j/'), 'skill'),
-    ).rejects.toThrow(/failed to parse JSON/);
+    const result = await runExtractTurn(imageBlocks('data:image/jpeg;base64,/9j/'), 'skill');
+    expect(result.fields.age).toBe(77);
+    expect(result.confidence).toEqual({});
   });
 
   it('backfills missing confidence to empty object', async () => {
