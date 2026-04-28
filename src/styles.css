@@ -404,6 +404,72 @@ nav.bottom-nav button.active::after {
   outline-offset: 2px;
 }
 
+/* --- Recent patients quick-pick (Capture screen) --- */
+.recent-patients {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  margin-bottom: 12px;
+}
+.recent-patients-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 0 4px 6px;
+  border-bottom: 1px dashed var(--border);
+}
+.recent-patients-header small { font-size: 11px; opacity: 0.8; }
+.recent-patients-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.recent-patient-row {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) 1fr auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  text-align: start;
+  padding: 8px 6px;
+  min-height: 40px;
+  background: transparent;
+  color: var(--fg);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.recent-patient-row:last-child { border-bottom: none; }
+.recent-patient-row:hover { background: var(--surface-3); }
+.recent-patient-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.recent-patient-tz {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: 13px;
+}
+.recent-patient-name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recent-patient-time {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* --- Misc --- */
 h1, h2, h3 { color: var(--fg); margin: 16px 0 8px; font-weight: 500; }
 h1 { font-size: 22px; margin: 0 0 16px; }

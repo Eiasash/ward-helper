@@ -19,6 +19,7 @@ import { compressImage } from '@/camera/compress';
 import { startSession as startCostSession } from '@/agent/costs';
 import { hasApiKey } from '@/crypto/keystore';
 import type { NoteType } from '@/storage/indexed';
+import { RecentPatientsList } from '../components/RecentPatientsList';
 
 const NOTE_TYPES: { type: NoteType; label: string }[] = [
   { type: 'admission', label: 'קבלה' },
@@ -296,6 +297,10 @@ export function Capture() {
           </button>
         ))}
       </div>
+
+      {/* Recent patients quick-pick — last 24h. Tap → skip extract,
+         seed validated from saved structuredData, jump to /edit. */}
+      {blocks.length === 0 && <RecentPatientsList noteType={noteType} />}
 
       {imageCount > 0 && (
         <div style={{ marginBottom: 8 }}>
