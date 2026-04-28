@@ -1,5 +1,5 @@
-const VERSION = 'ward-v1.23.0';
-const SHELL = ['/ward-helper/', '/ward-helper/index.html'];
+const VERSION = 'ward-v1.24.0';
+const SHELL = ['/ward-helper/', '/ward-helper/index.html', '/ward-helper/install-promo.js', '/ward-helper/install-promo-config.js'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)));
