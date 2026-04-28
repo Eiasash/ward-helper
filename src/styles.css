@@ -64,6 +64,30 @@ main.shell {
   unicode-bidi: plaintext;
 }
 
+/* Skip-to-content link — hidden off-screen until focused, then becomes
+   a high-contrast button that lets keyboard users bypass the fixed
+   header-strip and jump into <main>. WCAG 2.4.1. */
+.skip-link {
+  position: absolute;
+  inset-inline-start: 8px;
+  top: -100px;
+  z-index: 100;
+  padding: 8px 16px;
+  background: var(--accent);
+  color: white;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  font-weight: 600;
+  transition: top 150ms ease;
+}
+.skip-link:focus,
+.skip-link:focus-visible {
+  top: 8px;
+  outline: 2px solid white;
+  outline-offset: 2px;
+}
+main.shell:focus { outline: none; }
+
 /* --- Glanceable header strip (top, fixed, 44px) --- */
 .header-strip {
   position: fixed;
