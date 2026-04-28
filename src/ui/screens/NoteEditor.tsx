@@ -5,18 +5,21 @@ import type { NoteType } from '@/storage/indexed';
 import type { ParseFields } from '@/agent/tools';
 import { NOTE_LABEL } from '@/notes/templates';
 import { resolveContinuity } from '@/notes/continuity';
-import { auditChameleonRules, sanitizeForChameleon } from '@/i18n/bidi';
+import { auditChameleonRules, sanitizeForChameleon, wrapForChameleon } from '@/i18n/bidi';
 import { useBidiAudit } from '../hooks/useSettings';
 import { snapshot as debugSnapshot } from '@/agent/debugLog';
 import {
   splitIntoSections,
-  type NoteSection,
 } from '@/notes/sections';
 import {
   loadSnippets,
   expandSnippetAt,
   type SnippetMap,
 } from '@/notes/snippets';
+import { regenerateSection, replaceSectionInBody } from '@/notes/regenerate';
+import { loadSkills } from '@/skills/loader';
+import { NOTE_SKILL_MAP } from '@/notes/templates';
+import { colorForNoteType } from '@/notes/noteTypeColors';
 
 type Status = 'gen' | 'ready' | 'error';
 
@@ -44,6 +47,8 @@ export function NoteEditor() {
   const [noteType, setNoteType] = useState<NoteType>('admission');
   const [copied, setCopied] = useState(false);
   const [copiedSection, setCopiedSection] = useState<number | null>(null);
+  const [regenSectionIdx, setRegenSectionIdx] = useState<number | null>(null);
+  const [regenError, setRegenError] = useState<string>('');
   const [snippetMap, setSnippetMap] = useState<SnippetMap>({});
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [bidiAuditOn] = useBidiAudit();
@@ -161,6 +166,38 @@ export function NoteEditor() {
     setBody(sanitizeForChameleon(body));
   }
 
+  /**
+   * Per-section regenerate. Hits a focused emit (max_tokens 1500, system =
+   * the same per-note-type skill bundle the full emit uses) and surgically
+   * replaces ONLY the named section in `body`. Never re-emits the whole
+   * note; the orchestrator's full path is left intact for "create from
+   * scratch" only. Result flows through wrapForChameleon for the same
+   * bidi/sanitize hardening the full emit gets.
+   */
+  async function onRegenerateSection(idx: number) {
+    if (regenSectionIdx !== null) return; // ignore concurrent taps
+    setRegenSectionIdx(idx);
+    setRegenError('');
+    try {
+      const skills = NOTE_SKILL_MAP[noteType];
+      const skillContent = await loadSkills([...skills]);
+      const newSectionRaw = await regenerateSection({
+        noteType,
+        body,
+        sectionIndex: idx,
+        systemSkillContent: skillContent,
+      });
+      const cleanedSection = wrapForChameleon(newSectionRaw);
+      const next = replaceSectionInBody(body, idx, cleanedSection);
+      setBody(next);
+      sessionStorage.setItem('body', next);
+    } catch (e) {
+      setRegenError((e as Error).message ?? 'regenerate failed');
+    } finally {
+      setRegenSectionIdx(null);
+    }
+  }
+
   // Snippet expansion fires on KeyUp after a space is typed. Replacing the
   // textarea content via React reset the cursor — we restore it manually
   // after React applies the new value.
@@ -226,9 +263,38 @@ export function NoteEditor() {
     );
   }
 
+  const tone = colorForNoteType(noteType);
+
   return (
-    <section>
-      <h1>טיוטת {NOTE_LABEL[noteType]}</h1>
+    <section
+      data-note-type={noteType}
+      style={{
+        // 4px top border identifies note type at a glance — paired with the
+        // header-strip badge so a wrong-template paste is impossible to miss.
+        borderTop: `4px solid ${tone.color}`,
+        marginTop: -4,
+        paddingTop: 8,
+      }}
+    >
+      <h1 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span
+          aria-hidden="true"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            padding: '2px 8px',
+            borderRadius: 6,
+            background: tone.soft,
+            color: tone.fg,
+            fontSize: 12,
+            fontWeight: 600,
+            letterSpacing: '0.04em',
+          }}
+        >
+          {tone.badge}
+        </span>
+        <span>טיוטת {NOTE_LABEL[noteType]}</span>
+      </h1>
 
       {issues.length > 0 && (
         <div
@@ -266,7 +332,7 @@ export function NoteEditor() {
         <div
           className="section-copy-row"
           role="toolbar"
-          aria-label="העתק לפי קטע"
+          aria-label="פעולות לפי קטע"
           style={{
             display: 'flex',
             gap: 8,
@@ -275,23 +341,67 @@ export function NoteEditor() {
             marginBottom: 8,
           }}
         >
-          {sections.map((s, i) => (
-            <button
-              key={`${i}:${s.name}`}
-              type="button"
-              className="ghost"
-              onClick={() => onCopySection(i, s.body)}
-              style={{
-                whiteSpace: 'nowrap',
-                fontSize: 13,
-                padding: '6px 10px',
-                minHeight: 32,
-                flex: '0 0 auto',
-              }}
-            >
-              {copiedSection === i ? '✓ הועתק' : s.name}
-            </button>
-          ))}
+          {sections.map((s, i) => {
+            const regenInProgress = regenSectionIdx === i;
+            return (
+              <div
+                key={`${i}:${s.name}`}
+                style={{
+                  display: 'inline-flex',
+                  gap: 0,
+                  flex: '0 0 auto',
+                  borderRadius: 8,
+                  border: '1px solid var(--border-strong)',
+                  overflow: 'hidden',
+                }}
+              >
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => onCopySection(i, s.body)}
+                  style={{
+                    whiteSpace: 'nowrap',
+                    fontSize: 13,
+                    padding: '6px 10px',
+                    minHeight: 32,
+                    border: 'none',
+                    borderRadius: 0,
+                  }}
+                >
+                  {copiedSection === i ? '✓ הועתק' : s.name}
+                </button>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => onRegenerateSection(i)}
+                  disabled={regenSectionIdx !== null}
+                  title={`צור מחדש את הקטע "${s.name}" (פנייה ממוקדת — לא רשומה שלמה)`}
+                  aria-label={`צור מחדש את הקטע ${s.name}`}
+                  style={{
+                    whiteSpace: 'nowrap',
+                    fontSize: 13,
+                    padding: '6px 10px',
+                    minHeight: 32,
+                    border: 'none',
+                    borderInlineStart: '1px solid var(--border)',
+                    borderRadius: 0,
+                  }}
+                >
+                  {regenInProgress ? '…' : '↻'}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {regenError && (
+        <div
+          role="alert"
+          className="pill pill-warn"
+          style={{ marginBlock: 6, display: 'block', padding: '8px 10px' }}
+        >
+          ⚠ צור-מחדש לקטע נכשל: {regenError}
         </div>
       )}
 

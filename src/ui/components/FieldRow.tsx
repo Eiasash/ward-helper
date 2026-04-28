@@ -39,6 +39,9 @@ export function FieldRow({ label, value, confidence, onChange, critical, onConfi
     onConfirmChange?.(!needsConfirm || confirmed);
   }, [needsConfirm, confirmed, onConfirmChange]);
 
+  // For non-critical rows (room, chiefComplaint), the model doesn't emit a
+  // confidence — render an unobtrusive layout without a pill at all.
+  const showPill = critical === true || confidence !== undefined;
   return (
     <div
       style={{
@@ -49,9 +52,17 @@ export function FieldRow({ label, value, confidence, onChange, critical, onConfi
         opacity: confirmed ? 1 : 0.6,
       }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-        <strong>{label}</strong>
-        <ConfidencePill level={confidence} />
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 4,
+          gap: 8,
+        }}
+      >
+        <strong dir="auto">{label}</strong>
+        {showPill && <ConfidencePill level={confidence} />}
       </div>
       <input dir="auto" value={value} onChange={(e) => onChange(e.target.value)} />
       {needsConfirm && !confirmed && (

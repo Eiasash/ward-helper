@@ -44,18 +44,106 @@ html, body, #root {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font-family: system-ui, -apple-system, 'Segoe UI', Tahoma, Arial, sans-serif;
+  /* Heebo (body) + Inter (Latin fallback) — already preloaded in index.html
+     with `display=swap` so CLS during font swap stays bounded. The font
+     family chain falls back to system fonts gracefully if the network is
+     down or the CSP-allowed CDN is unreachable. */
+  font-family: 'Heebo', 'Inter', system-ui, -apple-system, 'Segoe UI', Tahoma, Arial, sans-serif;
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 body { direction: rtl; }
 
 main.shell {
   padding: var(--pad);
+  padding-top: calc(var(--pad) + 44px); /* compensate for fixed header-strip */
   padding-bottom: 76px; /* space above bottom-nav */
   min-height: 100vh;
   unicode-bidi: plaintext;
+}
+
+/* --- Glanceable header strip (top, fixed, 44px) --- */
+.header-strip {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  z-index: 11; /* above bottom-nav layer */
+  unicode-bidi: plaintext;
+}
+.header-strip-section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.header-strip-status { flex: 0 0 auto; }
+.header-strip-patient {
+  flex: 1 1 auto;
+  justify-content: center;
+  overflow: hidden;
+}
+.header-strip-sync { flex: 0 0 auto; }
+.header-strip-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+}
+.header-strip-pill.online { color: var(--good); }
+.header-strip-pill.offline { color: var(--err); border-color: var(--err); }
+.header-strip-pill.battery.low { color: var(--err); border-color: var(--err); }
+.header-strip-pill.sync { color: var(--info); }
+.header-strip-pill.queue {
+  color: var(--warn);
+  border-color: rgba(230, 181, 92, 0.4);
+}
+.header-strip-name {
+  font-weight: 500;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.header-strip-name.muted { color: var(--muted); font-weight: 400; font-style: italic; }
+.header-strip-type-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+@media (prefers-color-scheme: light) {
+  .header-strip { background: rgba(255, 255, 255, 0.94); }
+}
+
+/* On wider screens (mirroring main.shell cap), keep header strip aligned */
+@media (min-width: 600px) {
+  .header-strip {
+    max-width: 32rem;
+    inset: 0 auto auto 50%;
+    transform: translateX(-50%);
+    border-inline: 1px solid var(--border);
+  }
 }
 
 /* --- DESKTOP LAYOUT CAP --- */
@@ -321,10 +409,182 @@ nav.bottom-nav button.active::after {
   outline-offset: 2px;
 }
 
+/* --- Drug-safety inline highlights (Review screen) --- */
+.safety-highlight-text { line-height: 1.7; }
+.safety-highlight {
+  display: inline;
+  position: relative;
+}
+.safety-highlight summary {
+  display: inline;
+  list-style: none;
+  cursor: pointer;
+  text-decoration: underline wavy;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+  -webkit-tap-highlight-color: transparent;
+}
+.safety-highlight summary::-webkit-details-marker { display: none; }
+.safety-highlight.red summary { text-decoration-color: var(--err); color: var(--err); }
+.safety-highlight.amber summary { text-decoration-color: var(--warn); color: var(--warn); }
+.safety-highlight[open] summary {
+  background: var(--surface-3);
+  padding-inline: 2px;
+  border-radius: 3px;
+}
+.safety-highlight-tooltip {
+  display: block;
+  margin-top: 4px;
+  margin-inline-start: 4px;
+  padding: 6px 8px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--fg-2);
+}
+
+/* --- Capture phase beads (Capture/Review pipeline) --- */
+.capture-phase-beads {
+  margin-block: 16px;
+  padding: 16px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.capture-phase-beads-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.capture-phase-bead-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+.capture-phase-bead {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  border: 2px solid var(--border-strong);
+  transition: background 200ms, border-color 200ms;
+}
+.capture-phase-bead.past {
+  background: var(--good);
+  border-color: var(--good);
+}
+.capture-phase-bead.current {
+  background: var(--accent);
+  border-color: var(--accent);
+  animation: capture-bead-pulse 1.2s ease-in-out infinite;
+}
+.capture-phase-bead.future {
+  background: transparent;
+  border-color: var(--border);
+}
+.capture-phase-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+.capture-phase-label.current {
+  color: var(--accent);
+  font-weight: 600;
+}
+.capture-phase-hint {
+  margin: 8px 0 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+@keyframes capture-bead-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); }
+  50% { box-shadow: 0 0 0 8px transparent; }
+}
+
+/* --- Recent patients quick-pick (Capture screen) --- */
+.recent-patients {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  margin-bottom: 12px;
+}
+.recent-patients-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 0 4px 6px;
+  border-bottom: 1px dashed var(--border);
+}
+.recent-patients-header small { font-size: 11px; opacity: 0.8; }
+.recent-patients-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.recent-patient-row {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) 1fr auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  text-align: start;
+  padding: 8px 6px;
+  min-height: 40px;
+  background: transparent;
+  color: var(--fg);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.recent-patient-row:last-child { border-bottom: none; }
+.recent-patient-row:hover { background: var(--surface-3); }
+.recent-patient-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.recent-patient-tz {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: 13px;
+}
+.recent-patient-name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recent-patient-time {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* --- Misc --- */
-h1, h2, h3 { color: var(--fg); margin: 16px 0 8px; font-weight: 500; }
-h1 { font-size: 22px; margin: 0 0 16px; }
-h2 { font-size: 1.15em; color: var(--muted); margin-top: 20px; }
+h1, h2, h3 {
+  color: var(--fg);
+  margin: 16px 0 8px;
+  font-weight: 500;
+  /* Frank Ruhl Libre — Hebrew-first serif for headings. Falls back to
+     Heebo (body face) and then system serifs if the CDN font hasn't
+     swapped in yet. RTL-safe; both faces have full Hebrew glyph coverage. */
+  font-family: 'Frank Ruhl Libre', 'Heebo', Georgia, 'Times New Roman', serif;
+  letter-spacing: 0.005em;
+}
+h1 { font-size: 24px; margin: 0 0 16px; font-weight: 700; }
+h2 { font-size: 1.15em; color: var(--muted); margin-top: 20px; font-weight: 500; }
 h3 { font-size: 1em; }
 .muted { color: var(--muted); font-size: 0.9em; }
 a { color: var(--accent); text-decoration: none; }
