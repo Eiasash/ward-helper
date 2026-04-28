@@ -366,41 +366,52 @@ export function Review() {
         onChange={update('chiefComplaint')}
       />
 
-      <h2>תרופות</h2>
-      {(fields.meds ?? []).map((m, i) => (
-        <div
-          key={i}
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '2fr 1fr 1fr auto',
-            gap: 6,
-            marginBottom: 6,
-          }}
-        >
-          <input
-            dir="ltr"
-            value={m.name}
-            onChange={(e) => updateMed(i, { name: e.target.value })}
-            placeholder="Apixaban"
-          />
-          <input
-            dir="ltr"
-            value={m.dose ?? ''}
-            onChange={(e) => updateMed(i, { dose: e.target.value })}
-            placeholder="5 mg"
-          />
-          <input
-            dir="ltr"
-            value={m.freq ?? ''}
-            onChange={(e) => updateMed(i, { freq: e.target.value })}
-            placeholder="BID"
-          />
-          <button className="ghost" onClick={() => removeMed(i)}>🗑</button>
-        </div>
-      ))}
+      <h2 id="meds-heading">תרופות</h2>
+      <ul aria-labelledby="meds-heading" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+        {(fields.meds ?? []).map((m, i) => (
+          <li
+            key={i}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '2fr 1fr 1fr auto',
+              gap: 6,
+              marginBottom: 6,
+            }}
+          >
+            <input
+              dir="ltr"
+              value={m.name}
+              onChange={(e) => updateMed(i, { name: e.target.value })}
+              placeholder="Apixaban"
+              aria-label={`שם תרופה שורה ${i + 1}`}
+            />
+            <input
+              dir="ltr"
+              value={m.dose ?? ''}
+              onChange={(e) => updateMed(i, { dose: e.target.value })}
+              placeholder="5 mg"
+              aria-label={`מינון תרופה שורה ${i + 1}`}
+            />
+            <input
+              dir="ltr"
+              value={m.freq ?? ''}
+              onChange={(e) => updateMed(i, { freq: e.target.value })}
+              placeholder="BID"
+              aria-label={`תדירות תרופה שורה ${i + 1}`}
+            />
+            <button
+              className="ghost"
+              onClick={() => removeMed(i)}
+              aria-label={`הסר תרופה שורה ${i + 1}`}
+            >
+              🗑
+            </button>
+          </li>
+        ))}
+      </ul>
       <button className="ghost" onClick={addMed}>+ תרופה</button>
 
-      <h2>אלרגיות</h2>
+      <h2 id="allergies-heading">אלרגיות</h2>
       <input
         dir="auto"
         value={(fields.allergies ?? []).join(', ')}
@@ -411,7 +422,12 @@ export function Review() {
           })
         }
         placeholder="NKDA"
+        aria-labelledby="allergies-heading"
+        aria-describedby="allergies-help"
       />
+      <small id="allergies-help" style={{ color: 'var(--muted)', fontSize: 12, display: 'block', marginTop: 4 }}>
+        הפרד אלרגיות בפסיקים. NKDA אם אין.
+      </small>
 
       {/* Inline drug-safety highlights — surface the v1.20.0 engine's
          hits visually on the med list itself, before the doctor opens

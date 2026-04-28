@@ -73,7 +73,10 @@ export function History() {
   return (
     <section>
       <h1>היסטוריה</h1>
+      <label htmlFor="history-search" className="visually-hidden">חיפוש לפי שם, ת.ז. או חדר</label>
       <input
+        id="history-search"
+        type="search"
         dir="auto"
         placeholder="חיפוש לפי שם / ת.ז. / חדר"
         value={q}

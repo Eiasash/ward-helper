@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId } from 'react';
 import type { Confidence } from '@/agent/tools';
 import { ConfidencePill } from './ConfidencePill';
 
@@ -28,6 +28,7 @@ interface Props {
 }
 
 export function FieldRow({ label, value, confidence, onChange, critical, onConfirmChange }: Props) {
+  const inputId = useId();
   const needsConfirm = confidence === 'low' || (critical && !confidence);
   const [confirmed, setConfirmed] = useState(!needsConfirm);
 
@@ -61,10 +62,17 @@ export function FieldRow({ label, value, confidence, onChange, critical, onConfi
           gap: 8,
         }}
       >
-        <strong dir="auto">{label}</strong>
+        <label htmlFor={inputId} dir="auto" style={{ fontWeight: 'bold' }}>{label}</label>
         {showPill && <ConfidencePill level={confidence} />}
       </div>
-      <input dir="auto" value={value} onChange={(e) => onChange(e.target.value)} />
+      <input
+        id={inputId}
+        dir="auto"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-required={critical || undefined}
+        aria-invalid={needsConfirm && !confirmed ? true : undefined}
+      />
       {needsConfirm && !confirmed && (
         <button className="ghost" onClick={() => setConfirmed(true)} style={{ marginTop: 6 }}>
           אישור ידני נדרש

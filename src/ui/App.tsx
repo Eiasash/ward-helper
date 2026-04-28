@@ -32,8 +32,12 @@ const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '
 export function App() {
   return (
     <HashRouter>
+      {/* Skip-to-content link — visible only when keyboard-focused. Lets keyboard
+         users bypass the fixed header strip + bottom nav and jump straight into
+         the main content. */}
+      <a className="skip-link" href="#main-content">דלג לתוכן</a>
       <HeaderStrip />
-      <main className="shell">
+      <main className="shell" id="main-content" tabIndex={-1}>
         <Suspense fallback={<section><h1>טוען...</h1></section>}>
           <Routes>
             <Route path="/" element={<Today />} />
@@ -53,7 +57,7 @@ export function App() {
           v{APP_VERSION}
         </footer>
       </main>
-      <nav className="bottom-nav">
+      <nav className="bottom-nav" aria-label="ניווט ראשי">
         <NavLink to="/capture">צלם</NavLink>
         <NavLink to="/today" end>היום</NavLink>
         <NavLink to="/history">היסטוריה</NavLink>
