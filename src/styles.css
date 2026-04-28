@@ -404,6 +404,103 @@ nav.bottom-nav button.active::after {
   outline-offset: 2px;
 }
 
+/* --- Drug-safety inline highlights (Review screen) --- */
+.safety-highlight-text { line-height: 1.7; }
+.safety-highlight {
+  display: inline;
+  position: relative;
+}
+.safety-highlight summary {
+  display: inline;
+  list-style: none;
+  cursor: pointer;
+  text-decoration: underline wavy;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+  -webkit-tap-highlight-color: transparent;
+}
+.safety-highlight summary::-webkit-details-marker { display: none; }
+.safety-highlight.red summary { text-decoration-color: var(--err); color: var(--err); }
+.safety-highlight.amber summary { text-decoration-color: var(--warn); color: var(--warn); }
+.safety-highlight[open] summary {
+  background: var(--surface-3);
+  padding-inline: 2px;
+  border-radius: 3px;
+}
+.safety-highlight-tooltip {
+  display: block;
+  margin-top: 4px;
+  margin-inline-start: 4px;
+  padding: 6px 8px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--fg-2);
+}
+
+/* --- Capture phase beads (Capture/Review pipeline) --- */
+.capture-phase-beads {
+  margin-block: 16px;
+  padding: 16px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.capture-phase-beads-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.capture-phase-bead-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+.capture-phase-bead {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  border: 2px solid var(--border-strong);
+  transition: background 200ms, border-color 200ms;
+}
+.capture-phase-bead.past {
+  background: var(--good);
+  border-color: var(--good);
+}
+.capture-phase-bead.current {
+  background: var(--accent);
+  border-color: var(--accent);
+  animation: capture-bead-pulse 1.2s ease-in-out infinite;
+}
+.capture-phase-bead.future {
+  background: transparent;
+  border-color: var(--border);
+}
+.capture-phase-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+.capture-phase-label.current {
+  color: var(--accent);
+  font-weight: 600;
+}
+.capture-phase-hint {
+  margin: 8px 0 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+@keyframes capture-bead-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); }
+  50% { box-shadow: 0 0 0 8px transparent; }
+}
+
 /* --- Recent patients quick-pick (Capture screen) --- */
 .recent-patients {
   background: var(--surface-2);

@@ -11,6 +11,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { listAllNotes } from '@/storage/indexed';
 
 export interface BatteryInfo {
   /** 0..1, or null when the API is unavailable. */
@@ -179,6 +180,84 @@ export function notifyPatientChanged(): void {
     window.dispatchEvent(new CustomEvent('ward-helper:patient'));
   } catch {
     /* SSR / no window — non-fatal */
+  }
+}
+
+/**
+ * Track the active note type from sessionStorage.
+ * Used by the HeaderStrip to render a note-type badge with the right tone.
+ *
+ * Subscribes to a custom event since same-tab sessionStorage writes don't
+ * trigger the native `storage` event.
+ */
+export function useActiveNoteType(): string | null {
+  const [t, setT] = useState<string | null>(() => {
+    try { return sessionStorage.getItem('noteType'); } catch { return null; }
+  });
+  useEffect(() => {
+    const refresh = () => {
+      try { setT(sessionStorage.getItem('noteType')); } catch { setT(null); }
+    };
+    window.addEventListener('storage', refresh);
+    window.addEventListener('ward-helper:notetype', refresh);
+    return () => {
+      window.removeEventListener('storage', refresh);
+      window.removeEventListener('ward-helper:notetype', refresh);
+    };
+  }, []);
+  return t;
+}
+
+export function notifyNoteTypeChanged(): void {
+  try {
+    window.dispatchEvent(new CustomEvent('ward-helper:notetype'));
+  } catch {
+    /* non-fatal */
+  }
+}
+
+/**
+ * Pending-sync depth — the count of locally-saved notes that have NOT yet
+ * been marked as copied to Chameleon (sentToEmrAt is null/undefined). The
+ * doctor's "queue waiting for me" — they wrote it locally but haven't
+ * paste-ack'd it into the EMR. Header strip surfaces this so a forgotten
+ * paste gets caught the next time the doctor opens the app.
+ *
+ * Refreshes on a custom event the save flow + markNoteSent fire. Initial
+ * value is 0 until the IDB read resolves — keeps render synchronous.
+ */
+export function usePendingSyncCount(): number {
+  const [n, setN] = useState<number>(0);
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const all = await listAllNotes();
+        if (cancelled) return;
+        const pending = all.reduce((acc, note) => acc + (note.sentToEmrAt ? 0 : 1), 0);
+        setN(pending);
+      } catch {
+        /* IDB unavailable — show 0 rather than crash */
+      }
+    };
+    void refresh();
+    const handler = () => { void refresh(); };
+    window.addEventListener('storage', handler);
+    window.addEventListener('ward-helper:notes-changed', handler);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('storage', handler);
+      window.removeEventListener('ward-helper:notes-changed', handler);
+    };
+  }, []);
+  return n;
+}
+
+export function notifyNotesChanged(): void {
+  try {
+    window.dispatchEvent(new CustomEvent('ward-helper:notes-changed'));
+  } catch {
+    /* non-fatal */
   }
 }
 

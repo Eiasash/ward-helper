@@ -20,6 +20,9 @@ import { startSession as startCostSession } from '@/agent/costs';
 import { hasApiKey } from '@/crypto/keystore';
 import type { NoteType } from '@/storage/indexed';
 import { RecentPatientsList } from '../components/RecentPatientsList';
+import { colorForNoteType } from '@/notes/noteTypeColors';
+import { notifyNoteTypeChanged } from '../hooks/useGlanceable';
+import { CapturePhaseBeads } from '../components/CapturePhaseBeads';
 
 const NOTE_TYPES: { type: NoteType; label: string }[] = [
   { type: 'admission', label: 'קבלה' },
@@ -58,6 +61,12 @@ export function Capture() {
   const [editingDraft, setEditingDraft] = useState('');
   const [showAddText, setShowAddText] = useState(false);
   const [addTextDraft, setAddTextDraft] = useState('');
+
+  // Tracks whether onPickFiles is currently running compress + addImageBlock.
+  // Replaces the silent "files-being-processed" gap with the same three-bead
+  // choreography Review shows for the extract phase — gives the user explicit
+  // feedback that the app is doing work.
+  const [compressing, setCompressing] = useState(false);
 
   const refresh = () => setBlocks([...listBlocks()]);
   const refreshRef = useRef(refresh);
@@ -153,27 +162,32 @@ export function Capture() {
     } else {
       setPickWarn('');
     }
-    const dataUrls = await Promise.all(toAdd.map(readAsDataUrl));
-    const compressed = await Promise.all(dataUrls.map((d) => compressImage(d)));
-    let raceDropped = 0;
-    for (const d of compressed) {
-      try {
-        addImageBlock(d, source);
-      } catch (err) {
-        // Pre-slicing keeps the loop within `remaining`, but a concurrent
-        // paste could push us past the cap before the loop runs. Defensive:
-        // count the throw, surface a warning, keep what we have.
-        if (err instanceof CapExceededError) raceDropped++;
-        else throw err;
+    setCompressing(true);
+    try {
+      const dataUrls = await Promise.all(toAdd.map(readAsDataUrl));
+      const compressed = await Promise.all(dataUrls.map((d) => compressImage(d)));
+      let raceDropped = 0;
+      for (const d of compressed) {
+        try {
+          addImageBlock(d, source);
+        } catch (err) {
+          // Pre-slicing keeps the loop within `remaining`, but a concurrent
+          // paste could push us past the cap before the loop runs. Defensive:
+          // count the throw, surface a warning, keep what we have.
+          if (err instanceof CapExceededError) raceDropped++;
+          else throw err;
+        }
       }
+      if (raceDropped > 0) {
+        setPickWarn(
+          `הגעת לתקרה של ${IMAGE_HARD_CAP} תמונות. ${dropped + raceDropped} לא נוספו.`,
+        );
+      }
+      refresh();
+    } finally {
+      setCompressing(false);
+      e.target.value = '';
     }
-    if (raceDropped > 0) {
-      setPickWarn(
-        `הגעת לתקרה של ${IMAGE_HARD_CAP} תמונות. ${dropped + raceDropped} לא נוספו.`,
-      );
-    }
-    refresh();
-    e.target.value = '';
   }
 
   function onCommitAddText() {
@@ -228,6 +242,7 @@ export function Capture() {
   function onProceed() {
     if (blocks.length === 0) return;
     sessionStorage.setItem('noteType', noteType);
+    notifyNoteTypeChanged();
     nav('/review');
   }
 
@@ -287,15 +302,40 @@ export function Capture() {
       )}
 
       <div role="tablist" style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        {NOTE_TYPES.map((t) => (
-          <button
-            key={t.type}
-            className={noteType === t.type ? '' : 'ghost'}
-            onClick={() => setNoteType(t.type)}
-          >
-            {t.label}
-          </button>
-        ))}
+        {NOTE_TYPES.map((t) => {
+          const tone = colorForNoteType(t.type);
+          const active = noteType === t.type;
+          return (
+            <button
+              key={t.type}
+              className={active ? '' : 'ghost'}
+              onClick={() => {
+                setNoteType(t.type);
+                // Update sessionStorage early so the header-strip badge
+                // reflects the user's choice without waiting for Proceed.
+                sessionStorage.setItem('noteType', t.type);
+                notifyNoteTypeChanged();
+              }}
+              data-note-type={t.type}
+              style={
+                active
+                  ? {
+                      // Use the per-type accent for the active button so the
+                      // doctor sees which template the next note will use
+                      // before they even hit Proceed.
+                      background: tone.color,
+                      borderColor: tone.color,
+                      color: 'white',
+                    }
+                  : {
+                      borderInlineStart: `3px solid ${tone.color}`,
+                    }
+              }
+            >
+              {t.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Recent patients quick-pick — last 24h. Tap → skip extract,
@@ -313,6 +353,8 @@ export function Capture() {
           {pickWarn}
         </div>
       )}
+
+      {compressing && <CapturePhaseBeads phase="compressing" />}
 
       {blocks.length === 0 ? (
         <div className="empty">

@@ -10,7 +10,7 @@ import { encryptForCloud, pushBlob } from '@/storage/cloud';
 import { deriveAesKey } from '@/crypto/pbkdf2';
 import { getPassphrase } from '@/ui/hooks/useSettings';
 import { finalizeSessionFor } from '@/agent/costs';
-import { markSyncedNow } from '@/ui/hooks/useGlanceable';
+import { markSyncedNow, notifyNotesChanged } from '@/ui/hooks/useGlanceable';
 import type { ParseFields } from '@/agent/tools';
 import type { SafetyFlags } from '@/safety/types';
 
@@ -61,6 +61,8 @@ export async function saveBoth(
   };
 
   await putNote(note);
+  // Header-strip queue depth subscribes; nudge it after every save.
+  notifyNotesChanged();
 
   // Attribute this session's extract + emit token spend to the patient now
   // that the ID is known. Safe no-op if no session was open.

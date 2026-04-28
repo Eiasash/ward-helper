@@ -20,7 +20,7 @@ import {
   type Note,
   type NoteType,
 } from '@/storage/indexed';
-import { notifyPatientChanged } from '../hooks/useGlanceable';
+import { notifyPatientChanged, notifyNoteTypeChanged } from '../hooks/useGlanceable';
 
 const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -78,6 +78,7 @@ export function pickRecentPatient(rp: RecentPatient, noteType: NoteType): void {
   sessionStorage.removeItem('body');
   sessionStorage.removeItem('bodyKey');
   notifyPatientChanged();
+  notifyNoteTypeChanged();
 }
 
 export function RecentPatientsList({

@@ -250,6 +250,15 @@ export async function markNoteSent(id: string, ts: number = Date.now()): Promise
   const note = (await db.get('notes', id)) as Note | undefined;
   if (!note) return;
   await db.put('notes', { ...note, sentToEmrAt: ts, updatedAt: ts });
+  // Header-strip pending-sync subscribes — drop the count by 1 immediately.
+  // Dynamic import keeps the storage module free of UI-layer imports
+  // (test-friendly, prevents accidental cycles with src/ui).
+  try {
+    const { notifyNotesChanged } = await import('@/ui/hooks/useGlanceable');
+    notifyNotesChanged();
+  } catch {
+    /* SSR / module unavailable — non-fatal */
+  }
 }
 
 export async function setSettings(s: Settings): Promise<void> {

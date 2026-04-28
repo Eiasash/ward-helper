@@ -16,9 +16,21 @@ import {
   useOnline,
   useLastSync,
   useCurrentPatientName,
+  useActiveNoteType,
+  usePendingSyncCount,
   formatBatteryPct,
   formatRelative,
 } from '../hooks/useGlanceable';
+import { colorForNoteType } from '@/notes/noteTypeColors';
+import type { NoteType } from '@/storage/indexed';
+
+const KNOWN_NOTE_TYPES: readonly NoteType[] = [
+  'admission', 'discharge', 'consult', 'case', 'soap', 'census',
+];
+
+function isNoteType(s: string | null): s is NoteType {
+  return !!s && (KNOWN_NOTE_TYPES as readonly string[]).includes(s);
+}
 
 const NAME_MAX_CHARS = 18;
 
@@ -32,6 +44,9 @@ export function HeaderStrip() {
   const battery = useBattery();
   const lastSync = useLastSync();
   const patientName = useCurrentPatientName();
+  const activeNoteType = useActiveNoteType();
+  const pendingSync = usePendingSyncCount();
+  const tone = isNoteType(activeNoteType) ? colorForNoteType(activeNoteType) : null;
 
   const batteryLow = battery.level !== null && battery.level < 0.2 && !battery.charging;
 
@@ -62,6 +77,15 @@ export function HeaderStrip() {
       </div>
 
       <div className="header-strip-section header-strip-patient">
+        {tone && (
+          <span
+            className="header-strip-type-badge"
+            style={{ background: tone.soft, color: tone.fg, border: `1px solid ${tone.color}` }}
+            aria-label={`סוג רשומה: ${activeNoteType}`}
+          >
+            {tone.badge}
+          </span>
+        )}
         {patientName ? (
           <span className="header-strip-name" title={patientName} dir="auto">
             {truncate(patientName, NAME_MAX_CHARS)}
@@ -72,6 +96,15 @@ export function HeaderStrip() {
       </div>
 
       <div className="header-strip-section header-strip-sync">
+        {pendingSync > 0 && (
+          <span
+            className="header-strip-pill queue"
+            title={`${pendingSync} רשומות לא הועתקו לצ׳מיליון`}
+            aria-label={`${pendingSync} ממתינות`}
+          >
+            ⌛ {pendingSync}
+          </span>
+        )}
         <span
           className="header-strip-pill sync"
           title={

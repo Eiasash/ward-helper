@@ -19,6 +19,7 @@ import {
 import { regenerateSection, replaceSectionInBody } from '@/notes/regenerate';
 import { loadSkills } from '@/skills/loader';
 import { NOTE_SKILL_MAP } from '@/notes/templates';
+import { colorForNoteType } from '@/notes/noteTypeColors';
 
 type Status = 'gen' | 'ready' | 'error';
 
@@ -262,9 +263,38 @@ export function NoteEditor() {
     );
   }
 
+  const tone = colorForNoteType(noteType);
+
   return (
-    <section>
-      <h1>טיוטת {NOTE_LABEL[noteType]}</h1>
+    <section
+      data-note-type={noteType}
+      style={{
+        // 4px top border identifies note type at a glance — paired with the
+        // header-strip badge so a wrong-template paste is impossible to miss.
+        borderTop: `4px solid ${tone.color}`,
+        marginTop: -4,
+        paddingTop: 8,
+      }}
+    >
+      <h1 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span
+          aria-hidden="true"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            padding: '2px 8px',
+            borderRadius: 6,
+            background: tone.soft,
+            color: tone.fg,
+            fontSize: 12,
+            fontWeight: 600,
+            letterSpacing: '0.04em',
+          }}
+        >
+          {tone.badge}
+        </span>
+        <span>טיוטת {NOTE_LABEL[noteType]}</span>
+      </h1>
 
       {issues.length > 0 && (
         <div

@@ -10,8 +10,11 @@ import { ContinuityBanner } from '../components/ContinuityBanner';
 import { PriorNotesBanner } from '../components/PriorNotesBanner';
 import type { SafetyFlags } from '@/safety/types';
 import { notifyPatientChanged } from '../hooks/useGlanceable';
+import { CapturePhaseBeads } from '../components/CapturePhaseBeads';
+import { SafetyHighlightedText } from '../components/SafetyHighlightedText';
 
 type Status = 'loading' | 'ready' | 'error';
+type LoadingPhase = 'capturing' | 'compressing' | 'awaiting-ai';
 
 const EXTRACT_TIMEOUT_MS = 45_000;
 
@@ -170,7 +173,11 @@ export function Review() {
     return (
       <section>
         <h1>בדיקה</h1>
-        <p>מנתח את המסך... ({elapsed}s)</p>
+        {/* Three-bead choreography: capture + compress already finished
+           on the prior screen, so we render those as past steps and
+           pulse on awaiting-ai. Replaces the bare "מנתח את המסך..."
+           spinner with explicit per-phase microcopy. */}
+        <CapturePhaseBeads phase="awaiting-ai" hint={`${elapsed}s`} />
         {elapsed > 15 && (
           <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 12 }}>
             לוקח זמן מעל הרגיל. אם זה נתקע, בדוק:
@@ -405,6 +412,32 @@ export function Review() {
         }
         placeholder="NKDA"
       />
+
+      {/* Inline drug-safety highlights — surface the v1.20.0 engine's
+         hits visually on the med list itself, before the doctor opens
+         the (lazy) full panel below. Underlines red for high/critical,
+         amber for moderate/low. Tap to see the rule recommendation. */}
+      {safetyFlags && (fields.meds?.length ?? 0) > 0 && (
+        <div
+          aria-label="הדגשות בטיחות תרופתית"
+          style={{
+            background: 'var(--surface-1)',
+            padding: '8px 10px',
+            borderRadius: 8,
+            marginTop: 8,
+            border: '1px solid var(--border)',
+            fontSize: 13,
+            lineHeight: 1.7,
+          }}
+        >
+          <SafetyHighlightedText
+            text={(fields.meds ?? [])
+              .map((m) => [m.name, m.dose, m.freq].filter(Boolean).join(' '))
+              .join('  ·  ')}
+            flags={safetyFlags}
+          />
+        </div>
+      )}
 
       {lowConfMeds && (
         <div
