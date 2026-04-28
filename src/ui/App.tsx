@@ -6,6 +6,7 @@ import { NoteEditor } from './screens/NoteEditor';
 import { Save } from './screens/Save';
 import { Settings } from './screens/Settings';
 import { Today } from './screens/Today';
+import { Consult } from './screens/Consult';
 import { HeaderStrip } from './components/HeaderStrip';
 
 // Lazy-loaded routes. Cold start usually lands on /today or /capture; the
@@ -40,7 +41,8 @@ export function App() {
       <main className="shell" id="main-content" tabIndex={-1}>
         <Suspense fallback={<section><h1>טוען...</h1></section>}>
           <Routes>
-            <Route path="/" element={<Today />} />
+            <Route path="/" element={<Consult />} />
+            <Route path="/consult" element={<Consult />} />
             <Route path="/today" element={<Today />} />
             <Route path="/capture" element={<Capture />} />
             <Route path="/review" element={<Review />} />
@@ -50,7 +52,7 @@ export function App() {
             <Route path="/history" element={<History />} />
             <Route path="/census" element={<Census />} />
             <Route path="/settings" element={<Settings />} />
-            <Route path="*" element={<Today />} />
+            <Route path="*" element={<Consult />} />
           </Routes>
         </Suspense>
         <footer className="app-version" aria-hidden="true">
@@ -58,8 +60,9 @@ export function App() {
         </footer>
       </main>
       <nav className="bottom-nav" aria-label="ניווט ראשי">
+        <NavLink to="/consult" end>ייעוץ</NavLink>
         <NavLink to="/capture">צלם</NavLink>
-        <NavLink to="/today" end>היום</NavLink>
+        <NavLink to="/today">היום</NavLink>
         <NavLink to="/history">היסטוריה</NavLink>
         <NavLink to="/settings">הגדרות</NavLink>
       </nav>

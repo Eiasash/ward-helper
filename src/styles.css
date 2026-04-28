@@ -627,3 +627,277 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
   opacity: 0.55;
   user-select: text;
 }
+
+/* ====================================================================
+   /consult — case-discussion chat screen.
+
+   Single-column thread → composer at the bottom. Built to feel like a
+   modern messaging app while staying inside the existing dark/teal
+   tokens. Uses CSS-only autoscroll (the screen sets scrollTop directly
+   on the thread element); no Tailwind, no extra deps.
+   ==================================================================== */
+
+.consult-screen {
+  display: flex;
+  flex-direction: column;
+  /* Fill from the top of <main> (which already has padding-top:44+pad) to
+     the top of the bottom-nav. The composer is sticky inside this so it
+     never gets hidden by the nav. */
+  height: calc(100vh - 44px - 76px - var(--pad) - var(--pad));
+  min-height: 480px;
+  margin: 0 calc(-1 * var(--pad)); /* edge-to-edge inside .shell */
+}
+
+.consult-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.consult-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.consult-head-actions { display: flex; gap: 8px; }
+
+.consult-thread {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scroll-behavior: smooth;
+}
+
+.consult-empty {
+  margin: auto 0;
+  text-align: center;
+  color: var(--fg-2);
+  padding: 24px 8px;
+}
+.consult-empty-lead {
+  font-size: 15px;
+  line-height: 1.6;
+  margin: 0 0 18px;
+}
+.consult-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+.consult-suggestion {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--fg-2);
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  text-align: start;
+  font-size: 13.5px;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.consult-suggestion:hover {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+}
+.consult-suggestion:active { transform: translateY(1px); }
+
+.bubble {
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 16px;
+  line-height: 1.5;
+  font-size: 14.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  unicode-bidi: plaintext;
+  animation: bubble-in 160ms ease-out;
+}
+@keyframes bubble-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.bubble-content { unicode-bidi: plaintext; }
+
+.bubble-user {
+  align-self: flex-start; /* RTL: visually left */
+  background: var(--accent-strong);
+  color: white;
+  border-bottom-inline-start-radius: 4px;
+}
+.bubble-assistant {
+  align-self: flex-end; /* RTL: visually right */
+  background: var(--surface-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-bottom-inline-end-radius: 4px;
+}
+
+/* Typing indicator — three pulsing dots while a turn is in flight. */
+.bubble-typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 14px;
+}
+.bubble-typing .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--fg-2);
+  opacity: 0.4;
+  animation: typing-pulse 1.2s infinite ease-in-out;
+}
+.bubble-typing .dot:nth-child(2) { animation-delay: 0.18s; }
+.bubble-typing .dot:nth-child(3) { animation-delay: 0.36s; }
+@keyframes typing-pulse {
+  0%, 60%, 100% { transform: scale(0.85); opacity: 0.35; }
+  30% { transform: scale(1.1); opacity: 0.95; }
+}
+
+/* Inline note card — the deliverable of the chat. Stands out from
+   conversational bubbles via accent border and pre-wrap monospace body. */
+.note-card {
+  align-self: stretch;
+  background: var(--surface-1);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  box-shadow: var(--shadow-inset),
+              0 0 0 1px var(--accent-soft) inset;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.note-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.note-card-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.01em;
+}
+.note-card-time {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.note-card-body {
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: 'Heebo', 'Inter', monospace, ui-monospace;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 360px;
+  overflow-y: auto;
+  unicode-bidi: plaintext;
+}
+.note-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.note-card-actions button {
+  flex: 1 1 auto;
+  min-width: 110px;
+  font-size: 13.5px;
+  padding: 9px 12px;
+}
+
+/* Emit-type picker — appears as a chat affordance after <NOTE_READY>. */
+.emit-picker {
+  align-self: stretch;
+  background: var(--surface-2);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.emit-picker-lead {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--fg-2);
+}
+.emit-picker-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.emit-picker-buttons button {
+  flex: 1 1 auto;
+  min-width: 90px;
+  font-size: 13.5px;
+  padding: 8px 10px;
+}
+
+.consult-error {
+  align-self: stretch;
+  background: var(--err-soft);
+  border: 1px solid var(--err);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 13.5px;
+  color: var(--err);
+  line-height: 1.45;
+}
+
+/* Composer — fixed at the bottom of the screen, above the bottom-nav. */
+.consult-composer {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border);
+  padding: 10px 12px;
+  background: var(--surface-1);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.consult-input {
+  width: 100%;
+  resize: none;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 14.5px;
+  line-height: 1.5;
+  unicode-bidi: plaintext;
+}
+.consult-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  border-color: var(--accent);
+}
+.consult-input:disabled {
+  opacity: 0.6;
+}
+.consult-composer-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.consult-composer-actions .small {
+  font-size: 13px;
+  padding: 7px 10px;
+}
