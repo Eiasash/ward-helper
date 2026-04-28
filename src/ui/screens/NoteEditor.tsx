@@ -405,13 +405,18 @@ export function NoteEditor() {
         </div>
       )}
 
+      <label htmlFor="note-editor-body" className="visually-hidden">
+        טקסט הטיוטה — {NOTE_LABEL[noteType]}
+      </label>
       <textarea
+        id="note-editor-body"
         ref={textareaRef}
         dir="auto"
         rows={18}
         value={body}
         onChange={(e) => setBody(e.target.value)}
         onKeyUp={onTextareaKeyUp}
+        aria-label={`טקסט הטיוטה — ${NOTE_LABEL[noteType]}`}
         style={{ minHeight: 400, fontSize: 15, lineHeight: 1.6 }}
       />
       <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>

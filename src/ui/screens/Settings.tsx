@@ -179,11 +179,15 @@ export function Settings() {
           הגדר מפתח כדי לעקוף את המגבלה הזאת.
         </div>
       )}
+      <label htmlFor="settings-api-key" className="visually-hidden">Anthropic API key</label>
       <input
-        dir="auto"
+        id="settings-api-key"
+        type="password"
+        dir="ltr"
         placeholder="sk-ant-..."
         value={key}
         onChange={(e) => setKey(e.target.value)}
+        autoComplete="off"
         style={{ marginBottom: 8 }}
       />
       <div style={{ display: 'flex', gap: 8 }}>
@@ -193,11 +197,14 @@ export function Settings() {
 
       <h2>סיסמת גיבוי (Supabase)</h2>
       <p>{getPassphrase() ? '✓ פעילה (תפוג אחרי 15 דק׳)' : 'לא פעילה — הגיבוי לא ירוץ'}</p>
+      <label htmlFor="settings-passphrase" className="visually-hidden">סיסמת גיבוי</label>
       <input
+        id="settings-passphrase"
         type="password"
         dir="auto"
         value={pass}
         onChange={(e) => setPass(e.target.value)}
+        autoComplete="new-password"
         style={{ marginBottom: 8 }}
       />
       <div style={{ display: 'flex', gap: 8 }}>
@@ -274,12 +281,15 @@ export function Settings() {
         אחרי שמירה תופיע כפתור "שלח במייל" שישלח את ההערה ל-
         <bdi dir="ltr">{emailTarget || 'כתובת שתגדיר כאן'}</bdi>.
       </p>
+      <label htmlFor="settings-email" className="visually-hidden">כתובת מייל ליעד שליחה</label>
       <input
+        id="settings-email"
         dir="ltr"
         type="email"
         placeholder="you@example.com"
         value={emailDraft}
         onChange={(e) => setEmailDraft(e.target.value)}
+        autoComplete="email"
         style={{ marginBottom: 8 }}
       />
       <div style={{ display: 'flex', gap: 8 }}>

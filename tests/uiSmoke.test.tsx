@@ -185,7 +185,7 @@ describe('History screen', () => {
     expect(screen.getByText('דוד לוי')).toBeInTheDocument();
     expect(screen.getByText('שרה כהן')).toBeInTheDocument();
 
-    const searchBox = screen.getByRole('textbox');
+    const searchBox = screen.getByRole('searchbox');
     await act(async () => {
       fireEvent.change(searchBox, { target: { value: 'קריאטינין' } });
     });

@@ -301,13 +301,15 @@ export function Capture() {
         </div>
       )}
 
-      <div role="tablist" style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+      <div role="radiogroup" aria-label="סוג רשומה" style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         {NOTE_TYPES.map((t) => {
           const tone = colorForNoteType(t.type);
           const active = noteType === t.type;
           return (
             <button
               key={t.type}
+              role="radio"
+              aria-checked={active}
               className={active ? '' : 'ghost'}
               onClick={() => {
                 setNoteType(t.type);
@@ -452,6 +454,7 @@ export function Capture() {
                             rows={6}
                             value={editingDraft}
                             onChange={(e) => setEditingDraft(e.target.value)}
+                            aria-label="ערוך בלוק טקסט"
                             style={{ width: '100%' }}
                           />
                           <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
@@ -593,12 +596,17 @@ export function Capture() {
 
       {showAddText && (
         <div style={{ marginTop: 8 }}>
+          <label htmlFor="capture-add-text" className="visually-hidden">
+            הוסף בלוק טקסט
+          </label>
           <textarea
+            id="capture-add-text"
             dir="auto"
             rows={6}
             placeholder="הקלד טקסט AZMA / רקע / הערות..."
             value={addTextDraft}
             onChange={(e) => setAddTextDraft(e.target.value)}
+            aria-label="הוסף בלוק טקסט"
             style={{ width: '100%' }}
           />
           <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
