@@ -50,24 +50,31 @@ function mkNote(overrides: Partial<Note>): Note {
 }
 
 describe('ConfidencePill', () => {
-  it('renders the level text verbatim', () => {
+  // The pill upgraded in v1.23.0 from raw "low/med/high" text to Hebrew
+  // microcopy + a data-confidence attribute. The tier names match the
+  // numeric thresholds documented in ConfidencePill.tsx (≥0.9 / 0.6–0.9 / <0.6).
+  it('renders the high tier with Hebrew microcopy', () => {
     render(<ConfidencePill level="high" />);
-    expect(screen.getByText('high')).toBeInTheDocument();
+    const pill = screen.getByText(/גבוה/);
+    expect(pill).toHaveAttribute('data-confidence', 'high');
   });
 
   it('renders med', () => {
     render(<ConfidencePill level="med" />);
-    expect(screen.getByText('med')).toBeInTheDocument();
+    const pill = screen.getByText(/בינוני/);
+    expect(pill).toHaveAttribute('data-confidence', 'med');
   });
 
   it('renders low', () => {
     render(<ConfidencePill level="low" />);
-    expect(screen.getByText('low')).toBeInTheDocument();
+    const pill = screen.getByText(/נמוך/);
+    expect(pill).toHaveAttribute('data-confidence', 'low');
   });
 
-  it('falls back to low when level is undefined (extract turns can omit this for non-critical fields)', () => {
+  it('renders an "unknown" tier when level is undefined (extract turns can omit this for non-critical fields)', () => {
     render(<ConfidencePill level={undefined} />);
-    expect(screen.getByText('low')).toBeInTheDocument();
+    const pill = screen.getByText(/לא דורג/);
+    expect(pill).toHaveAttribute('data-confidence', 'unknown');
   });
 });
 
