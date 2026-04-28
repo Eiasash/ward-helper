@@ -44,9 +44,14 @@ html, body, #root {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font-family: system-ui, -apple-system, 'Segoe UI', Tahoma, Arial, sans-serif;
+  /* Heebo (body) + Inter (Latin fallback) — already preloaded in index.html
+     with `display=swap` so CLS during font swap stays bounded. The font
+     family chain falls back to system fonts gracefully if the network is
+     down or the CSP-allowed CDN is unreachable. */
+  font-family: 'Heebo', 'Inter', system-ui, -apple-system, 'Segoe UI', Tahoma, Arial, sans-serif;
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 body { direction: rtl; }
@@ -568,9 +573,18 @@ nav.bottom-nav button.active::after {
 }
 
 /* --- Misc --- */
-h1, h2, h3 { color: var(--fg); margin: 16px 0 8px; font-weight: 500; }
-h1 { font-size: 22px; margin: 0 0 16px; }
-h2 { font-size: 1.15em; color: var(--muted); margin-top: 20px; }
+h1, h2, h3 {
+  color: var(--fg);
+  margin: 16px 0 8px;
+  font-weight: 500;
+  /* Frank Ruhl Libre — Hebrew-first serif for headings. Falls back to
+     Heebo (body face) and then system serifs if the CDN font hasn't
+     swapped in yet. RTL-safe; both faces have full Hebrew glyph coverage. */
+  font-family: 'Frank Ruhl Libre', 'Heebo', Georgia, 'Times New Roman', serif;
+  letter-spacing: 0.005em;
+}
+h1 { font-size: 24px; margin: 0 0 16px; font-weight: 700; }
+h2 { font-size: 1.15em; color: var(--muted); margin-top: 20px; font-weight: 500; }
 h3 { font-size: 1em; }
 .muted { color: var(--muted); font-size: 0.9em; }
 a { color: var(--accent); text-decoration: none; }
