@@ -7,6 +7,13 @@
  * `wrapForChameleon`, which first `sanitizeForChameleon`s then applies
  * bidi marks. Keep these rules in sync with
  * public/skills/szmc-clinical-notes/SKILL.md §"CHAMELEON EMR PASTE RULES".
+ *
+ * 2026-04-28 update: lab-section trends should now use PROSE
+ * ("בקבלה X, במהלך Y, בשחרור Z") not ">" arrows. The ">" character is still
+ * allowed for medication dose tapers (e.g. "Lantus 22 > 10-12"). The sanitizer
+ * cannot reliably distinguish lab-trend ">" from med-taper ">" without
+ * full-document parsing, so it leaves ">" alone — but `auditChameleonRules`
+ * flags suspicious "N > N" numeric patterns as a dev warning.
  */
 
 const HEBREW_RE = /[\u0590-\u05FF]/;
@@ -92,6 +99,71 @@ export function sanitizeForChameleon(text: string): string {
 }
 
 /**
+ * Lab-section-specific sanitizer. Stricter than `sanitizeForChameleon`:
+ * also strips ALL `>` arrows (even space-padded transitions), and converts
+ * H/L lab printout suffixes to Hebrew parens. Use this on the מעבדה
+ * paste field specifically, since Chameleon's lab field is more fragile
+ * than its narrative field.
+ *
+ * Verified 2026-04-28 (Bloch discharge calibration): the lab paste field
+ * mangles `>` arrow chains; ditto Latin-1 H/L suffixes that get carried
+ * over from the lab printout. Defense-in-depth catches model slips even
+ * when the prompt says "no arrows".
+ */
+export function sanitizeLabSection(text: string): string {
+  // First apply the general sanitizer (arrows, **, --, qNh, etc.)
+  let s = sanitizeForChameleon(text);
+
+  // 1. ANY remaining ">" between lab values (even space-padded) becomes
+  //    Hebrew prose connector. Pattern: "<param/value> > <next>" → ", "
+  //    Conservative: only strip > when it's surrounded by whitespace AND
+  //    not a comparison (already handled). The general sanitizer left
+  //    these alone (rule 5 only spells out >N comparisons).
+  s = s.replace(/\s+>\s+/g, ', ');
+
+  // 2. H / L lab printout suffixes — strip and convert to Hebrew parens.
+  //    Matches "11.3 H" or "3.0 L" (number, optional space, H or L,
+  //    word boundary). Case-sensitive on purpose (Hebrew text contains
+  //    no Latin H/L).
+  s = s.replace(/(\d+(?:\.\d+)?)\s+H\b/g, '$1 (מעל הנורמה)');
+  s = s.replace(/(\d+(?:\.\d+)?)\s+L\b/g, '$1 (מתחת לנורמה)');
+  // Same with no space (some printouts emit "11.3H").
+  s = s.replace(/(\d+(?:\.\d+)?)H\b/g, '$1 (מעל הנורמה)');
+  s = s.replace(/(\d+(?:\.\d+)?)L\b/g, '$1 (מתחת לנורמה)');
+  // "L!" / "H!" critical-flag suffix — same handling.
+  s = s.replace(/(\d+(?:\.\d+)?)\s*[HL]!/g, (_, num, off, str) =>
+    `${num} ${str.includes('H') ? '(מעל הנורמה, חריג)' : '(מתחת לנורמה, חריג)'}`,
+  );
+
+  return s;
+}
+
+/**
+ * Calculate corrected calcium when total Ca is reported alongside same-day
+ * albumin. Hypoalbuminemia falsely lowers measured total Ca; correction
+ * adjusts to a normal-albumin equivalent.
+ *
+ *   Corrected Ca = measured Ca + 0.8 × (4.0 − albumin)
+ *
+ * Returns the corrected value rounded to 1 decimal. Returns the original
+ * Ca unchanged if albumin is null/undefined or already ≥4.0 (no
+ * correction needed). Ionized Ca needs no correction — don't pass it
+ * through this function.
+ *
+ * Eias 2026-04-28: matters clinically because Bloch case had Ca 11.2 with
+ * albumin 3.0 → corrected 12.0. Raw Ca looked stable, corrected showed
+ * worsening hypercalcemia.
+ */
+export function correctedCalcium(
+  totalCa: number,
+  albumin: number | null | undefined,
+): number {
+  if (albumin == null || albumin >= 4.0) return totalCa;
+  const corrected = totalCa + 0.8 * (4.0 - albumin);
+  return Math.round(corrected * 10) / 10;
+}
+
+/**
  * Full clipboard-boundary transform: sanitize, then insert directional marks.
  */
 export function wrapForChameleon(text: string): string {
@@ -129,5 +201,49 @@ export function auditChameleonRules(text: string): string[] {
   if (/(?<![\d.])<\d/.test(text)) issues.push('"<N" comparison found (should be "מתחת N")');
   if (/\bq\d{1,2}h\b/i.test(text)) issues.push('qNh frequency found (use Hebrew)');
   if (/\b(bid|tid|qid|qd)\b/i.test(text)) issues.push('BID/TID/QID/QD found (use Hebrew)');
+
+  // 2026-04-28: lab-section style guards.
+  // Numeric trend pattern "N > M" or "N > M > P" — lab trends should now be
+  // prose ("בקבלה X, במהלך Y, בשחרור Z"), not arrow-style. This is a STYLE
+  // warning (the sanitizer leaves > alone because med tapers still use it),
+  // surfaced for dev visibility / pre-commit.
+  if (/\d+(?:\.\d+)?\s*>\s*\d+(?:\.\d+)?(?:\s*>\s*\d+(?:\.\d+)?)*/.test(text)) {
+    issues.push('Numeric arrow trend "N > M" found — lab sections should use prose ("בקבלה X, במהלך Y, בשחרור Z")');
+  }
+  // "L"/"H" suffix immediately after a lab number (e.g. "Ca 11.3 H") — should
+  // be parenthetical Hebrew "(מעל הנורמה)" / "(מתחת לנורמה)".
+  if (/\d+(?:\.\d+)?\s+[LH]\b/.test(text)) {
+    issues.push('"N L" or "N H" suffix found — use "(מעל/מתחת לנורמה)" parenthetical');
+  }
   return issues;
+}
+
+/**
+ * Audit a lab-section paste field specifically. Stricter than the general
+ * `auditChameleonRules`: flags space-padded `>` as an arrow violation
+ * (the lab field corrupts even with proper spacing) and emits messages
+ * scoped to the lab context. Useful when the caller knows the text is
+ * destined for the מעבדה paste field.
+ *
+ * 2026-04-28: extracted as a dedicated function to avoid false positives
+ * on legitimate med-taper `>` syntax in narrative sections.
+ */
+export function auditLabSection(text: string): string[] {
+  const issues = auditChameleonRules(text);
+  // Stricter: any " > " between alphanumeric tokens flags as an arrow
+  // violation in lab context (Chameleon's lab field is more fragile).
+  if (/\S\s+>\s+\S/.test(text) && !issues.some((s) => /arrow found in lab section/.test(s))) {
+    issues.push('">" arrow found in lab section — use prose ("בקבלה X, במהלך Y, בשחרור Z")');
+  }
+  // Compact "11.3H" / "3.0L" without space (common in lab printouts).
+  if (/\d(?:\.\d+)?[HL]\b/.test(text) && !issues.some((s) => /H\/L suffix/.test(s))) {
+    issues.push('lab H/L suffix (no space) found — use "(מעל/מתחת לנורמה)" parens');
+  }
+  // The general audit's "N L" / "N H" message is fine, but rephrase for
+  // lab-section context if the test caller looks for "H/L suffix".
+  return issues.map((s) =>
+    /N L" or "N H" suffix/.test(s)
+      ? 'lab H/L suffix found — use "(מעל/מתחת לנורמה)" parens'
+      : s,
+  );
 }

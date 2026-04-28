@@ -5,6 +5,9 @@ import {
   lintBidi,
   sanitizeForChameleon,
   auditChameleonRules,
+  sanitizeLabSection,
+  auditLabSection,
+  correctedCalcium,
 } from '@/i18n/bidi';
 
 describe('bidi direction detection', () => {
@@ -222,15 +225,37 @@ describe('auditChameleonRules — reports violations found', () => {
     expect(issues.length).toBeGreaterThan(4);
   });
 
-  it('returns empty array for sanitized output (self-consistency)', () => {
-    const dirty = 'Cr: 2.1 → 1.8, **חשוב** q8h';
+  it('returns clean for sanitized output containing only med-taper trends', () => {
+    // Med-taper "Lantus 22 > 10-12" is still allowed; what's flagged is
+    // numeric>numeric lab patterns. Use a med-taper string here.
+    const dirty = 'Lantus 22 → 10-12, **חשוב** q8h';
     const clean = sanitizeForChameleon(dirty);
+    // After sanitize the arrow becomes "22 > 10-12" which IS numeric-arrow
+    // pattern — so this DOES trigger the new lab-trend warning. That's the
+    // correct behavior: even med tapers in arrow-shape should be reviewed,
+    // and the model is now instructed to use prose. So we accept a single
+    // non-empty audit here.
+    const issues = auditChameleonRules(clean);
+    // Allow the lab-trend warning to fire — the other violations should
+    // all be gone.
+    expect(issues.every(i => i.includes('Numeric arrow trend') || i.includes('"N L" or "N H"'))).toBe(true);
+  });
+
+  it('passes on a clean SZMC prose-trend lab format', () => {
+    const clean = 'סידן בקבלה 12.3, בשחרור 9.8 (מתחת לנורמה)\nApixaban 5 מ"ג פעמיים ביום';
     expect(auditChameleonRules(clean)).toEqual([]);
   });
 
-  it('passes on a clean SZMC-format note', () => {
-    const clean = 'סידן: 12.3 > 9.8 (20/04)\nApixaban 5 מ"ג פעמיים ביום';
-    expect(auditChameleonRules(clean)).toEqual([]);
+  it('flags numeric arrow trends as style warning (lab section should be prose)', () => {
+    const arrowStyle = 'CRP: 7.72 > 0.87 > 1.35';
+    const issues = auditChameleonRules(arrowStyle);
+    expect(issues.some(i => i.includes('Numeric arrow trend'))).toBe(true);
+  });
+
+  it('flags L/H suffix on lab numbers', () => {
+    const lhSuffix = 'Ca 11.3 H, Hb 10.8 L';
+    const issues = auditChameleonRules(lhSuffix);
+    expect(issues.some(i => i.includes('"N L" or "N H"'))).toBe(true);
   });
 });
 
@@ -312,5 +337,89 @@ describe('auditChameleonRules — new compound detectors', () => {
   it('does NOT flag digit>digit transition as a violation', () => {
     const issues = auditChameleonRules('Cr 2.1>1.8');
     expect(issues.filter((s) => /">N"/.test(s))).toEqual([]);
+  });
+});
+
+describe('sanitizeLabSection — stricter than general sanitizer', () => {
+  it('strips space-padded > arrows in lab trends and joins with comma', () => {
+    const input = 'CRP בקבלה 7.72 > 0.87 > 1.35 בשחרור';
+    const out = sanitizeLabSection(input);
+    expect(out).not.toContain(' > ');
+    expect(out).toContain(', ');
+  });
+
+  it('converts H suffix on lab number to Hebrew parens', () => {
+    expect(sanitizeLabSection('סידן 11.3 H')).toContain('(מעל הנורמה)');
+    expect(sanitizeLabSection('סידן 11.3 H')).not.toMatch(/\sH\b/);
+  });
+
+  it('converts L suffix on lab number to Hebrew parens', () => {
+    expect(sanitizeLabSection('אלבומין 3.0 L')).toContain('(מתחת לנורמה)');
+    expect(sanitizeLabSection('אלבומין 3.0 L')).not.toMatch(/\sL\b/);
+  });
+
+  it('converts no-space H suffix (printout style "11.3H")', () => {
+    expect(sanitizeLabSection('Ca 11.3H')).toContain('(מעל הנורמה)');
+  });
+
+  it('also runs the general sanitizer (Unicode arrows still caught)', () => {
+    const out = sanitizeLabSection('Cr 0.72 → 0.78');
+    expect(out).not.toContain('→');
+  });
+
+  it('preserves Hebrew prose lab descriptions unchanged', () => {
+    const input = 'קראטינין בקבלה היה 0.72, יציב במהלך האשפוז.';
+    expect(sanitizeLabSection(input)).toBe(input);
+  });
+});
+
+describe('correctedCalcium — albumin-corrected total calcium', () => {
+  it('returns measured value when albumin is null/undefined', () => {
+    expect(correctedCalcium(11.2, null)).toBe(11.2);
+    expect(correctedCalcium(11.2, undefined)).toBe(11.2);
+  });
+
+  it('returns measured value when albumin is normal (>=4.0)', () => {
+    expect(correctedCalcium(11.2, 4.0)).toBe(11.2);
+    expect(correctedCalcium(11.2, 4.5)).toBe(11.2);
+  });
+
+  it('Bloch case: Ca 11.2 + Albumin 3.0 → corrected 12.0', () => {
+    expect(correctedCalcium(11.2, 3.0)).toBe(12.0);
+  });
+
+  it('mild hypoalbuminemia: Ca 11.0 + Albumin 3.4 → corrected 11.5', () => {
+    expect(correctedCalcium(11.0, 3.4)).toBe(11.5);
+  });
+
+  it('apparent hypocalcemia normalizes: Ca 8.0 + Albumin 2.5 → corrected 9.2', () => {
+    expect(correctedCalcium(8.0, 2.5)).toBe(9.2);
+  });
+
+  it('rounds to 1 decimal', () => {
+    const out = correctedCalcium(10.0, 2.7);
+    expect(Number.isInteger(out * 10)).toBe(true);
+  });
+});
+
+describe('auditLabSection — lab-section-specific violations', () => {
+  it('clean prose lab section produces no issues', () => {
+    const text = 'CRP בקבלה היה 7.72, חלף במהלך האשפוז ועמד על 1.35 בשחרור.';
+    expect(auditLabSection(text)).toEqual([]);
+  });
+
+  it('flags > arrow in lab trend', () => {
+    const issues = auditLabSection('CRP 7.72 > 1.35');
+    expect(issues.some((s) => /arrow found in lab section/.test(s))).toBe(true);
+  });
+
+  it('flags H suffix on lab value', () => {
+    const issues = auditLabSection('Ca 11.3 H');
+    expect(issues.some((s) => /H\/L suffix/.test(s))).toBe(true);
+  });
+
+  it('inherits general Chameleon rule violations', () => {
+    const issues = auditLabSection('Cr 0.72 → 0.78');
+    expect(issues.some((s) => /Unicode arrow/.test(s))).toBe(true);
   });
 });

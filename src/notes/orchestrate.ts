@@ -44,7 +44,7 @@ SOAP note style — short daily handoff written in the spirit of a geriatric con
 - O (אובייקטיבי): compact blocks, one line per block:
     סימנים חיוניים: BP, HR, SpO2, Temp (exact numbers).
     בדיקה: key positives/negatives only — no system-by-system sweep.
-    מעבדה: trends as "סידן: 12.3 > 11.6 > 9.8 (20/04)" using a single ">" — NEVER arrows.
+    מעבדה: short prose trends — "CRP בקבלה 12.3, ירד ל-9.8". NEVER arrows, NEVER ">" symbol — Chameleon corrupts these in lab context. Strip H/L suffixes — use "(מעל/מתחת לנורמה)" parens if needed.
     הדמיה: only if new.
 - A (הערכה): problem list by #hashtag category, one short Hebrew line each.
   Canonical categories (use only those relevant): # הימודינמי  # נשימתי  # זיהומי  # כלייתי  # נוירולוגי  # מטבולי  # המטולוגי  # גריאטרי  # תפקוד
@@ -75,7 +75,7 @@ Admission (קבלה רפואית) — emit these sections in order, each under i
 10. תפקוד: pre-morbid baseline + current (mobility aid, cognitive, caregiver, living situation).
 11. בדיקה גופנית: vitals + systems. Short positives/negatives.
 12. בדיקות עזר: raw cultures + imaging reports verbatim.
-13. בדיקות מעבדה: short prose trends only ("סידן: 12.3 > 9.8").
+13. בדיקות מעבדה: short prose trends only ("CRP בקבלה 12.3, ירד ל-9.8"). NO arrows, NO ">" — Chameleon corrupts these. Strip H/L suffixes — use "(מעל/מתחת לנורמה)" parens.
 14. דיון ותוכנית: "#" headers per problem, disease-focused, short (e.g. "# AKI על CKD", "# בלבול").
     Under each, 2-4 lines of reasoning + a bare-verb plan.
 15. חתימה: "חתימת רופא: ד\"ר Eias Ashhab, מתמחה גריאטריה".
@@ -90,23 +90,43 @@ Do NOT include a glossary. Do NOT include תרופות באשפוז. Do NOT writ
 in the body (the PT block auto-attaches; OT + dietician paste into their own sub-tabs).
 
 Order:
-1. אבחנות פעילות: English UPPERCASE with modifier where applicable (- Resolved, , Recurrent, M/P).
-2. אבחנות ברקע: chronic.
-3. רגישויות: list with reactions, or "לא ידוע".
-4. תרופות בבית: SZMC format, pre-admission meds.
-5. הצגת החולה: single line.
-6. תלונה עיקרית: 1-2 lines.
-7. מחלה נוכחית: full narrative (BEFORE רקע רפואי — opposite of admission).
-8. רקע רפואי: "פרוט מחלות:" (organ-system) + "אבחנות בעבר:" (English UPPERCASE).
-9. הרגלים.
-10. בדיקה גופנית בקבלה: vitals + systems from admission.
-11. בדיקות עזר (פירוט): cultures + imaging together, verbatim, BEFORE narrative.
-12. בדיקות מעבדה: short prose trends only — "סידן: 12.3 > 9.8 (20/04)". Single ">", never arrows. Full lab table auto-appends.
-13. מהלך ודיון: "#" headers per problem, disease-focused, short.
-    Sequence: acute problem first > metabolic > infection > neuro > resolving > minor findings > consults > "# טיפול יעדי" if GOC discussed > "# תפקוד" at end.
-14. המלצות בשחרור: numbered 1., 2., 3. ... N. Each a single recommendation. Include brief PT/OT/dietician referral lines ("הפניה לפיזיותרפיה בבית (יט\"ב)", "הפניה לריפוי בעיסוק בקהילה").
-15. המשך טיפול תרופתי: numbered 1., 2., 3. ... N. SZMC format. Completed ABX omitted. Suspended drugs kept with restart note in parens.
-16. חתימה: attending cosignature line first, then fellow's signature with מ.ר. and timestamp.
+1. אבחנות פעילות: ACUTE ADMIT REASON ONLY (chronic items go to ברקע). English UPPERCASE with modifier where applicable (- Resolved, , Recurrent, M/P). If patient received blood transfusion this admission, include "BLOOD TRANSFUSION X N units".
+2. ניתוחים באשפוז: NGT / urinary catheter / PEG insertion or removal events ONLY, with dates. SKIP peripheral IV (עירוי פריפרי) — gets stripped in print. Omit the section entirely if no qualifying events.
+3. אבחנות ברקע: chronic, English UPPERCASE. אבחנות בעבר are pre-populated from prior admissions — audit for duplicates/staleness, don't auto-delete; EMR merges בעבר into ברקע in print.
+4. רגישויות: list with reactions, or "לא ידוע".
+5. תרופות בבית: SZMC format, pre-admission meds, Title Case (Chameleon DB).
+6. הצגת החולה: single line.
+7. תלונה עיקרית: 1-2 lines.
+8. מחלה נוכחית: this field APPENDS to the admission text in Chameleon — you are providing an AUDITED, FIXED version of the existing admission paragraph (typo correction, voice-rec error fix, missing info added). Doctor pastes this OVER the old text as a retro-fix. Full narrative.
+9. רקע רפואי: "פרוט מחלות:" (organ-system) + "אבחנות בעבר:" (English UPPERCASE).
+10. הרגלים.
+11. בדיקה גופנית בקבלה: vitals + systems from admission.
+12. בדיקות עזר (פירוט): cultures + imaging together, key findings only, BEFORE labs. Dates OK. NEVER include reporting doctor names, accession numbers, or specimen IDs (מספר בדיקה).
+13. בדיקות מעבדה: CATEGORIZED PROSE TRENDS ONLY. Sub-headers per system: "ביוכימיה:", "מדדי דלקת:", "ספירת דם:", "גזים:". Trend pattern: "X בקבלה היה N, במהלך האשפוז M, בשחרור P". MAX 3 numeric values per parameter. NO arrows, NO ">" symbol (Chameleon corrupts these in lab context). Drop eGFR + BUN if creatinine listed (redundant). For total Ca with same-day albumin, calculate corrected Ca = Ca + 0.8 * (4.0 - Albumin) and report both. NO L/H suffix — use "(מעל הנורמה)" or "(מתחת לנורמה)" parenthetical. Full lab table auto-appends after this section.
+14. מהלך ודיון: open with mandatory narrative pattern BEFORE any "#" headers:
+    "בת/בן X [+ functional baseline + background summary]. עם הרקע הנ"ל -
+
+    התקבלה בשל [presenting complaint + duration].
+
+    במיון בבדיקת [vitals + key exam].
+
+    במעבדה (כולל בדיקות עזר): [significant labs/imaging summary].
+
+    ייעוצים במיון: [or "ללא ייעוצים במיון"].
+
+    אושפזה בשל [reason] במחלקתנו.
+
+    בקבלתה למחלקה: [arrival exam + arrival labs delta].
+
+    במהלך אשפוז הציגה את הבעיות הבאות להתייחסות:"
+
+    Then "#" headers per problem, disease-focused, short.
+    Sequence: acute problem first > metabolic > infection > neuro > resolving > minor findings > consults.
+    "# טיפול יעדי" ONLY if there is a documented decision (DNR, ceiling of care, status). Speculative GOC commentary gets cut.
+    "# תפקוד" at the end.
+15. המלצות בשחרור: DASH list ("- item"), NOT numbered. Each a single recommendation. Include brief PT/OT/dietician referral lines ("הפניה לפיזיותרפיה בבית (יט\"ב)", "הפניה לריפוי בעיסוק בקהילה"). DROP boilerplate: never include generic "פנייה למיון במצב החמרה" or "להביא סיכום אשפוז זה לכל פנייה רפואית עתידית" — these are filler. Each item ≤180 chars (Chameleon truncates mid-word otherwise).
+16. המשך טיפול תרופתי: DASH list ("- item"), Title Case from Chameleon DB. EMR auto-numbers anyway. For PEG patients ALWAYS include "Water ( Water ) per gastrostomy 400 ml X 3 / d לפי צורך". Borderline home meds (unclear-indication PO Furosemide, statin in advanced dementia, etc.) → keep on PRN with "מינון לפי צורך, לפי החלטת רופא מטפל". NEVER deprescribe in the discharge print — that's the family physician's call. Completed ABX omitted.
+17. חתימה: attending cosignature line first, then fellow's signature with מ.ר. and timestamp.
 `.trim();
 
 /**
