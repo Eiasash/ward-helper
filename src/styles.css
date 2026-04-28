@@ -53,9 +53,92 @@ body { direction: rtl; }
 
 main.shell {
   padding: var(--pad);
+  padding-top: calc(var(--pad) + 44px); /* compensate for fixed header-strip */
   padding-bottom: 76px; /* space above bottom-nav */
   min-height: 100vh;
   unicode-bidi: plaintext;
+}
+
+/* --- Glanceable header strip (top, fixed, 44px) --- */
+.header-strip {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  z-index: 11; /* above bottom-nav layer */
+  unicode-bidi: plaintext;
+}
+.header-strip-section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.header-strip-status { flex: 0 0 auto; }
+.header-strip-patient {
+  flex: 1 1 auto;
+  justify-content: center;
+  overflow: hidden;
+}
+.header-strip-sync { flex: 0 0 auto; }
+.header-strip-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+}
+.header-strip-pill.online { color: var(--good); }
+.header-strip-pill.offline { color: var(--err); border-color: var(--err); }
+.header-strip-pill.battery.low { color: var(--err); border-color: var(--err); }
+.header-strip-pill.sync { color: var(--info); }
+.header-strip-pill.queue {
+  color: var(--warn);
+  border-color: rgba(230, 181, 92, 0.4);
+}
+.header-strip-name {
+  font-weight: 500;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.header-strip-name.muted { color: var(--muted); font-weight: 400; font-style: italic; }
+.header-strip-type-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+@media (prefers-color-scheme: light) {
+  .header-strip { background: rgba(255, 255, 255, 0.94); }
+}
+
+/* On wider screens (mirroring main.shell cap), keep header strip aligned */
+@media (min-width: 600px) {
+  .header-strip {
+    max-width: 32rem;
+    inset: 0 auto auto 50%;
+    transform: translateX(-50%);
+    border-inline: 1px solid var(--border);
+  }
 }
 
 /* --- DESKTOP LAYOUT CAP --- */

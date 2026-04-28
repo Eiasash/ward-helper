@@ -10,6 +10,7 @@ import { encryptForCloud, pushBlob } from '@/storage/cloud';
 import { deriveAesKey } from '@/crypto/pbkdf2';
 import { getPassphrase } from '@/ui/hooks/useSettings';
 import { finalizeSessionFor } from '@/agent/costs';
+import { markSyncedNow } from '@/ui/hooks/useGlanceable';
 import type { ParseFields } from '@/agent/tools';
 import type { SafetyFlags } from '@/safety/types';
 
@@ -86,6 +87,9 @@ export async function saveBoth(
     const sealedN = await encryptForCloud(note, key, salt);
     await pushBlob('patient', patientId, sealedP);
     await pushBlob('note', noteId, sealedN);
+    // Header-strip "last sync" relies on this — marker for the glanceable
+    // header so the rounding doctor knows the cloud backup is current.
+    markSyncedNow();
     return { patientId, noteId, cloudPushed: true, cloudSkippedReason: null };
   } catch (e) {
     // Don't throw — local save already succeeded. But DO report the reason

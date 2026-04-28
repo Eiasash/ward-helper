@@ -9,6 +9,7 @@ import { resolveContinuity, type ContinuityContext } from '@/notes/continuity';
 import { ContinuityBanner } from '../components/ContinuityBanner';
 import { PriorNotesBanner } from '../components/PriorNotesBanner';
 import type { SafetyFlags } from '@/safety/types';
+import { notifyPatientChanged } from '../hooks/useGlanceable';
 
 type Status = 'loading' | 'ready' | 'error';
 
@@ -269,6 +270,9 @@ export function Review() {
       'validatedConfidence',
       JSON.stringify(parsed?.confidence ?? {}),
     );
+    // Header strip subscribes via `ward-helper:patient` — sessionStorage
+    // changes don't fire `storage` events in the same tab, so notify directly.
+    notifyPatientChanged();
     if (isSoap && continuity?.patient && continuityEnabled) {
       sessionStorage.setItem('continuityTeudatZehut', continuity.patient.teudatZehut);
     } else {

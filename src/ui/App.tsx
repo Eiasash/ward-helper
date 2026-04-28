@@ -6,6 +6,7 @@ import { NoteEditor } from './screens/NoteEditor';
 import { Save } from './screens/Save';
 import { Settings } from './screens/Settings';
 import { Today } from './screens/Today';
+import { HeaderStrip } from './components/HeaderStrip';
 
 // Lazy-loaded routes. Cold start usually lands on /today or /capture; the
 // three below are not on the hot path, so splitting them out trims the
@@ -31,6 +32,7 @@ const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '
 export function App() {
   return (
     <HashRouter>
+      <HeaderStrip />
       <main className="shell">
         <Suspense fallback={<section><h1>טוען...</h1></section>}>
           <Routes>
