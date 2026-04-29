@@ -41,7 +41,7 @@ export function App() {
       <main className="shell" id="main-content" tabIndex={-1}>
         <Suspense fallback={<section><h1>טוען...</h1></section>}>
           <Routes>
-            <Route path="/" element={<Consult />} />
+            <Route path="/" element={<Capture />} />
             <Route path="/consult" element={<Consult />} />
             <Route path="/today" element={<Today />} />
             <Route path="/capture" element={<Capture />} />
@@ -52,7 +52,7 @@ export function App() {
             <Route path="/history" element={<History />} />
             <Route path="/census" element={<Census />} />
             <Route path="/settings" element={<Settings />} />
-            <Route path="*" element={<Consult />} />
+            <Route path="*" element={<Capture />} />
           </Routes>
         </Suspense>
         <footer className="app-version" aria-hidden="true">
@@ -60,9 +60,9 @@ export function App() {
         </footer>
       </main>
       <nav className="bottom-nav" aria-label="ניווט ראשי">
-        <NavLink to="/consult" end>ייעוץ</NavLink>
-        <NavLink to="/capture">צלם</NavLink>
+        <NavLink to="/capture" end>צלם</NavLink>
         <NavLink to="/today">היום</NavLink>
+        <NavLink to="/consult">ייעוץ</NavLink>
         <NavLink to="/history">היסטוריה</NavLink>
         <NavLink to="/settings">הגדרות</NavLink>
       </nav>
