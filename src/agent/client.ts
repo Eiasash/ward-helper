@@ -33,9 +33,9 @@ export const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 export const ANTHROPIC_VERSION = '2023-06-01';
 
 // Model string for direct calls. Sonnet 4.6 matches what the proxy selects.
-export const MODEL_DIRECT = 'claude-sonnet-4-6';
+export const MODEL_DIRECT = 'claude-opus-4-7';
 // Informational label for proxy path (server chooses the actual model).
-export const MODEL_PROXY = 'proxy:claude-sonnet-4-6';
+export const MODEL_PROXY = 'proxy:claude-opus-4-7';
 
 // Timeouts. The client abort timer is the ceiling; Anthropic's own timeout
 // for non-streaming messages is typically well under this.
@@ -86,10 +86,17 @@ export interface AnthropicMessage {
   content: string | AnthropicContentBlock[];
 }
 
+/** Adaptive thinking effort dial. Opus 4.7 only — used as soft guidance for how much reasoning the model allocates. */
+export type ThinkingEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
 export interface AnthropicRequest {
   messages: AnthropicMessage[];
   max_tokens: number;
   system?: string;
+  /** Set to {type:'adaptive'} to enable Opus 4.7 adaptive thinking. Off when omitted. */
+  thinking?: { type: 'adaptive' | 'disabled' };
+  /** Soft hint for adaptive thinking depth; ignored when thinking is off/absent. */
+  output_config?: { effort: ThinkingEffort };
 }
 
 export interface AnthropicResponse {

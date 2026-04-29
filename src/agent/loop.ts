@@ -288,11 +288,13 @@ export async function runExtractTurn(
     res = await callAnthropic(
       {
         messages: [{ role: 'user', content }],
-        // 1500 is plenty for a compact ParseResult. With a user-direct path this
-        // comfortably fits the Anthropic non-streaming envelope; with the proxy
-        // fallback it stays under the 10s budget too.
-        max_tokens: 1500,
+        // 8k headroom — adaptive thinking eats into max_tokens, and the visible
+        // ParseResult JSON is still ~1500 tokens. Pre-Opus-4.7 we had 1500
+        // total; with adaptive thinking we need budget for both reasoning + output.
+        max_tokens: 8000,
         system: skillContent,
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'medium' },
       },
       // One retry on transient network / 5xx. Extract is the user's first
       // real wait after hitting Proceed; a single transient failure forcing
@@ -392,7 +394,9 @@ export async function runEmitTurn(
     res = await callAnthropic(
       {
         messages: [{ role: 'user', content: [{ type: 'text', text: userText }] }],
-        max_tokens: 4096,
+        max_tokens: 16000,
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'high' },
         system: skillContent,
       },
       { retryOnTransient: 2 },
@@ -508,7 +512,9 @@ export async function runCensusExtractTurn(
         // 4096 tokens fits a 30-row grid with all flags. Direct path easily
         // handles this; proxy path may 504 on cold starts — caller should
         // retry from Census.tsx if needed.
-        max_tokens: 4096,
+        max_tokens: 16000,
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'high' },
         system: skillContent,
       },
       { retryOnTransient: 1 },

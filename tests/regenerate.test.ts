@@ -131,7 +131,7 @@ describe('regenerateSection (proxy contract)', () => {
     ).rejects.toThrow(SectionRegenError);
   });
 
-  it('uses a small max_tokens (1500) — section regen must not pay the full-emit price', async () => {
+  it('uses a small max_tokens (6000) — section regen budget is bounded vs full-emit', async () => {
     const spy = vi
       .spyOn(client, 'callAnthropic')
       .mockResolvedValue({
@@ -147,6 +147,6 @@ describe('regenerateSection (proxy contract)', () => {
     });
     expect(spy).toHaveBeenCalled();
     const callArgs = spy.mock.calls[0]?.[0] as { max_tokens?: number } | undefined;
-    expect(callArgs?.max_tokens).toBe(1500);
+    expect(callArgs?.max_tokens).toBe(6000);
   });
 });

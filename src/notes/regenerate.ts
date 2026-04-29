@@ -79,10 +79,12 @@ export async function regenerateSection(args: {
     res = await callAnthropic(
       {
         messages: [{ role: 'user', content: [{ type: 'text', text: userText }] }],
-        // 1500 is plenty for a single section (typical 60-300 tokens).
-        // Capping low keeps the regen cheap and the round-trip fast.
-        max_tokens: 1500,
+        // 6k headroom for adaptive thinking on short clinical section regen.
+        // Visible output is still ~60-300 tokens.
+        max_tokens: 6000,
         system: systemSkillContent,
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'medium' },
       },
       { retryOnTransient: 1 },
     );

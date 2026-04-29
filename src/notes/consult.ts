@@ -90,8 +90,12 @@ export async function runConsultTurn(history: ConsultMsg[]): Promise<ChatTurnRes
 
   const res = await callAnthropic({
     messages,
-    max_tokens: 1024,
+    // Adaptive thinking on chat — short DDx Q&A stays cheap; deep clinical
+    // pushback gets reasoning budget. No explicit effort dial; let the
+    // model decide based on the prompt.
+    max_tokens: 8000,
     system: CONSULT_SYSTEM,
+    thinking: { type: 'adaptive' },
   });
 
   addTurn({
@@ -180,7 +184,9 @@ export async function runConsultEmit(
     res = await callAnthropic(
       {
         messages: [{ role: 'user', content: userText }],
-        max_tokens: 4096,
+        max_tokens: 16000,
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'high' },
         system: skillContent,
       },
       { retryOnTransient: 2 },
