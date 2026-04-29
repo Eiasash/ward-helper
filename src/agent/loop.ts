@@ -25,6 +25,13 @@ function dataUrlToImageBlock(dataUrl: string): AnthropicContentBlock {
   return { type: 'image', source: { type: 'base64', media_type: mediaType, data } };
 }
 
+function dataUrlToPdfBlock(dataUrl: string): AnthropicContentBlock {
+  const m = /^data:application\/pdf;base64,(.*)$/.exec(dataUrl);
+  if (!m) throw new Error('invalid PDF data URL');
+  const data = m[1] ?? '';
+  return { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } };
+}
+
 const EXTRACT_JSON_INSTRUCTIONS = `
 Extract patient data from the attached image(s). Return EXACTLY ONE valid JSON object, with no prose, no markdown fences, no preamble.
 
@@ -248,6 +255,16 @@ function blocksToContent(blocks: readonly CaptureBlock[]): AnthropicContentBlock
   for (const b of blocks) {
     if (b.kind === 'image') {
       out.push(dataUrlToImageBlock(b.dataUrl));
+    } else if (b.kind === 'pdf') {
+      // Surface filename + size as a text header so the model knows what
+      // it's looking at (helpful when a doctor uploads e.g. a discharge letter
+      // PDF alongside a labs PDF — the names disambiguate). The document
+      // content block itself follows.
+      out.push({
+        type: 'text',
+        text: `## PDF: ${b.filename} (${Math.round(b.sizeBytes / 1024)} KB)\n`,
+      });
+      out.push(dataUrlToPdfBlock(b.dataUrl));
     } else {
       const header =
         b.sourceLabel === 'paste' ? '## נתונים מודבקים\n' : '## הערות נוספות\n';

@@ -223,8 +223,8 @@ describe('Capture — move-up / move-down end-of-list disable', () => {
 });
 
 describe('Capture — cap feedback', () => {
-  it('image cap: pre-seed 10, attempt to add 1 more — count stays at 10, warning shown', async () => {
-    for (let i = 0; i < 10; i++) addImageBlock(TINY_PNG, 'gallery');
+  it('image cap: pre-seed 20, attempt to add 1 more — count stays at 20, warning shown', async () => {
+    for (let i = 0; i < 20; i++) addImageBlock(TINY_PNG, 'gallery');
     const { container } = renderCapture();
     await flush();
 
@@ -232,7 +232,7 @@ describe('Capture — cap feedback', () => {
     // there's no usable file input on the screen — verify that, then
     // also verify onPickFiles still rejects defensively if exercised.
     const galleryInput = container.querySelector(
-      'input[type="file"][multiple]',
+      'input[type="file"][multiple][accept^="image"]',
     ) as HTMLInputElement | null;
     expect(galleryInput).toBeNull();
 
@@ -241,7 +241,7 @@ describe('Capture — cap feedback', () => {
     const cameraBtn = screen.getByLabelText('צלם — תקרה') as HTMLButtonElement;
     expect(cameraBtn.disabled).toBe(true);
 
-    expect(listBlocks().filter((b) => b.kind === 'image')).toHaveLength(10);
+    expect(listBlocks().filter((b) => b.kind === 'image')).toHaveLength(20);
   });
 
   it('text cap: pre-seed 8 text blocks — "הוסף טקסט" button is disabled', async () => {
@@ -255,7 +255,7 @@ describe('Capture — cap feedback', () => {
   });
 
   it('paste of an image while at image cap surfaces the cap warning', async () => {
-    for (let i = 0; i < 10; i++) addImageBlock(TINY_PNG, 'gallery');
+    for (let i = 0; i < 20; i++) addImageBlock(TINY_PNG, 'gallery');
     const { container } = renderCapture();
     await flush();
 
@@ -291,7 +291,7 @@ describe('Capture — cap feedback', () => {
       /תקרה/.test(n.textContent ?? ''),
     );
     expect(warn).toBeDefined();
-    expect(listBlocks().filter((b) => b.kind === 'image')).toHaveLength(10);
+    expect(listBlocks().filter((b) => b.kind === 'image')).toHaveLength(20);
   });
 });
 

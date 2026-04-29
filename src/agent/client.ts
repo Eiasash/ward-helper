@@ -69,6 +69,16 @@ export type AnthropicContentBlock =
         media_type: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
         data: string;
       };
+    }
+  | {
+      // PDF documents: Sonnet 4.6 reads them natively. Same base64 envelope
+      // as images, distinct content-block type.
+      type: 'document';
+      source: {
+        type: 'base64';
+        media_type: 'application/pdf';
+        data: string;
+      };
     };
 
 export interface AnthropicMessage {
