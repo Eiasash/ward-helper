@@ -1001,3 +1001,121 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
   flex-wrap: wrap;
 }
 .today-draft-resume { margin-inline-start: auto; }
+
+/* === Account section in Settings === */
+.account-card-authed {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.account-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.account-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent-strong);
+  color: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.account-info { flex: 1; min-width: 0; }
+.account-display-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg);
+  direction: ltr;
+  text-align: left;
+}
+.account-handle {
+  font-size: 11px;
+  color: var(--muted);
+  direction: ltr;
+  text-align: left;
+}
+.account-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.account-actions button { flex: 1; min-height: 36px; font-size: 12px; }
+.account-note {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 8px;
+  line-height: 1.5;
+}
+
+.account-card-guest {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.account-tabs {
+  display: flex;
+  gap: 0;
+  background: var(--surface-3);
+  padding: 3px;
+  border-radius: 10px;
+  margin-bottom: 10px;
+}
+.account-tabs button {
+  flex: 1;
+  min-height: 34px;
+  font-size: 12px;
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+}
+.account-tabs button.active {
+  background: var(--surface-1);
+  color: var(--fg);
+  font-weight: 700;
+}
+.account-form input[type="text"],
+.account-form input[type="password"] {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  margin-bottom: 6px;
+  background: var(--surface-1);
+  color: var(--fg);
+  direction: ltr;
+  text-align: left;
+}
+.account-form .display-name-input {
+  direction: rtl;
+  text-align: right;
+}
+.account-form button.primary {
+  width: 100%;
+  min-height: 42px;
+  font-size: 13px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+.account-status { font-size: 12px; margin-top: 10px; text-align: center; min-height: 18px; }
+.account-status.err { color: var(--err); }
+.account-status.ok { color: var(--good); }
+.account-intro {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 10px;
+  line-height: 1.6;
+}

@@ -17,6 +17,7 @@ import {
   saveSnippets,
   type SnippetMap,
 } from '@/notes/snippets';
+import { AccountSection } from '../components/AccountSection';
 
 export function Settings() {
   const { present, save, clear } = useApiKey();
@@ -137,6 +138,8 @@ export function Settings() {
   return (
     <section>
       <h1>הגדרות</h1>
+
+      <AccountSection />
 
       <h2>Anthropic API Key</h2>
       <div
