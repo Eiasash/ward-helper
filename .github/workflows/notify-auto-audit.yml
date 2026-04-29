@@ -1,0 +1,31 @@
+name: Notify auto-audit
+
+# Fires a repository_dispatch to Eiasash/auto-audit immediately after any
+# push (merge) to main. auto-audit's Tier 1 health-check listens for this
+# event type and runs probe.py — closes the cron gap to seconds-after-merge
+# instead of up-to-30-min. See Eiasash/auto-audit#14 for design.
+#
+# This workflow is a NO-OP if the AUTO_AUDIT_DISPATCH_PAT secret is missing —
+# the dispatch step will fail with "Bad credentials" but the cron still runs.
+# Set the secret at github.com/Eiasash/<this-repo>/settings/secrets/actions
+# with a fine-grained PAT scoped to Eiasash/auto-audit only:
+#   Permissions: Contents:read + Actions:write
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}  # zero permissions — we only call out via PAT
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Dispatch to auto-audit
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.AUTO_AUDIT_DISPATCH_PAT }}
+          repository: Eiasash/auto-audit
+          event-type: watched-repo-merge
+          client-payload: '{"repo": "${{ github.repository }}", "sha": "${{ github.sha }}", "actor": "${{ github.actor }}"}'
