@@ -25,6 +25,13 @@ function dataUrlToImageBlock(dataUrl: string): AnthropicContentBlock {
   return { type: 'image', source: { type: 'base64', media_type: mediaType, data } };
 }
 
+function dataUrlToPdfBlock(dataUrl: string): AnthropicContentBlock {
+  const m = /^data:application\/pdf;base64,(.*)$/.exec(dataUrl);
+  if (!m) throw new Error('invalid PDF data URL');
+  const data = m[1] ?? '';
+  return { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } };
+}
+
 const EXTRACT_JSON_INSTRUCTIONS = `
 Extract patient data from the attached image(s). Return EXACTLY ONE valid JSON object, with no prose, no markdown fences, no preamble.
 
@@ -248,6 +255,16 @@ function blocksToContent(blocks: readonly CaptureBlock[]): AnthropicContentBlock
   for (const b of blocks) {
     if (b.kind === 'image') {
       out.push(dataUrlToImageBlock(b.dataUrl));
+    } else if (b.kind === 'pdf') {
+      // Surface filename + size as a text header so the model knows what
+      // it's looking at (helpful when a doctor uploads e.g. a discharge letter
+      // PDF alongside a labs PDF — the names disambiguate). The document
+      // content block itself follows.
+      out.push({
+        type: 'text',
+        text: `## PDF: ${b.filename} (${Math.round(b.sizeBytes / 1024)} KB)\n`,
+      });
+      out.push(dataUrlToPdfBlock(b.dataUrl));
     } else {
       const header =
         b.sourceLabel === 'paste' ? '## נתונים מודבקים\n' : '## הערות נוספות\n';
@@ -271,11 +288,13 @@ export async function runExtractTurn(
     res = await callAnthropic(
       {
         messages: [{ role: 'user', content }],
-        // 1500 is plenty for a compact ParseResult. With a user-direct path this
-        // comfortably fits the Anthropic non-streaming envelope; with the proxy
-        // fallback it stays under the 10s budget too.
-        max_tokens: 1500,
+        // 8k headroom — adaptive thinking eats into max_tokens, and the visible
+        // ParseResult JSON is still ~1500 tokens. Pre-Opus-4.7 we had 1500
+        // total; with adaptive thinking we need budget for both reasoning + output.
+        max_tokens: 8000,
         system: skillContent,
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'medium' },
       },
       // One retry on transient network / 5xx. Extract is the user's first
       // real wait after hitting Proceed; a single transient failure forcing
@@ -375,7 +394,9 @@ export async function runEmitTurn(
     res = await callAnthropic(
       {
         messages: [{ role: 'user', content: [{ type: 'text', text: userText }] }],
-        max_tokens: 4096,
+        max_tokens: 16000,
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'high' },
         system: skillContent,
       },
       { retryOnTransient: 2 },
@@ -491,7 +512,9 @@ export async function runCensusExtractTurn(
         // 4096 tokens fits a 30-row grid with all flags. Direct path easily
         // handles this; proxy path may 504 on cold starts — caller should
         // retry from Census.tsx if needed.
-        max_tokens: 4096,
+        max_tokens: 16000,
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'high' },
         system: skillContent,
       },
       { retryOnTransient: 1 },

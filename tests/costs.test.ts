@@ -13,8 +13,8 @@ import {
 // Sonnet 4.6: $3/M input, $15/M output.
 // Duplicated here intentionally — any accidental change in production
 // breaks this test and forces a conscious update.
-const IN_PER_TOKEN = 3 / 1_000_000;
-const OUT_PER_TOKEN = 15 / 1_000_000;
+const IN_PER_TOKEN = 5 / 1_000_000;
+const OUT_PER_TOKEN = 25 / 1_000_000;
 
 beforeEach(() => {
   reset();
@@ -47,14 +47,14 @@ describe('costs: addTurn', () => {
     expect(t.outputTokens).toBe(200);
   });
 
-  it('computes USD at $3/M input tokens', () => {
+  it('computes USD at $5/M input tokens', () => {
     addTurn({ input_tokens: 1_000_000, output_tokens: 0 });
-    expect(load().usd).toBeCloseTo(3, 5);
+    expect(load().usd).toBeCloseTo(5, 5);
   });
 
-  it('computes USD at $15/M output tokens', () => {
+  it('computes USD at $25/M output tokens', () => {
     addTurn({ input_tokens: 0, output_tokens: 1_000_000 });
-    expect(load().usd).toBeCloseTo(15, 5);
+    expect(load().usd).toBeCloseTo(25, 5);
   });
 
   it('accumulates correctly across multiple calls', () => {

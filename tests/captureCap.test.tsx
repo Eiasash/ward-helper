@@ -2,7 +2,7 @@
  * Image-cap tests for Capture.tsx.
  *
  * Covers scope 2 of v1.18.0:
- *   - hard cap at IMAGE_HARD_CAP (10) — extra files are dropped with a
+ *   - hard cap at IMAGE_HARD_CAP (20) — extra files are dropped with a
  *     Hebrew warning stating how many
  *   - 3-tier pill (info / warn / err) reflects current count against the
  *     soft and hard caps
@@ -41,9 +41,9 @@ afterEach(() => {
 });
 
 describe('Capture — image caps (constants)', () => {
-  it('exposes the soft/hard caps as 6 and 10', () => {
-    expect(IMAGE_SOFT_CAP).toBe(6);
-    expect(IMAGE_HARD_CAP).toBe(10);
+  it('exposes the soft/hard caps as 10 and 20', () => {
+    expect(IMAGE_SOFT_CAP).toBe(10);
+    expect(IMAGE_HARD_CAP).toBe(20);
   });
 });
 
@@ -83,38 +83,39 @@ describe('Capture — pill class reflects count', () => {
   });
 
   it('shows pill-warn when above soft cap but under hard cap', async () => {
-    seedShots(8);
+    seedShots(15);
     const { container } = renderCapture();
     await flush();
     const pill = container.querySelector('.pill');
     expect(pill!.className).toContain('pill-warn');
-    expect(pill!.textContent).toMatch(/8 תמונות/);
+    expect(pill!.textContent).toMatch(/15 תמונות/);
   });
 
   it('shows pill-err at the hard cap', async () => {
-    seedShots(10);
+    seedShots(20);
     const { container } = renderCapture();
     await flush();
     const pill = container.querySelector('.pill');
     expect(pill!.className).toContain('pill-err');
-    expect(pill!.textContent).toMatch(/10\/10/);
+    expect(pill!.textContent).toMatch(/20\/20/);
     expect(pill!.textContent).toMatch(/תקרה/);
   });
 });
 
 describe('Capture — hard cap enforcement on file pick', () => {
-  it('caps at 10 and surfaces "N לא נוספו" Hebrew warning', async () => {
+  it('caps at 20 and surfaces "N לא נוספו" Hebrew warning', async () => {
     const { container } = renderCapture();
     await flush();
 
     const galleryInput = container.querySelector(
-      'input[type="file"][multiple]',
+      'input[type="file"][multiple][accept^="image"]',
     ) as HTMLInputElement;
     expect(galleryInput).not.toBeNull();
 
-    // Build 12 minimal File objects. FileReader in happy-dom fires onload with
-    // a data URL shape, which the mocked compressImage will return unchanged.
-    const files = Array.from({ length: 12 }, (_, i) =>
+    // Build 25 minimal File objects (5 more than hard cap of 20). FileReader
+    // in happy-dom fires onload with a data URL shape, which the mocked
+    // compressImage will return unchanged.
+    const files = Array.from({ length: 25 }, (_, i) =>
       new File([`x${i}`], `s${i}.jpg`, { type: 'image/jpeg' }),
     );
     await act(async () => {
@@ -127,12 +128,12 @@ describe('Capture — hard cap enforcement on file pick', () => {
       (n) => /לא נוספו/.test(n.textContent ?? ''),
     );
     expect(warn).toBeDefined();
-    expect(warn!.textContent).toMatch(/2 לא נוספו/);
+    expect(warn!.textContent).toMatch(/5 לא נוספו/);
 
     // And the total shot count is capped at the hard cap.
     const pill = container.querySelector('.pill-err');
     expect(pill).not.toBeNull();
-    expect(pill!.textContent).toMatch(/10\/10/);
+    expect(pill!.textContent).toMatch(/20\/20/);
   });
 
   it('blocks further picks once the cap is reached: file inputs are replaced with disabled buttons', async () => {
@@ -143,7 +144,7 @@ describe('Capture — hard cap enforcement on file pick', () => {
     // v1.21.0: at cap, the label/input pair is replaced with a disabled
     // button rather than relying on input[disabled] (which can still
     // open the picker on some Chromium builds).
-    const galleryInput = container.querySelector('input[type="file"][multiple]');
+    const galleryInput = container.querySelector('input[type="file"][multiple][accept^="image"]');
     expect(galleryInput).toBeNull();
     const cameraInput = container.querySelector('input[type="file"][capture]');
     expect(cameraInput).toBeNull();

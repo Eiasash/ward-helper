@@ -6,6 +6,7 @@ import { NoteEditor } from './screens/NoteEditor';
 import { Save } from './screens/Save';
 import { Settings } from './screens/Settings';
 import { Today } from './screens/Today';
+import { Consult } from './screens/Consult';
 import { HeaderStrip } from './components/HeaderStrip';
 
 // Lazy-loaded routes. Cold start usually lands on /today or /capture; the
@@ -32,11 +33,16 @@ const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '
 export function App() {
   return (
     <HashRouter>
+      {/* Skip-to-content link — visible only when keyboard-focused. Lets keyboard
+         users bypass the fixed header strip + bottom nav and jump straight into
+         the main content. */}
+      <a className="skip-link" href="#main-content">דלג לתוכן</a>
       <HeaderStrip />
-      <main className="shell">
+      <main className="shell" id="main-content" tabIndex={-1}>
         <Suspense fallback={<section><h1>טוען...</h1></section>}>
           <Routes>
-            <Route path="/" element={<Today />} />
+            <Route path="/" element={<Capture />} />
+            <Route path="/consult" element={<Consult />} />
             <Route path="/today" element={<Today />} />
             <Route path="/capture" element={<Capture />} />
             <Route path="/review" element={<Review />} />
@@ -46,16 +52,17 @@ export function App() {
             <Route path="/history" element={<History />} />
             <Route path="/census" element={<Census />} />
             <Route path="/settings" element={<Settings />} />
-            <Route path="*" element={<Today />} />
+            <Route path="*" element={<Capture />} />
           </Routes>
         </Suspense>
         <footer className="app-version" aria-hidden="true">
           v{APP_VERSION}
         </footer>
       </main>
-      <nav className="bottom-nav">
-        <NavLink to="/capture">צלם</NavLink>
-        <NavLink to="/today" end>היום</NavLink>
+      <nav className="bottom-nav" aria-label="ניווט ראשי">
+        <NavLink to="/capture" end>צלם</NavLink>
+        <NavLink to="/today">היום</NavLink>
+        <NavLink to="/consult">ייעוץ</NavLink>
         <NavLink to="/history">היסטוריה</NavLink>
         <NavLink to="/settings">הגדרות</NavLink>
       </nav>

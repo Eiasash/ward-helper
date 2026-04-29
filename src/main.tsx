@@ -3,17 +3,22 @@ import ReactDOM from 'react-dom/client';
 import { App } from './ui/App';
 import './styles.css';
 
-// Async font load — was a blocking <link> in index.html, cost ~2s of LCP on
-// 3G mobile. font-display: swap means the system fallback (Heebo→serif) paints
-// first and the webfonts swap in when ready. <noscript> in index.html covers
-// the no-JS path.
-{
-  const fontLink = document.createElement('link');
-  fontLink.rel = 'stylesheet';
-  fontLink.href =
-    'https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;700&family=Heebo:wght@400;500;700&family=Inter:wght@400;500;700&display=swap';
-  document.head.appendChild(fontLink);
-}
+// First-run defaults. Currently: pre-seed the email target for the
+// known SZMC owner of this PWA so /consult emails just work after
+// fresh install. Stored under a separate flag so removing the address
+// in Settings later isn't reverted on next reload.
+(function bootstrapDefaults() {
+  try {
+    const FLAG = 'ward-helper.bootstrap.v1';
+    if (localStorage.getItem(FLAG)) return;
+    if (!localStorage.getItem('ward-helper.emailTo')) {
+      localStorage.setItem('ward-helper.emailTo', 'iyasas@szmc.org.il');
+    }
+    localStorage.setItem(FLAG, '1');
+  } catch {
+    /* localStorage disabled — nothing to do */
+  }
+})();
 
 const root = document.getElementById('root');
 if (!root) throw new Error('root element missing');

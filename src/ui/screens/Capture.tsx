@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import {
   addImageBlock,
   addTextBlock,
+  addPdfBlock,
   updateTextBlock,
   removeBlock,
   reorderBlocks,
@@ -11,6 +12,8 @@ import {
   CapExceededError,
   IMAGE_HARD_CAP as SESSION_IMAGE_HARD_CAP,
   TEXT_HARD_CAP as SESSION_TEXT_HARD_CAP,
+  PDF_HARD_CAP as SESSION_PDF_HARD_CAP,
+  PDF_MAX_BYTES,
   type CaptureBlock,
   type ImageSource,
   type TextSource,
@@ -32,9 +35,10 @@ const NOTE_TYPES: { type: NoteType; label: string }[] = [
   { type: 'soap', label: 'SOAP יומי' },
 ];
 
-export const IMAGE_SOFT_CAP = 6;
+export const IMAGE_SOFT_CAP = 10;
 export const IMAGE_HARD_CAP = SESSION_IMAGE_HARD_CAP;
 export const TEXT_HARD_CAP = SESSION_TEXT_HARD_CAP;
+export const PDF_HARD_CAP = SESSION_PDF_HARD_CAP;
 
 /** Auto-clear pickWarn this many ms after it's set. Long enough for a glance, short enough that stale warnings don't linger past the next user action. */
 const PICK_WARN_TTL_MS = 4000;
@@ -190,6 +194,45 @@ export function Capture() {
     }
   }
 
+  async function onPickPdfs(e: ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const current = listBlocks().filter((b) => b.kind === 'pdf').length;
+    const remaining = PDF_HARD_CAP - current;
+    if (remaining <= 0) {
+      setPickWarn(`הגעת לתקרה של ${PDF_HARD_CAP} קבצי PDF.`);
+      e.target.value = '';
+      return;
+    }
+    const toAdd = Array.from(files).slice(0, remaining);
+    let dropped = files.length - toAdd.length;
+    let oversized = 0;
+    setCompressing(true);
+    try {
+      for (const f of toAdd) {
+        if (f.size > PDF_MAX_BYTES) {
+          oversized++;
+          continue;
+        }
+        const dataUrl = await readAsDataUrl(f);
+        try {
+          addPdfBlock(dataUrl, f.name, f.size, 'gallery');
+        } catch (err) {
+          if (err instanceof CapExceededError) dropped++;
+          else throw err;
+        }
+      }
+      const warnings: string[] = [];
+      if (dropped > 0) warnings.push(`${dropped} לא נוספו (תקרה: ${PDF_HARD_CAP})`);
+      if (oversized > 0) warnings.push(`${oversized} גדולים מדי (מקס׳ ${Math.round(PDF_MAX_BYTES / 1_000_000)}MB)`);
+      setPickWarn(warnings.join(' · ') || '');
+      refresh();
+    } finally {
+      setCompressing(false);
+      e.target.value = '';
+    }
+  }
+
   function onCommitAddText() {
     const v = addTextDraft.trim();
     if (!v) {
@@ -258,8 +301,10 @@ export function Capture() {
 
   const imageCount = blocks.filter((b) => b.kind === 'image').length;
   const textCount = blocks.filter((b) => b.kind === 'text').length;
+  const pdfCount = blocks.filter((b) => b.kind === 'pdf').length;
   const imageAtCap = imageCount >= IMAGE_HARD_CAP;
   const textAtCap = textCount >= TEXT_HARD_CAP;
+  const pdfAtCap = pdfCount >= PDF_HARD_CAP;
   const pillClass =
     imageCount <= IMAGE_SOFT_CAP
       ? 'pill pill-info'
@@ -301,13 +346,15 @@ export function Capture() {
         </div>
       )}
 
-      <div role="tablist" style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+      <div role="radiogroup" aria-label="סוג רשומה" style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         {NOTE_TYPES.map((t) => {
           const tone = colorForNoteType(t.type);
           const active = noteType === t.type;
           return (
             <button
               key={t.type}
+              role="radio"
+              aria-checked={active}
               className={active ? '' : 'ghost'}
               onClick={() => {
                 setNoteType(t.type);
@@ -437,6 +484,29 @@ export function Capture() {
                         {IMAGE_SOURCE_LABEL[b.sourceLabel]}
                       </span>
                     </div>
+                  ) : b.kind === 'pdf' ? (
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                      <span style={{ fontSize: 32 }} aria-hidden="true">
+                        📄
+                      </span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div
+                          dir="auto"
+                          style={{
+                            fontWeight: 600,
+                            fontSize: 13,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {b.filename}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                          PDF · {Math.round(b.sizeBytes / 1024)} KB
+                        </div>
+                      </div>
+                    </div>
                   ) : (
                     <div>
                       <span
@@ -452,6 +522,7 @@ export function Capture() {
                             rows={6}
                             value={editingDraft}
                             onChange={(e) => setEditingDraft(e.target.value)}
+                            aria-label="ערוך בלוק טקסט"
                             style={{ width: '100%' }}
                           />
                           <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
@@ -580,6 +651,28 @@ export function Capture() {
             />
           </label>
         )}
+        {pdfAtCap ? (
+          <button
+            type="button"
+            className="btn-like ghost"
+            aria-label="PDF — תקרה"
+            title={`הגעת לתקרה של ${PDF_HARD_CAP} קבצי PDF`}
+            disabled
+          >
+            📄 PDF
+          </button>
+        ) : (
+          <label className="btn-like ghost" aria-label="העלה PDF">
+            📄 PDF
+            <input
+              type="file"
+              accept="application/pdf"
+              multiple
+              className="visually-hidden"
+              onChange={onPickPdfs}
+            />
+          </label>
+        )}
         <button
           type="button"
           className="ghost"
@@ -593,12 +686,17 @@ export function Capture() {
 
       {showAddText && (
         <div style={{ marginTop: 8 }}>
+          <label htmlFor="capture-add-text" className="visually-hidden">
+            הוסף בלוק טקסט
+          </label>
           <textarea
+            id="capture-add-text"
             dir="auto"
             rows={6}
             placeholder="הקלד טקסט AZMA / רקע / הערות..."
             value={addTextDraft}
             onChange={(e) => setAddTextDraft(e.target.value)}
+            aria-label="הוסף בלוק טקסט"
             style={{ width: '100%' }}
           />
           <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>

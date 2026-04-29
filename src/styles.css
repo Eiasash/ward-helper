@@ -64,6 +64,30 @@ main.shell {
   unicode-bidi: plaintext;
 }
 
+/* Skip-to-content link — hidden off-screen until focused, then becomes
+   a high-contrast button that lets keyboard users bypass the fixed
+   header-strip and jump into <main>. WCAG 2.4.1. */
+.skip-link {
+  position: absolute;
+  inset-inline-start: 8px;
+  top: -100px;
+  z-index: 100;
+  padding: 8px 16px;
+  background: var(--accent);
+  color: white;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  font-weight: 600;
+  transition: top 150ms ease;
+}
+.skip-link:focus,
+.skip-link:focus-visible {
+  top: 8px;
+  outline: 2px solid white;
+  outline-offset: 2px;
+}
+main.shell:focus { outline: none; }
+
 /* --- Glanceable header strip (top, fixed, 44px) --- */
 .header-strip {
   position: fixed;
@@ -603,4 +627,496 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
   user-select: text;
+}
+
+/* ====================================================================
+   /consult — case-discussion chat screen.
+
+   Single-column thread → composer at the bottom. Built to feel like a
+   modern messaging app while staying inside the existing dark/teal
+   tokens. Uses CSS-only autoscroll (the screen sets scrollTop directly
+   on the thread element); no Tailwind, no extra deps.
+   ==================================================================== */
+
+.consult-screen {
+  display: flex;
+  flex-direction: column;
+  /* Fill from the top of <main> (which already has padding-top:44+pad) to
+     the top of the bottom-nav. The composer is sticky inside this so it
+     never gets hidden by the nav. */
+  height: calc(100vh - 44px - 76px - var(--pad) - var(--pad));
+  min-height: 480px;
+  margin: 0 calc(-1 * var(--pad)); /* edge-to-edge inside .shell */
+}
+
+.consult-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.consult-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.consult-head-actions { display: flex; gap: 8px; }
+
+.consult-thread {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scroll-behavior: smooth;
+}
+
+.consult-empty {
+  margin: auto 0;
+  text-align: center;
+  color: var(--fg-2);
+  padding: 24px 8px;
+}
+.consult-empty-lead {
+  font-size: 15px;
+  line-height: 1.6;
+  margin: 0 0 18px;
+}
+.consult-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+.consult-suggestion {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--fg-2);
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  text-align: start;
+  font-size: 13.5px;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.consult-suggestion:hover {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+}
+.consult-suggestion:active { transform: translateY(1px); }
+
+.bubble {
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 16px;
+  line-height: 1.5;
+  font-size: 14.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  unicode-bidi: plaintext;
+  animation: bubble-in 160ms ease-out;
+}
+@keyframes bubble-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.bubble-content { unicode-bidi: plaintext; }
+
+.bubble-user {
+  align-self: flex-start; /* RTL: visually left */
+  background: var(--accent-strong);
+  color: white;
+  border-bottom-inline-start-radius: 4px;
+}
+.bubble-assistant {
+  align-self: flex-end; /* RTL: visually right */
+  background: var(--surface-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-bottom-inline-end-radius: 4px;
+}
+
+/* Typing indicator — three pulsing dots while a turn is in flight. */
+.bubble-typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 14px;
+}
+.bubble-typing .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--fg-2);
+  opacity: 0.4;
+  animation: typing-pulse 1.2s infinite ease-in-out;
+}
+.bubble-typing .dot:nth-child(2) { animation-delay: 0.18s; }
+.bubble-typing .dot:nth-child(3) { animation-delay: 0.36s; }
+@keyframes typing-pulse {
+  0%, 60%, 100% { transform: scale(0.85); opacity: 0.35; }
+  30% { transform: scale(1.1); opacity: 0.95; }
+}
+
+/* Inline note card — the deliverable of the chat. Stands out from
+   conversational bubbles via accent border and pre-wrap monospace body. */
+.note-card {
+  align-self: stretch;
+  background: var(--surface-1);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  box-shadow: var(--shadow-inset),
+              0 0 0 1px var(--accent-soft) inset;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.note-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.note-card-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.01em;
+}
+.note-card-time {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.note-card-body {
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: 'Heebo', 'Inter', monospace, ui-monospace;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 360px;
+  overflow-y: auto;
+  unicode-bidi: plaintext;
+}
+.note-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.note-card-actions button {
+  flex: 1 1 auto;
+  min-width: 110px;
+  font-size: 13.5px;
+  padding: 9px 12px;
+}
+
+/* Emit-type picker — appears as a chat affordance after <NOTE_READY>. */
+.emit-picker {
+  align-self: stretch;
+  background: var(--surface-2);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.emit-picker-lead {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--fg-2);
+}
+.emit-picker-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.emit-picker-buttons button {
+  flex: 1 1 auto;
+  min-width: 90px;
+  font-size: 13.5px;
+  padding: 8px 10px;
+}
+
+.consult-error {
+  align-self: stretch;
+  background: var(--err-soft);
+  border: 1px solid var(--err);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 13.5px;
+  color: var(--err);
+  line-height: 1.45;
+}
+
+/* Composer — fixed at the bottom of the screen, above the bottom-nav. */
+.consult-composer {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border);
+  padding: 10px 12px;
+  background: var(--surface-1);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.consult-input {
+  width: 100%;
+  resize: none;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 14.5px;
+  line-height: 1.5;
+  unicode-bidi: plaintext;
+}
+.consult-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  border-color: var(--accent);
+}
+.consult-input:disabled {
+  opacity: 0.6;
+}
+.consult-composer-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.consult-composer-actions .small {
+  font-size: 13px;
+  padding: 7px 10px;
+}
+
+/* === Today screen — single-screen rounding dashboard === */
+.today-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.today-toolbar button {
+  font-size: 13px;
+  padding: 6px 10px;
+  min-height: 32px;
+}
+
+.today-section { margin-top: 16px; }
+.today-section h2 {
+  font-size: 0.95em;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 8px;
+}
+
+.today-card {
+  background: var(--card);
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  margin-top: 8px;
+}
+.today-card + .today-card { margin-top: 8px; }
+
+.today-card-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.today-card-head strong { font-size: 1em; }
+.today-card-head small { color: var(--muted); }
+
+.today-meta {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.today-badge-warn {
+  background: var(--warn);
+  color: #1a1408;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-inline-start: auto;
+}
+
+.today-note-list {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.today-note-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.today-note-row .note-row { flex: 1; text-align: start; }
+.today-note-row .note-row .note-time {
+  color: var(--muted);
+  margin-inline-start: 8px;
+}
+
+.today-mark-sent {
+  font-size: 12px;
+  padding: 4px 8px;
+  min-height: 28px;
+}
+
+.today-soap-action {
+  margin-top: 8px;
+  font-size: 13px;
+  padding: 6px 10px;
+  min-height: 32px;
+}
+
+.today-draft {
+  background: var(--card);
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.today-draft-resume { margin-inline-start: auto; }
+
+/* === Account section in Settings === */
+.account-card-authed {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.account-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.account-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent-strong);
+  color: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.account-info { flex: 1; min-width: 0; }
+.account-display-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg);
+  direction: ltr;
+  text-align: left;
+}
+.account-handle {
+  font-size: 11px;
+  color: var(--muted);
+  direction: ltr;
+  text-align: left;
+}
+.account-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.account-actions button { flex: 1; min-height: 36px; font-size: 12px; }
+.account-note {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 8px;
+  line-height: 1.5;
+}
+
+.account-card-guest {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.account-tabs {
+  display: flex;
+  gap: 0;
+  background: var(--surface-3);
+  padding: 3px;
+  border-radius: 10px;
+  margin-bottom: 10px;
+}
+.account-tabs button {
+  flex: 1;
+  min-height: 34px;
+  font-size: 12px;
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+}
+.account-tabs button.active {
+  background: var(--surface-1);
+  color: var(--fg);
+  font-weight: 700;
+}
+.account-form input[type="text"],
+.account-form input[type="password"] {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  margin-bottom: 6px;
+  background: var(--surface-1);
+  color: var(--fg);
+  direction: ltr;
+  text-align: left;
+}
+.account-form .display-name-input {
+  direction: rtl;
+  text-align: right;
+}
+.account-form button.primary {
+  width: 100%;
+  min-height: 42px;
+  font-size: 13px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+.account-status { font-size: 12px; margin-top: 10px; text-align: center; min-height: 18px; }
+.account-status.err { color: var(--err); }
+.account-status.ok { color: var(--good); }
+.account-intro {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 10px;
+  line-height: 1.6;
 }
