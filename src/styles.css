@@ -901,3 +901,103 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
   font-size: 13px;
   padding: 7px 10px;
 }
+
+/* === Today screen — single-screen rounding dashboard === */
+.today-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.today-toolbar button {
+  font-size: 13px;
+  padding: 6px 10px;
+  min-height: 32px;
+}
+
+.today-section { margin-top: 16px; }
+.today-section h2 {
+  font-size: 0.95em;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 8px;
+}
+
+.today-card {
+  background: var(--card);
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  margin-top: 8px;
+}
+.today-card + .today-card { margin-top: 8px; }
+
+.today-card-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.today-card-head strong { font-size: 1em; }
+.today-card-head small { color: var(--muted); }
+
+.today-meta {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.today-badge-warn {
+  background: var(--warn);
+  color: #1a1408;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-inline-start: auto;
+}
+
+.today-note-list {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.today-note-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.today-note-row .note-row { flex: 1; text-align: start; }
+.today-note-row .note-row .note-time {
+  color: var(--muted);
+  margin-inline-start: 8px;
+}
+
+.today-mark-sent {
+  font-size: 12px;
+  padding: 4px 8px;
+  min-height: 28px;
+}
+
+.today-soap-action {
+  margin-top: 8px;
+  font-size: 13px;
+  padding: 6px 10px;
+  min-height: 32px;
+}
+
+.today-draft {
+  background: var(--card);
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.today-draft-resume { margin-inline-start: auto; }
