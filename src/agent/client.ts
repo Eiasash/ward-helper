@@ -27,7 +27,7 @@
 import { loadApiKey } from '@/crypto/keystore';
 
 export const PROXY_URL = 'https://toranot.netlify.app/api/claude';
-export const PROXY_SECRET = 'shlav-a-mega-2026';
+export const PROXY_SECRET = 'shlav-a-mega-1f97f311d307-2026';
 
 export const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 export const ANTHROPIC_VERSION = '2023-06-01';
