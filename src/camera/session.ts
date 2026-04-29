@@ -13,6 +13,7 @@
 
 export type ImageSource = 'camera' | 'gallery' | 'clipboard';
 export type TextSource = 'typed' | 'paste';
+export type PdfSource = 'gallery';
 
 export interface ImageBlock {
   kind: 'image';
@@ -31,20 +32,43 @@ export interface TextBlock {
   addedAt: number;
 }
 
-export type CaptureBlock = ImageBlock | TextBlock;
+export interface PdfBlock {
+  kind: 'pdf';
+  id: string;
+  /** base64 data URL: `data:application/pdf;base64,...` */
+  dataUrl: string;
+  /** Original file name for display ("blood-results.pdf") */
+  filename: string;
+  /** Bytes (post-base64) — surfaced in the UI list so the user can spot oversize uploads. */
+  sizeBytes: number;
+  sourceLabel: PdfSource;
+  addedAt: number;
+}
+
+export type CaptureBlock = ImageBlock | TextBlock | PdfBlock;
 
 /**
  * Image-kind blocks above this cap are rejected. A real ward round rarely
  * needs more than 3-4 photos; the cap is a safety net against runaway
  * gallery picks blowing up the extract call.
  */
-export const IMAGE_HARD_CAP = 10;
+export const IMAGE_HARD_CAP = 20;
 
 /**
  * Text-kind blocks above this cap are rejected. Multi-page paste is rare;
  * 8 is a sane upper bound that doesn't constrain real-world flows.
  */
 export const TEXT_HARD_CAP = 8;
+
+/**
+ * PDF-kind blocks above this cap are rejected. PDFs cost more tokens
+ * per page than images, so the cap is tighter. 5 should cover a typical
+ * "lab results PDF + discharge letter PDF + ECG PDF" round.
+ */
+export const PDF_HARD_CAP = 5;
+
+/** Per-PDF size cap. The Toranot proxy MAX_BODY_BYTES is 5MB total request. */
+export const PDF_MAX_BYTES = 5_000_000;
 
 /**
  * Thrown by `addImageBlock` / `addTextBlock` when the per-kind cap is hit.
@@ -54,7 +78,7 @@ export const TEXT_HARD_CAP = 8;
  */
 export class CapExceededError extends Error {
   constructor(
-    public readonly kind: 'image' | 'text',
+    public readonly kind: 'image' | 'text' | 'pdf',
     public readonly cap: number,
   ) {
     super(`capture cap exceeded for ${kind} blocks (${cap})`);
@@ -84,6 +108,12 @@ function countTexts(): number {
   return n;
 }
 
+function countPdfs(): number {
+  let n = 0;
+  for (const b of blocks) if (b.kind === 'pdf') n++;
+  return n;
+}
+
 export function addImageBlock(dataUrl: string, source: ImageSource): ImageBlock {
   if (countImages() >= IMAGE_HARD_CAP) throw new CapExceededError('image', IMAGE_HARD_CAP);
   const blob = dataUrlToBlob(dataUrl);
@@ -106,6 +136,21 @@ export function addTextBlock(content: string, source: TextSource): TextBlock {
     kind: 'text',
     id: crypto.randomUUID(),
     content,
+    sourceLabel: source,
+    addedAt: Date.now(),
+  };
+  blocks.push(block);
+  return block;
+}
+
+export function addPdfBlock(dataUrl: string, filename: string, sizeBytes: number, source: PdfSource = 'gallery'): PdfBlock {
+  if (countPdfs() >= PDF_HARD_CAP) throw new CapExceededError('pdf', PDF_HARD_CAP);
+  const block: PdfBlock = {
+    kind: 'pdf',
+    id: crypto.randomUUID(),
+    dataUrl,
+    filename,
+    sizeBytes,
     sourceLabel: source,
     addedAt: Date.now(),
   };
