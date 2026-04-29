@@ -1,0 +1,304 @@
+import { useState } from 'react';
+import {
+  authLogin,
+  authRegister,
+  authChangePassword,
+  setAuthSession,
+  logout,
+  validateUsername,
+  validatePassword,
+  normalizeUsername,
+  type AuthUser,
+} from '@/auth/auth';
+import { useAuth } from '../hooks/useAuth';
+
+/**
+ * Account section embedded in Settings. Logged-in: shows the account chip
+ * with change-password + logout. Logged-out: tabbed login/register.
+ *
+ * State boundaries:
+ *   - The user state itself comes from useAuth() (subscribed to the
+ *     'ward-helper:auth' event), so a successful login/logout re-renders
+ *     this without a manual setUser call.
+ *   - In-flight RPC + status messages live as local state; cleared on tab
+ *     change so a stale "wrong password" doesn't bleed across modes.
+ */
+export function AccountSection() {
+  const user = useAuth();
+  return (
+    <>
+      <h2>👤 חשבון</h2>
+      {user ? <AuthedAccount user={user} /> : <GuestAccount />}
+    </>
+  );
+}
+
+function AuthedAccount({ user }: { user: AuthUser }) {
+  const [showChangePwd, setShowChangePwd] = useState(false);
+
+  const initial = (user.displayName || user.username).slice(0, 1).toUpperCase();
+  const display = user.displayName || user.username;
+
+  return (
+    <div className="account-card-authed">
+      <div className="account-row">
+        <div className="account-avatar" aria-hidden="true">
+          {initial}
+        </div>
+        <div className="account-info">
+          <div className="account-display-name">{display}</div>
+          <div className="account-handle">@{user.username}</div>
+        </div>
+      </div>
+      <div className="account-actions">
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => setShowChangePwd((v) => !v)}
+        >
+          🔑 שנה סיסמה
+        </button>
+        <button type="button" className="ghost" onClick={() => logout()}>
+          🚪 התנתק
+        </button>
+      </div>
+      {showChangePwd && <ChangePasswordForm username={user.username} onDone={() => setShowChangePwd(false)} />}
+      <div className="account-note">
+        חשבון אחד פותח את ארבע האפליקציות (Mishpacha, Pnimit, Geri, ward-helper).
+        סנכרון הערות בין מכשירים — בקרוב.
+      </div>
+    </div>
+  );
+}
+
+function ChangePasswordForm({
+  username,
+  onDone,
+}: {
+  username: string;
+  onDone: () => void;
+}) {
+  const [oldPwd, setOldPwd] = useState('');
+  const [newPwd, setNewPwd] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<{ tone: 'ok' | 'err'; msg: string } | null>(null);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setStatus(null);
+    const pErr = validatePassword(newPwd);
+    if (pErr) {
+      setStatus({ tone: 'err', msg: pErr });
+      return;
+    }
+    setBusy(true);
+    const res = await authChangePassword(username, oldPwd, newPwd);
+    setBusy(false);
+    if (res.ok) {
+      setStatus({ tone: 'ok', msg: 'הסיסמה עודכנה ✓' });
+      setOldPwd('');
+      setNewPwd('');
+      setTimeout(onDone, 1200);
+    } else {
+      setStatus({
+        tone: 'err',
+        msg: res.error === 'invalid_password' ? 'סיסמה ישנה שגויה' : res.message || 'שגיאה',
+      });
+    }
+  }
+
+  return (
+    <form className="account-form" onSubmit={onSubmit} style={{ marginTop: 10 }}>
+      <input
+        type="password"
+        placeholder="סיסמה ישנה"
+        autoComplete="current-password"
+        value={oldPwd}
+        onChange={(e) => setOldPwd(e.target.value)}
+        disabled={busy}
+      />
+      <input
+        type="password"
+        placeholder="סיסמה חדשה (לפחות 6 תווים)"
+        autoComplete="new-password"
+        value={newPwd}
+        onChange={(e) => setNewPwd(e.target.value)}
+        disabled={busy}
+      />
+      <button type="submit" className="primary" disabled={busy}>
+        {busy ? 'מעדכן…' : 'עדכן סיסמה'}
+      </button>
+      {status && <div className={`account-status ${status.tone}`}>{status.msg}</div>}
+    </form>
+  );
+}
+
+function GuestAccount() {
+  const [tab, setTab] = useState<'login' | 'register'>('login');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<{ tone: 'ok' | 'err'; msg: string } | null>(null);
+
+  function switchTab(t: 'login' | 'register') {
+    setTab(t);
+    setStatus(null);
+    // Don't clear username — likely the same on re-login attempt — but clear password.
+    setPassword('');
+  }
+
+  async function onLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setStatus(null);
+    const u = normalizeUsername(username);
+    const uErr = validateUsername(u);
+    if (uErr) {
+      setStatus({ tone: 'err', msg: uErr });
+      return;
+    }
+    const pErr = validatePassword(password);
+    if (pErr) {
+      setStatus({ tone: 'err', msg: pErr });
+      return;
+    }
+    setBusy(true);
+    const res = await authLogin(u, password);
+    setBusy(false);
+    if (res.ok && res.user) {
+      setAuthSession(res.user.username, res.user.display_name);
+      setPassword('');
+    } else {
+      setStatus({ tone: 'err', msg: errorMessage(res.error, res.message) });
+    }
+  }
+
+  async function onRegister(e: React.FormEvent) {
+    e.preventDefault();
+    setStatus(null);
+    const u = normalizeUsername(username);
+    const uErr = validateUsername(u);
+    if (uErr) {
+      setStatus({ tone: 'err', msg: uErr });
+      return;
+    }
+    const pErr = validatePassword(password);
+    if (pErr) {
+      setStatus({ tone: 'err', msg: pErr });
+      return;
+    }
+    setBusy(true);
+    const dn = displayName.trim() || null;
+    const res = await authRegister(u, password, dn);
+    setBusy(false);
+    if (res.ok && res.user) {
+      setAuthSession(res.user.username, res.user.display_name);
+      setPassword('');
+    } else {
+      setStatus({ tone: 'err', msg: errorMessage(res.error, res.message) });
+    }
+  }
+
+  return (
+    <div className="account-card-guest">
+      <div className="account-intro">
+        התחבר כדי לסנכרן הערות בין מכשירים בעתיד. <strong>אין חובה</strong> —
+        אפשר להמשיך כאורח כרגיל.
+      </div>
+      <div className="account-tabs" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'login'}
+          className={tab === 'login' ? 'active' : ''}
+          onClick={() => switchTab('login')}
+        >
+          התחברות
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'register'}
+          className={tab === 'register' ? 'active' : ''}
+          onClick={() => switchTab('register')}
+        >
+          הרשמה
+        </button>
+      </div>
+
+      {tab === 'login' ? (
+        <form className="account-form" onSubmit={onLogin}>
+          <input
+            type="text"
+            placeholder="שם משתמש"
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            disabled={busy}
+          />
+          <input
+            type="password"
+            placeholder="סיסמה"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={busy}
+          />
+          <button type="submit" className="primary" disabled={busy}>
+            {busy ? 'מתחבר…' : '🔓 התחבר'}
+          </button>
+        </form>
+      ) : (
+        <form className="account-form" onSubmit={onRegister}>
+          <input
+            type="text"
+            placeholder="שם משתמש (3-32 תווים, אנגלית קטנה+מספרים)"
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            disabled={busy}
+          />
+          <input
+            type="password"
+            placeholder="סיסמה (לפחות 6 תווים)"
+            autoComplete="new-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={busy}
+          />
+          <input
+            type="text"
+            className="display-name-input"
+            placeholder="שם להצגה (אופציונלי)"
+            autoComplete="name"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            disabled={busy}
+          />
+          <button type="submit" className="primary" disabled={busy}>
+            {busy ? 'יוצר…' : '✨ צור חשבון'}
+          </button>
+        </form>
+      )}
+
+      {status && <div className={`account-status ${status.tone}`}>{status.msg}</div>}
+    </div>
+  );
+}
+
+function errorMessage(code: string | undefined, fallback: string | undefined): string {
+  switch (code) {
+    case 'invalid_username':
+      return 'שם משתמש לא תקין';
+    case 'invalid_password':
+      return 'סיסמה שגויה';
+    case 'username_taken':
+      return 'שם המשתמש תפוס';
+    case 'locked_out':
+      return 'החשבון נעול אחרי 5 ניסיונות. נסה שוב מאוחר יותר';
+    case 'network':
+      return 'בעיית רשת. בדוק חיבור ונסה שוב.';
+    default:
+      return fallback || 'שגיאה';
+  }
+}
