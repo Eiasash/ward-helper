@@ -239,6 +239,10 @@ export function Settings() {
           }}
         >
           <strong>שוחזר ✓</strong>
+          {' '}
+          <span style={{ fontSize: 11, opacity: 0.7 }}>
+            ({restoreResult.source === 'username' ? 'חשבון מחובר' : 'מכשיר זה'})
+          </span>
           <br />
           נסרקו: {restoreResult.scanned}
           {' · '}שוחזרו מטופלים: {restoreResult.restoredPatients}
