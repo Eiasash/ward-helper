@@ -80,20 +80,33 @@ export async function pushBlob(
   type: 'patient' | 'note',
   id: string,
   sealed: SealedBlob,
+  username?: string | null,
 ): Promise<void> {
   const userId = await ensureAnonymousAuth();
-  const { error } = await getSupabase().from('ward_helper_backup').upsert(
-    {
-      user_id: userId,
-      blob_type: type,
-      blob_id: id,
-      ciphertext: sealed.ciphertext,
-      iv: sealed.iv,
-      salt: sealed.salt,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'user_id,blob_type,blob_id' },
-  );
+  // The `username` column is the cross-device routing key added by migration
+  // 0003. We populate it only when the caller passes a real username — that
+  // is, when an app_users session is active. Guests pass null/undefined and
+  // their rows stay null-username, reachable only via the existing
+  // per-anon-user-id SELECT path. Empty/whitespace strings are coerced to
+  // null so a misuse never lands an empty username in the DB (the RPC
+  // matches on equality, so empty would silently group all such rows).
+  const cleanUsername =
+    typeof username === 'string' && username.trim().length > 0
+      ? username.trim()
+      : null;
+  const row: Record<string, unknown> = {
+    user_id: userId,
+    blob_type: type,
+    blob_id: id,
+    ciphertext: sealed.ciphertext,
+    iv: sealed.iv,
+    salt: sealed.salt,
+    updated_at: new Date().toISOString(),
+  };
+  if (cleanUsername !== null) row.username = cleanUsername;
+  const { error } = await getSupabase()
+    .from('ward_helper_backup')
+    .upsert(row, { onConflict: 'user_id,blob_type,blob_id' });
   if (error) throw error;
 }
 
@@ -131,6 +144,32 @@ export async function pullAllBlobs(): Promise<CloudBlobRow[]> {
     .select('blob_type, blob_id, ciphertext, iv, salt, updated_at')
     .order('blob_type')
     .order('blob_id');
+  if (error) throw error;
+  return (data ?? []) as CloudBlobRow[];
+}
+
+/**
+ * Cross-device pull: fetch every encrypted blob attributed to a given
+ * app_users username, regardless of which Supabase anon user pushed them.
+ *
+ * This is the cross-device sync path. The per-anon-user `pullAllBlobs`
+ * above can never see another device's rows because each device has its
+ * own `auth.uid()`. The `ward_helper_pull_by_username(p_username)` RPC
+ * (migration 0003, SECURITY DEFINER) bypasses that boundary by looking
+ * up the `username` column populated when the user was logged in via
+ * app_users at push time.
+ *
+ * Threat model: knowing the username is enough to fetch the encrypted
+ * blobs — but the AES-GCM payload is bound to a PBKDF2(600k)-derived
+ * key from the user's separate cloud passphrase. The DB hands out
+ * ciphertext; the passphrase is the actual lock. Same posture as the
+ * Phase 2 *_backups RPC for the study PWAs.
+ */
+export async function pullByUsername(username: string): Promise<CloudBlobRow[]> {
+  if (!username || !username.trim()) return [];
+  const { data, error } = await getSupabase().rpc('ward_helper_pull_by_username', {
+    p_username: username.trim(),
+  });
   if (error) throw error;
   return (data ?? []) as CloudBlobRow[];
 }

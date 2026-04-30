@@ -24,12 +24,19 @@ vi.mock('@/agent/costs', () => ({
 vi.mock('@/ui/hooks/useSettings', () => ({
   getPassphrase: vi.fn(() => null),
 }));
+// saveBoth now reads getCurrentUser to forward the app_users username to
+// pushBlob (cross-device sync wiring). Mock with a setter helper so each
+// test picks its own auth state.
+vi.mock('@/auth/auth', () => ({
+  getCurrentUser: vi.fn(() => null),
+}));
 
 import { saveBoth } from '@/notes/save';
 import { listPatients, listNotes, resetDbForTests } from '@/storage/indexed';
 import * as cloud from '@/storage/cloud';
 import * as costs from '@/agent/costs';
 import * as settings from '@/ui/hooks/useSettings';
+import * as auth from '@/auth/auth';
 
 beforeEach(async () => {
   await resetDbForTests();
@@ -187,5 +194,29 @@ describe('saveBoth — cloud-push path (passphrase set)', () => {
     if ((derive as ReturnType<typeof vi.fn>).mock) {
       expect((derive as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1);
     }
+  });
+
+  it('forwards the authed username to BOTH pushBlob calls (cross-device wiring)', async () => {
+    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue('k');
+    (auth.getCurrentUser as ReturnType<typeof vi.fn>).mockReturnValue({
+      username: 'eias',
+      displayName: 'Eias',
+      loggedInAt: Date.now(),
+    });
+    await saveBoth({ name: 'authed' }, 'admission', 'body');
+    expect(cloud.pushBlob).toHaveBeenCalledTimes(2);
+    const calls = (cloud.pushBlob as ReturnType<typeof vi.fn>).mock.calls;
+    // 4th positional arg = username
+    expect(calls[0]![3]).toBe('eias');
+    expect(calls[1]![3]).toBe('eias');
+  });
+
+  it('passes null to pushBlob when guest (no app_users session)', async () => {
+    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue('k');
+    (auth.getCurrentUser as ReturnType<typeof vi.fn>).mockReturnValue(null);
+    await saveBoth({ name: 'guest' }, 'soap', 'body');
+    const calls = (cloud.pushBlob as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls[0]![3]).toBeNull();
+    expect(calls[1]![3]).toBeNull();
   });
 });

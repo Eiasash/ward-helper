@@ -11,6 +11,7 @@ import { deriveAesKey } from '@/crypto/pbkdf2';
 import { getPassphrase } from '@/ui/hooks/useSettings';
 import { finalizeSessionFor } from '@/agent/costs';
 import { markSyncedNow, notifyNotesChanged } from '@/ui/hooks/useGlanceable';
+import { getCurrentUser } from '@/auth/auth';
 import type { ParseFields } from '@/agent/tools';
 import type { SafetyFlags } from '@/safety/types';
 
@@ -87,8 +88,13 @@ export async function saveBoth(
     const key = await deriveAesKey(pass, salt);
     const sealedP = await encryptForCloud(patient, key, salt);
     const sealedN = await encryptForCloud(note, key, salt);
-    await pushBlob('patient', patientId, sealedP);
-    await pushBlob('note', noteId, sealedN);
+    // When app_users-authed, attach `username` to each push so the row
+    // becomes reachable on the user's other devices via the
+    // ward_helper_pull_by_username RPC. Guests pass null and stay
+    // per-anon-user-id (existing posture, unchanged).
+    const username = getCurrentUser()?.username ?? null;
+    await pushBlob('patient', patientId, sealedP, username);
+    await pushBlob('note', noteId, sealedN, username);
     // Header-strip "last sync" relies on this — marker for the glanceable
     // header so the rounding doctor knows the cloud backup is current.
     markSyncedNow();
@@ -109,6 +115,7 @@ export async function saveBoth(
 
 import {
   pullAllBlobs,
+  pullByUsername,
   decryptFromCloud,
   base64ToBytes,
   type CloudBlobRow,
@@ -119,6 +126,13 @@ export interface RestoreResult {
   restoredPatients: number;
   restoredNotes: number;
   skipped: Array<{ blob_type: string; blob_id: string; reason: string }>;
+  /**
+   * Which path the rows came from. 'username' = cross-device pull via
+   * the migration-0003 RPC (works on a fresh device after app_users
+   * login). 'anon' = the legacy per-Supabase-anon-user fallback (works
+   * for guests AND for backward compat with pre-bridge data).
+   */
+  source: 'username' | 'anon';
 }
 
 /**
@@ -150,12 +164,21 @@ export interface RestoreResult {
 export async function restoreFromCloud(passphrase: string): Promise<RestoreResult> {
   if (!passphrase) throw new Error('passphrase required for restore');
 
-  const rows: CloudBlobRow[] = await pullAllBlobs();
+  // Route selection: when logged in via app_users, prefer the
+  // cross-device RPC. On a fresh install, the per-anon-user path returns
+  // nothing because the new device has a fresh auth.uid(). On the user's
+  // original device the RPC returns the same rows (idempotent). Guests
+  // (no app_users session) keep using the legacy per-anon-user path.
+  const user = getCurrentUser();
+  const rows: CloudBlobRow[] = user
+    ? await pullByUsername(user.username)
+    : await pullAllBlobs();
   const result: RestoreResult = {
     scanned: rows.length,
     restoredPatients: 0,
     restoredNotes: 0,
     skipped: [],
+    source: user ? 'username' : 'anon',
   };
 
   for (const row of rows) {
