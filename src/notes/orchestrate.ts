@@ -72,7 +72,21 @@ Admission (קבלה רפואית) — emit these sections in order, each under i
 8. תרופות בבית: SZMC format: "Generic ( Brand ) Route Dose Unit X Freq / Period".
    בסעיף ריבוי תרופות, כל תרופה מופיעה פעם אחת בלבד.
 9. הרגלים: "מעשן: לא / שימוש באלכוהול: לא / שימוש בסמים: לא".
-10. תפקוד: pre-morbid baseline + current (mobility aid, cognitive, caregiver, living situation).
+10. תפקוד: STRUCTURED subsection (per Salaymeh 29/04/26 print), label: value lines in this exact order, NO prose:
+    מגורים: בבית / בבית אבות / מוסד סיעודי
+    עזרה: עצמאי / עזרת משפחה / עזרת מטפלת זרה / מטפלת ישראלית
+    התמצאות: שמורה / דמנציה / חלקית
+    הזנה: כלכלה רגילה פומית / טחונה / IDDSI N / PEG / NG
+    הלבשה: עצמאי / עזרה חלקית / עזרה מלאה
+    רחצה: עצמאי / עזרה חלקית / עזרה מלאה
+    אכילה: עצמאי / עזרה חלקית / עזרה מלאה
+    הכנת אוכל: עצמאי / עזרה חלקית / עזרה מלאה
+    ניידות: עצמאי / עזרה חלקית / עזרה מלאה
+    ניידות בכיסא גלגלים: עצמאי / עזרה חלקית / עזרה מלאה
+    מעברים: עצמאי / עזרה חלקית / עזרה מלאה
+    שליטה על שתן: עצמאי / עזרה חלקית / עזרה מלאה
+    שליטה על יציאה: עצמאי / עזרה חלקית / עזרה מלאה
+    All 9 ADL items use ONLY the 3-tier grade עצמאי / עזרה חלקית / עזרה מלאה. NEVER use MRS in admission. Include all items even if עצמאי throughout (signals you assessed).
 11. בדיקה גופנית: vitals + systems. Short positives/negatives.
 12. בדיקות עזר: raw cultures + imaging reports verbatim.
 13. בדיקות מעבדה: short prose trends only ("CRP בקבלה 12.3, ירד ל-9.8"). NO arrows, NO ">" — Chameleon corrupts these. Strip H/L suffixes — use "(מעל/מתחת לנורמה)" parens.
