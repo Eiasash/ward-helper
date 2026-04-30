@@ -1,5 +1,16 @@
 # CLAUDE.md — ward-helper
 
+<!-- working-rules-v1:start -->
+## Working Rules (user-mandated, non-negotiable)
+
+These four rules are the floor. They override any conflicting guidance later in this file. If a rule conflicts with what you're about to do, stop and surface it before proceeding.
+
+1. **Don't assume. Don't hide confusion. Surface tradeoffs.**
+2. **Minimum code that solves the problem. Nothing speculative.**
+3. **Touch only what you must. Clean up only your own mess.**
+4. **Define success criteria. Loop until verified.**
+<!-- working-rules-v1:end -->
+
 Mobile-first Hebrew-RTL PWA for SZMC ward rounds. Camera an AZMA screen → reviewed Hebrew note → paste to Chameleon. Single-user, proxy-based Claude access (no BYO key), local-first IndexedDB, encrypted Supabase backup.
 
 ## Commands
