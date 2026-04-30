@@ -1120,3 +1120,108 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
   margin-bottom: 10px;
   line-height: 1.6;
 }
+
+/* ── Post-login restore prompt ─────────────────────────────────────
+   One-shot modal surfaced on fresh-device login when IndexedDB is
+   zero-state. Mounted at App-level by PostLoginRestorePrompt.tsx.
+   Visual language mirrors .account-card-guest (same vars, same radius
+   ladder) so it feels like a sibling of the Settings auth card the
+   user has already seen, not a third-party intrusion. */
+.restore-prompt-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: grid;
+  place-items: center;
+  z-index: 1000;
+  padding: 16px;
+}
+.restore-prompt-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px;
+  max-width: 360px;
+  width: 100%;
+  color: var(--fg);
+  box-shadow: var(--shadow-inset);
+}
+.restore-prompt-card h2 {
+  margin: 0 0 10px;
+  font-size: 16px;
+  font-weight: 700;
+}
+.restore-prompt-intro {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+.restore-prompt-form input[type="password"] {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  background: var(--surface-1);
+  color: var(--fg);
+  margin-bottom: 10px;
+  direction: ltr;
+  text-align: left;
+}
+.restore-prompt-actions {
+  display: flex;
+  gap: 8px;
+}
+.restore-prompt-actions button {
+  flex: 1;
+  min-height: 42px;
+  font-weight: 700;
+  font-size: 13px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+.restore-prompt-actions button.primary {
+  background: var(--accent);
+  color: var(--fg);
+  border-color: var(--accent-strong);
+}
+.restore-prompt-actions button.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.restore-prompt-actions button.secondary {
+  background: var(--surface-3);
+  color: var(--fg);
+}
+.restore-prompt-err {
+  color: var(--err);
+  font-size: 12px;
+  margin-top: 8px;
+  background: var(--err-soft);
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+.restore-prompt-result {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.restore-prompt-result p {
+  margin: 0 0 10px;
+}
+.restore-prompt-result .primary {
+  width: 100%;
+  min-height: 42px;
+  font-weight: 700;
+  font-size: 13px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--fg);
+  border: 1px solid var(--accent-strong);
+  cursor: pointer;
+}
+.restore-prompt-skipped {
+  color: var(--muted);
+  font-size: 12px;
+}

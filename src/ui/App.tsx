@@ -8,6 +8,7 @@ import { Settings } from './screens/Settings';
 import { Today } from './screens/Today';
 import { Consult } from './screens/Consult';
 import { HeaderStrip } from './components/HeaderStrip';
+import { PostLoginRestorePrompt } from './components/PostLoginRestorePrompt';
 
 // Lazy-loaded routes. Cold start usually lands on /today or /capture; the
 // three below are not on the hot path, so splitting them out trims the
@@ -66,6 +67,11 @@ export function App() {
         <NavLink to="/history">היסטוריה</NavLink>
         <NavLink to="/settings">הגדרות</NavLink>
       </nav>
+      {/* Surfaces a one-shot cloud-restore offer when a fresh-device login
+         lands on a zero-state IndexedDB. Mounted at router level so the
+         modal renders above any active route. Self-suppresses after the
+         first dismissal/restore per (username, device). */}
+      <PostLoginRestorePrompt />
     </HashRouter>
   );
 }

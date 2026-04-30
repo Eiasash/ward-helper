@@ -111,4 +111,31 @@ describe('auth — change events', () => {
     // After unsubscribe, no more calls.
     expect(handler).toHaveBeenCalledTimes(2);
   });
+
+  it('passes the action discriminator to subscribers', () => {
+    const seen: string[] = [];
+    const unsub = subscribeAuthChanges((action) => seen.push(action));
+
+    // setAuthSession with no action arg falls back to 'unknown'
+    setAuthSession('eias');
+    setAuthSession('eias', null, 'login');
+    setAuthSession('eias', null, 'register');
+    logout();
+
+    expect(seen).toEqual(['unknown', 'login', 'register', 'logout']);
+    unsub();
+  });
+
+  it('back-compat: a nullary handler still receives all events', () => {
+    // Existing code (useAuth, HeaderStrip) passes () => void handlers.
+    // The new subscribeAuthChanges sig is (action) => void; JS arity is
+    // tolerant, but we pin the contract so a future TS narrowing can't
+    // silently break consumers.
+    const handler = vi.fn(() => {});
+    const unsub = subscribeAuthChanges(handler);
+    setAuthSession('eias', null, 'login');
+    logout();
+    expect(handler).toHaveBeenCalledTimes(2);
+    unsub();
+  });
 });
