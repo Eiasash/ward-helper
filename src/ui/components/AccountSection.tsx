@@ -166,7 +166,7 @@ function GuestAccount() {
     const res = await authLogin(u, password);
     setBusy(false);
     if (res.ok && res.user) {
-      setAuthSession(res.user.username, res.user.display_name);
+      setAuthSession(res.user.username, res.user.display_name, 'login');
       setPassword('');
     } else {
       setStatus({ tone: 'err', msg: errorMessage(res.error, res.message) });
@@ -192,7 +192,7 @@ function GuestAccount() {
     const res = await authRegister(u, password, dn);
     setBusy(false);
     if (res.ok && res.user) {
-      setAuthSession(res.user.username, res.user.display_name);
+      setAuthSession(res.user.username, res.user.display_name, 'register');
       setPassword('');
     } else {
       setStatus({ tone: 'err', msg: errorMessage(res.error, res.message) });

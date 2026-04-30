@@ -162,8 +162,18 @@ export async function authChangePassword(
 /**
  * Persist a successful auth result. Caller must invoke only after `result.ok`.
  * Fires 'ward-helper:auth' so subscribers (HeaderStrip, useAuth hook) refresh.
+ *
+ * The optional `action` argument lets callers tell downstream listeners
+ * whether this was a fresh login or a register — useful for the
+ * post-login restore prompt (we only want to suggest a cloud restore on
+ * login, never on register: a brand-new account has no cloud data yet).
+ * Defaults to 'unknown' for back-compat with existing callers.
  */
-export function setAuthSession(username: string, displayName?: string | null): AuthUser {
+export function setAuthSession(
+  username: string,
+  displayName?: string | null,
+  action: AuthChangeAction = 'unknown',
+): AuthUser {
   const profile: AuthUser = {
     username,
     displayName: displayName ?? null,
@@ -174,7 +184,7 @@ export function setAuthSession(username: string, displayName?: string | null): A
   // writes will key on this — the user's notes will follow them between
   // devices once sync ships.
   localStorage.setItem(UID_LS_KEY, username);
-  notifyAuthChanged();
+  notifyAuthChanged(action);
   return profile;
 }
 
@@ -190,22 +200,58 @@ export function logout(): void {
   // And fresh device id, so any future cloud-backup writes don't accidentally
   // attach to the previous account's row.
   localStorage.setItem(DEV_LS_KEY, 'dev_' + Math.random().toString(36).slice(2, 12));
-  notifyAuthChanged();
+  notifyAuthChanged('logout');
 }
 
 // ───────────────────── change events ─────────────────────
 
 const AUTH_CHANGE_EVENT = 'ward-helper:auth';
 
-export function notifyAuthChanged(): void {
-  if (typeof window === 'undefined') return;
-  window.dispatchEvent(new CustomEvent(AUTH_CHANGE_EVENT));
+/**
+ * Discriminator on the `ward-helper:auth` CustomEvent.detail.
+ *   - 'login'           — successful login via authLogin
+ *   - 'register'        — successful registration via authRegister
+ *   - 'logout'          — explicit logout()
+ *   - 'change-password' — password rotation (session preserved)
+ *   - 'unknown'         — programmatic setAuthSession with no action arg
+ *                         (back-compat fallback)
+ *
+ * Listeners that don't care about the cause can ignore the arg; the
+ * subscribeAuthChanges handler signature accepts a unary fn but is
+ * tolerant of nullary fns thanks to JS's lenient arity contract.
+ */
+export type AuthChangeAction =
+  | 'login'
+  | 'register'
+  | 'logout'
+  | 'change-password'
+  | 'unknown';
+
+export interface AuthChangeDetail {
+  action: AuthChangeAction;
 }
 
-export function subscribeAuthChanges(handler: () => void): () => void {
+export function notifyAuthChanged(action: AuthChangeAction = 'unknown'): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(
+    new CustomEvent<AuthChangeDetail>(AUTH_CHANGE_EVENT, {
+      detail: { action },
+    }),
+  );
+}
+
+export function subscribeAuthChanges(
+  handler: (action: AuthChangeAction) => void,
+): () => void {
   if (typeof window === 'undefined') return () => {};
-  window.addEventListener(AUTH_CHANGE_EVENT, handler);
-  return () => window.removeEventListener(AUTH_CHANGE_EVENT, handler);
+  const wrapper = (e: Event) => {
+    // Defensive: any event without a detail (or with a malformed one) maps to
+    // 'unknown'. Keeps existing test code that constructs raw Events working.
+    const detail = (e as CustomEvent<AuthChangeDetail>).detail;
+    handler(detail?.action ?? 'unknown');
+  };
+  window.addEventListener(AUTH_CHANGE_EVENT, wrapper);
+  return () => window.removeEventListener(AUTH_CHANGE_EVENT, wrapper);
 }
 
 // ───────────────────── validation helpers (pre-RPC) ─────────────────────
