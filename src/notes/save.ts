@@ -10,7 +10,7 @@ import { encryptForCloud, pushBlob } from '@/storage/cloud';
 import { deriveAesKey } from '@/crypto/pbkdf2';
 import { getPassphrase } from '@/ui/hooks/useSettings';
 import { finalizeSessionFor } from '@/agent/costs';
-import { markSyncedNow, notifyNotesChanged } from '@/ui/hooks/useGlanceable';
+import { markSyncedNow, notifyNotesChanged } from '@/ui/hooks/glanceableEvents';
 import { getCurrentUser } from '@/auth/auth';
 import type { ParseFields } from '@/agent/tools';
 import type { SafetyFlags } from '@/safety/types';

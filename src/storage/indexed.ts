@@ -1,6 +1,7 @@
 import { openDB, type IDBPDatabase } from 'idb';
 
 import type { SafetyFlags } from '@/safety/types';
+import { notifyNotesChanged } from '@/ui/hooks/glanceableEvents';
 
 export type NoteType = 'admission' | 'discharge' | 'consult' | 'case' | 'soap' | 'census';
 
@@ -251,14 +252,11 @@ export async function markNoteSent(id: string, ts: number = Date.now()): Promise
   if (!note) return;
   await db.put('notes', { ...note, sentToEmrAt: ts, updatedAt: ts });
   // Header-strip pending-sync subscribes — drop the count by 1 immediately.
-  // Dynamic import keeps the storage module free of UI-layer imports
-  // (test-friendly, prevents accidental cycles with src/ui).
-  try {
-    const { notifyNotesChanged } = await import('@/ui/hooks/useGlanceable');
-    notifyNotesChanged();
-  } catch {
-    /* SSR / module unavailable — non-fatal */
-  }
+  // `glanceableEvents` is a tiny no-dep module (just `window.dispatchEvent`)
+  // so the storage layer can statically import it without pulling in the
+  // hook module that itself depends on storage. Avoids the Vite mixed
+  // static/dynamic-import warning.
+  notifyNotesChanged();
 }
 
 export async function setSettings(s: Settings): Promise<void> {
