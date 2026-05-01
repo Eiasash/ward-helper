@@ -13,6 +13,14 @@ These four rules are the floor. They override any conflicting guidance later in 
 
 Mobile-first Hebrew-RTL PWA for SZMC ward rounds. Camera an AZMA screen → reviewed Hebrew note → paste to Chameleon. Single-user, proxy-based Claude access (no BYO key), local-first IndexedDB, encrypted Supabase backup.
 
+## Snapshot (last audit 2026-05-01, v1.32.0)
+
+- 640 vitest cases passing across 59 files (+ 1 skipped live-eval gated on `ANTHROPIC_API_KEY`)
+- Entry chunk **154,584 bytes** gzipped (83.87% of 180 kB CI ceiling)
+- Total JS **164,511 bytes** gzipped (40.16% of 400 kB CI ceiling)
+- All 13 CI gates green; skill drift between `~/.claude/skills/` and `public/skills/` = none
+- See [IMPROVEMENTS.md](IMPROVEMENTS.md) for the full audit log
+
 ## Commands
 - `npm run dev` — Vite dev server on 5173 (path base `/ward-helper/`)
 - `npm test` — vitest run
