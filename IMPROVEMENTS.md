@@ -4,6 +4,23 @@ Auto-appended by the audit-fix-deploy pipeline. Most recent run on top.
 
 ---
 
+## 2026-05-01 — R3 followups shipped (PR #35)
+
+Two R3-flagged hardening items from the R2 deeper-dig audit landed together in [PR #35](https://github.com/Eiasash/ward-helper/pull/35) — both touch the same low-risk cost-tracking surface:
+
+| Item | R2 line | Resolution |
+|---|---|---|
+| `costs.ts` NaN/negative/non-finite defense | "Hardening opportunity (R3): validate `usage.input_tokens >= 0 && Number.isFinite(...)`" | `sanitizeTokenCount` + `sanitizeUsd` clamp untrusted numeric input at write (`turnCost`) AND read (`load`) boundaries — write-side keeps bad data out of localStorage, read-side rehabilitates pre-sanitization-era corrupt state. +9 vitest cases under "malformed-input defense". |
+| `@supabase/supabase-js` 2.104.1 → 2.105.1 | "safe minor bump and could land in R3" | Lockfile-only bump (caret `"^2.45.0"` unchanged). Bundle delta +1.5 kB gz (155.9 kB / 84% of 180 kB ceiling). |
+
+CI verification (8 gates): bundle-size, CSP, no-analytics, no-PHI-in-console, PBKDF2=600k, Toranot proxy, no-anthropic-sdk, compressImage — all PASS. Test count 668 → 677 (+9 NaN cases), 60 files unchanged.
+
+**Still earmarked for later** (not in #35):
+- supabase-js lazy-load (defer `getSupabase()` until first cloud-push). Trigger: entry chunk climbs past ~165 kB gz. Currently 155.9 kB → ~10 kB headroom before this becomes worth doing.
+- Coverage gaps (no `@vitest/coverage-v8` configured). Tests are written by hand against named contracts; coverage % is noisy here.
+
+---
+
 ## 2026-05-01 — R2 deeper-dig audit (v1.32.0)
 
 ### R1 followups resolved
@@ -48,7 +65,7 @@ After R2: clean build, no warning. Approach was to extract just the side-effect-
 
 | Surface | Result | Notes |
 |---|---|---|
-| `npm outdated` | 10 packages have newer majors available | All deliberate holds: react@18 (waiting on 19 ecosystem readiness), vite@5 (vitest 3 peer requirement), react-router-dom@6 (no new feature needed; v7 is a rewrite), typescript@5.9 (vitest 3.2 peer), @supabase/supabase-js@2.104→2.105 is a safe minor bump and could land in R3. **No medium+ vulnerabilities introduced by these holds.** |
+| `npm outdated` | 10 packages have newer majors available | All deliberate holds: react@18 (waiting on 19 ecosystem readiness), vite@5 (vitest 3 peer requirement), react-router-dom@6 (no new feature needed; v7 is a rewrite), typescript@5.9 (vitest 3.2 peer), @supabase/supabase-js@2.104→2.105 is a safe minor bump and could land in R3 [✅ SHIPPED in #35]. **No medium+ vulnerabilities introduced by these holds.** |
 | `npm audit` | 2 moderate (esbuild ≤0.24.2 dev-server CORS, transitive via vite@5) | Vite 8 fixes; Vite 5 → 8 is a multi-major jump. Dev-only — never reaches the production bundle. Defer until vitest 4 lands (vite 8 + vitest 4 alignment). Risk: dev-server only; exposure is local-machine scope. |
 | Bundle composition (top 10 chunks) | One large entry chunk (495 KB raw / 154.77 KB gz), 4 lazy chunks all < 11 KB raw | The entry chunk dominates. supabase-js + react + react-router are the big static imports. Lazy splitting Supabase (skill § F.6's biggest split candidate) would require deferring `getSupabase()` until first cloud-push attempt. Skipped this run (entry is 83.78% of ceiling — comfortable headroom). Earmarked for R3 if entry climbs past ~165 kB gz. |
 | CSP audit | PASS, exact whitelist | `connect-src 'self' https://api.anthropic.com https://toranot.netlify.app https://*.supabase.co` — matches CLAUDE.md spec. No analytics, no widening since R1. **Now asserted in `tests/r2-deeper-dig.test.ts`** so any future widening fails CI before it ships. |
@@ -57,7 +74,7 @@ After R2: clean build, no warning. Approach was to extract just the side-effect-
 | PHI-leak grep extended (`name_hebrew`, `dob`, `mrn`, `room_number` in `console.log` / `localStorage.setItem` / pattern reads) | PASS — zero hits | Beyond the Gate 4 check (`teudatZehut` / `bodyHebrew`), grepped for every PHI-shaped field name. Clean. |
 | `URL.revokeObjectURL` audit | PASS — every `createObjectURL` in `src/` has a paired `revokeObjectURL` in the same file | Asserted as a regression-protection test (`tests/r2-deeper-dig.test.ts` — 2 cases: per-file pair check + global count check). Files with create+revoke pairs: `src/camera/session.ts`, `src/ui/screens/Census.tsx`. |
 | PBKDF2 + AES-GCM constant-time | PASS | Web Crypto's `subtle.decrypt` does the auth-tag comparison internally in constant time; no `===` on derived secrets in any source file. The decryption path either resolves with cleartext or throws — no userland comparison. |
-| Cost tracker review (`src/agent/costs.ts`) | PASS | Floating-point accumulation is fine at realistic scale (Number.MAX_SAFE_INTEGER ≈ 9e15; worst-case 1e9 turns ×1e6 tokens still fits). No off-by-one. **Hardening opportunity (R3)**: validate `usage.input_tokens >= 0 && Number.isFinite(...)` to defend against a malformed proxy response writing NaN into localStorage. Out of scope for R2 — hasn't been observed in production logs. |
+| Cost tracker review (`src/agent/costs.ts`) | PASS | Floating-point accumulation is fine at realistic scale (Number.MAX_SAFE_INTEGER ≈ 9e15; worst-case 1e9 turns ×1e6 tokens still fits). No off-by-one. **Hardening opportunity (R3)**: validate `usage.input_tokens >= 0 && Number.isFinite(...)` to defend against a malformed proxy response writing NaN into localStorage. Out of scope for R2 — hasn't been observed in production logs. [✅ SHIPPED in #35] |
 
 ### Test expansion
 
