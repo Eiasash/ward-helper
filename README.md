@@ -4,6 +4,8 @@ SZMC ward rounds copilot. Hebrew-RTL mobile-first PWA — photograph an AZMA scr
 
 **Live:** https://eiasash.github.io/ward-helper/
 
+**Sibling project:** [Toranot](https://github.com/Eiasash/Toranot) — on-call ward management PWA at SZMC.
+
 ## What it does
 
 Four note types, one pipeline:
