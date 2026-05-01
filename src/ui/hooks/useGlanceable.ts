@@ -12,6 +12,18 @@
 
 import { useEffect, useState } from 'react';
 import { listAllNotes } from '@/storage/indexed';
+import {
+  markSyncedNow,
+  readLastSync,
+  notifyNotesChanged,
+  notifyPatientChanged,
+  notifyNoteTypeChanged,
+} from './glanceableEvents';
+
+// Re-export the event-emitter helpers so existing import sites keep working.
+// The helpers themselves live in `glanceableEvents.ts` so the storage layer
+// can import them without pulling in this module (which depends on storage).
+export { markSyncedNow, readLastSync, notifyNotesChanged, notifyPatientChanged, notifyNoteTypeChanged };
 
 export interface BatteryInfo {
   /** 0..1, or null when the API is unavailable. */
@@ -93,34 +105,6 @@ export function useOnline(): boolean {
   return online;
 }
 
-const LAST_SYNC_KEY = 'ward-helper.lastSyncAt';
-
-/**
- * Persist + read the last successful cloud-push timestamp. saveBoth() calls
- * `markSyncedNow()` on a successful push; the header reads back via
- * `useLastSync()`.
- */
-export function markSyncedNow(): void {
-  try {
-    localStorage.setItem(LAST_SYNC_KEY, String(Date.now()));
-    // Notify same-tab listeners — `storage` event only fires cross-tab.
-    window.dispatchEvent(new CustomEvent('ward-helper:lastsync'));
-  } catch {
-    /* localStorage may be disabled in private mode — non-fatal */
-  }
-}
-
-export function readLastSync(): number | null {
-  try {
-    const v = localStorage.getItem(LAST_SYNC_KEY);
-    if (!v) return null;
-    const n = Number(v);
-    return Number.isFinite(n) && n > 0 ? n : null;
-  } catch {
-    return null;
-  }
-}
-
 export function useLastSync(): number | null {
   const [ts, setTs] = useState<number | null>(() => readLastSync());
   useEffect(() => {
@@ -171,19 +155,6 @@ function readPatientName(): string | null {
 }
 
 /**
- * Manually nudge useCurrentPatientName subscribers (sessionStorage doesn't
- * fire `storage` events for same-tab writes). Call this after writing
- * `validated` from any new code path.
- */
-export function notifyPatientChanged(): void {
-  try {
-    window.dispatchEvent(new CustomEvent('ward-helper:patient'));
-  } catch {
-    /* SSR / no window — non-fatal */
-  }
-}
-
-/**
  * Track the active note type from sessionStorage.
  * Used by the HeaderStrip to render a note-type badge with the right tone.
  *
@@ -206,14 +177,6 @@ export function useActiveNoteType(): string | null {
     };
   }, []);
   return t;
-}
-
-export function notifyNoteTypeChanged(): void {
-  try {
-    window.dispatchEvent(new CustomEvent('ward-helper:notetype'));
-  } catch {
-    /* non-fatal */
-  }
 }
 
 /**
@@ -251,14 +214,6 @@ export function usePendingSyncCount(): number {
     };
   }, []);
   return n;
-}
-
-export function notifyNotesChanged(): void {
-  try {
-    window.dispatchEvent(new CustomEvent('ward-helper:notes-changed'));
-  } catch {
-    /* non-fatal */
-  }
 }
 
 /**
