@@ -42,11 +42,28 @@ export interface Totals {
 
 const EMPTY: Totals = { inputTokens: 0, outputTokens: 0, usd: 0 };
 
+// Sanitize untrusted numeric input from the proxy / from prior localStorage state.
+// The proxy strips tools/tool_choice and re-shapes responses, so a malformed
+// `usage` (NaN, undefined, negative, non-integer) is plausible. Any of those
+// values flowing into the accumulator would corrupt the running USD total
+// permanently — NaN propagates and there's no way back without a hard reset.
+function sanitizeTokenCount(n: unknown): number {
+  if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) return 0;
+  return Math.floor(n);
+}
+
+function sanitizeUsd(n: unknown): number {
+  if (typeof n !== 'number' || !Number.isFinite(n) || n < 0) return 0;
+  return n;
+}
+
 function turnCost(usage: { input_tokens: number; output_tokens: number }): Totals {
+  const inTok = sanitizeTokenCount(usage?.input_tokens);
+  const outTok = sanitizeTokenCount(usage?.output_tokens);
   return {
-    inputTokens: usage.input_tokens,
-    outputTokens: usage.output_tokens,
-    usd: usage.input_tokens * IN_PER_TOKEN + usage.output_tokens * OUT_PER_TOKEN,
+    inputTokens: inTok,
+    outputTokens: outTok,
+    usd: inTok * IN_PER_TOKEN + outTok * OUT_PER_TOKEN,
   };
 }
 
@@ -89,7 +106,15 @@ export function addTurn(usage: { input_tokens: number; output_tokens: number }):
 }
 
 export function load(): Totals {
-  return { ...EMPTY, ...safeGet<Partial<Totals>>(KEY, {}) };
+  // Defend against pre-sanitization-era localStorage values that may already
+  // hold NaN or negative numbers from a prior corrupted turn. Read-back is
+  // the right place to rehabilitate; otherwise a single bad write is permanent.
+  const raw = safeGet<Partial<Totals>>(KEY, {});
+  return {
+    inputTokens: sanitizeTokenCount(raw?.inputTokens),
+    outputTokens: sanitizeTokenCount(raw?.outputTokens),
+    usd: sanitizeUsd(raw?.usd),
+  };
 }
 
 export function reset(): void {
