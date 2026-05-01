@@ -1,6 +1,6 @@
 ===========================================
 ward-helper safety engine — synthetic test
-Date: 2026-04-25T19:01:15.208Z
+Date: 2026-05-01T12:30:53.215Z
 ===========================================
 
 
@@ -147,8 +147,150 @@ ACTUAL:
     STOPP: predicted hits, got none
     ACB: 3 < expected 6
 
+━━━ B1-dementia-bpsd-antipsychotic ━━━
+84F advanced dementia + BPSD agitation, on risperidone + benzo + trazodone
+NOTE: Antipsychotic-in-dementia BBW is the headline. If Beers misses risperidone, the dementia-mortality rule is broken.
+
+PREDICTED:
+  Beers:
+  - ANTIPSYCHOTIC-DEMENTIA-BBW (risperidone in dementia, increased mortality)
+  - BENZO-ELDER (lorazepam)
+  - BENZO-DEMENTIA
+  STOPP:
+  - ANTIPSYCHOTIC-DEMENTIA (non-emergency BPSD)
+  - BENZO-FALLS (lorazepam + fall history)
+  START:
+(none)
+  ACB ≥ 3
+
+ACTUAL:
+  Beers:
+  - BEERS-BENZO-ELDER: בנזודיאזפין בקשיש — סיכון נפילות ובלבול. שקול גמילה הדרגתית
+  STOPP:
+(none)
+  START:
+(none)
+  ACB = 2
+
+⚠️  AUTO-FLAGS:
+    STOPP: predicted hits, got none
+    ACB: 2 < expected 3
+
+━━━ B2-parkinsons-dopamine-blockers ━━━
+78M PD + nausea, accidentally on metoclopramide + promethazine (drug-induced parkinsonism risk)
+NOTE: PD-specific rules. Quetiapine is allowed in PD (along with clozapine/pimavanserin); metoclopramide and promethazine are not. If engine flags quetiapine = false positive.
+
+PREDICTED:
+  Beers:
+  - METOCLOPRAMIDE-PD (extrapyramidal worsening)
+  - PROMETHAZINE-ELDER-PD (anticholinergic + DRB)
+  - ANTICHOLINERGIC (promethazine ACB 3)
+  STOPP:
+  - DRBLOCKER-PD (metoclopramide + promethazine in PD = direct antagonism of L-DOPA)
+  START:
+(none)
+  ACB ≥ 4
+
+ACTUAL:
+  Beers:
+(none)
+  STOPP:
+(none)
+  START:
+(none)
+  ACB = 5
+
+⚠️  AUTO-FLAGS:
+    Beers: predicted hits, got none
+    STOPP: predicted hits, got none
+
+━━━ B3-dialysis-dose-mismatch ━━━
+72F ESRD on HD + T2DM + AF, regimen has 3 dose-mismatched meds
+NOTE: Renal-dose engine test. If no eGFR-driven hits fire, dose-adjust logic is missing or threshold is wrong.
+
+PREDICTED:
+  Beers:
+  - METFORMIN-CKD (contraindicated eGFR <30)
+  - GABAPENTIN-CKD (needs HD-dose adjust to 100mg post-HD)
+  - APIXABAN-DOSE (HD: 2.5mg BID per AHA, not 5mg BID)
+  STOPP:
+  - METFORMIN-EGFR<30
+  START:
+(none)
+  ACB ≥ 0
+
+ACTUAL:
+  Beers:
+(none)
+  STOPP:
+(none)
+  START:
+(none)
+  ACB = 0
+
+⚠️  AUTO-FLAGS:
+    Beers: predicted hits, got none
+    STOPP: predicted hits, got none
+
+━━━ B4-mci-z-drug-benzo-stack ━━━
+80F MCI + insomnia + anxiety, sedating cocktail (zolpidem + diazepam + anticholinergic antihistamine)
+NOTE: MCI + sedation stack. If Beers misses diazepam (long half-life is the key Beers anchor for this drug class), the BZD half-life rule is thin.
+
+PREDICTED:
+  Beers:
+  - Z-DRUG-ELDER (zolpidem)
+  - BENZO-ELDER-LONG-HALF (diazepam half-life >100h in elders)
+  - ANTIHISTAMINE-ELDER (cetirizine — borderline; 1st-gen worse but Beers 2023 lists 2nd-gen as caution)
+  STOPP:
+  - Z-DRUG-FALLS
+  - LONG-BENZO-ELDER
+  START:
+(none)
+  ACB ≥ 3
+
+ACTUAL:
+  Beers:
+  - BEERS-BENZO-ELDER: בנזודיאזפין בקשיש — סיכון נפילות ובלבול. שקול גמילה הדרגתית
+  STOPP:
+(none)
+  START:
+(none)
+  ACB = 3
+
+⚠️  AUTO-FLAGS:
+    STOPP: predicted hits, got none
+
+━━━ B5-uti-delirium-paradox ━━━
+86F UTI + delirium with reduced eGFR, regimen tests delirium-specific Beers + nitrofurantoin renal threshold
+NOTE: Delirium-context test. Beers 2023 specifically calls out benzo-in-delirium AND new-onset antipsychotic-in-delirium. If neither fires, delirium-context recognition is missing.
+
+PREDICTED:
+  Beers:
+  - NITROFURANTOIN-CKD (eGFR <30 contraindicated; <60 caution)
+  - BENZO-DELIRIUM (lorazepam paradoxically worsens delirium except in alcohol-withdrawal/seizure)
+  - ANTIPSYCHOTIC-DELIRIUM-NEW (Beers 2023: avoid for non-emergency delirium)
+  STOPP:
+  - BENZO-DELIRIUM
+  - NITROFURANTOIN-RENAL
+  START:
+(none)
+  ACB ≥ 1
+
+ACTUAL:
+  Beers:
+  - BEERS-BENZO-ELDER: בנזודיאזפין בקשיש — סיכון נפילות ובלבול. שקול גמילה הדרגתית
+  STOPP:
+(none)
+  START:
+(none)
+  ACB = 0
+
+⚠️  AUTO-FLAGS:
+    STOPP: predicted hits, got none
+    ACB: 0 < expected 1
+
 ===========================================
-Total auto-flagged divergences: 3
+Total auto-flagged divergences: 12
 Manual review of every ACTUAL block is still required —
 the auto-flags only catch coarse coverage gaps.
 ===========================================
