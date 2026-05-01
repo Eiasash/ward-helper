@@ -50,7 +50,13 @@ mark ready when green, merge via squash. Branch protection enforces this.
 - Extract prompt emits `confidence` for the critical-3 identifiers only (name / teudatZehut / age). Adding more fields re-introduces the 10s-budget stall the slim commit fixed. `sourceRegions` has been retired — don't re-add it.
 - Per-patient cost attribution: `Capture.tsx` opens a session via `startSession()` on mount; `saveBoth()` calls `finalizeSessionFor(patientId)` after IndexedDB put. Any new entry point that creates a note must follow the same open/finalize pair, or the tokens go unattributed.
 - Bidi audit banner in NoteEditor is a dev affordance only — gated behind the Settings toggle that writes `ward-helper.bidiAudit=1` to localStorage. It must not be visible by default; `wrapForChameleon` is the clinical safety net.
-- Service worker caches `index.html` — bump `VERSION` in [public/sw.js](public/sw.js) to match `package.json` on every release so installed PWAs pick up the new bundle hash.
+- Service worker caches `index.html` — bump `VERSION` in [public/sw.js](public/sw.js) to match `package.json` on every release so installed PWAs pick up the new bundle hash. The `swVersionSync` Vite plugin in `vite.config.ts` rewrites `dist/sw.js` at build to `ward-v<package.json.version>`, so cosmetic drift in source `public/sw.js` is harmless — but a missing `VERSION` line throws and blocks the build.
+
+## Release Invariants (run before declaring "shipped")
+1. **Local checks** — `npm run check` (tsc) + `npm test` + `npm run build`. All must be green.
+2. **PR + CI** — push branch, open draft PR, let CI run all 13 gates (do NOT push direct to main).
+3. **Live witness** — after merge + Pages publishes (~60–90s), `bash scripts/verify-deploy.sh` curls `https://eiasash.github.io/ward-helper/sw.js` and asserts the new `ward-v<version>` line is live. **Don't claim "deployed" until this passes** — local build success ≠ live deploy success.
+4. **Source-of-truth note**: source `public/sw.js` may legitimately lag (e.g., source says `ward-v1.29.0` while `package.json` says `1.32.0`) because the Vite plugin rewrites at build. Trust `verify-deploy.sh` over the source file.
 
 ## Architecture
 
