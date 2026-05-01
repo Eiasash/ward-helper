@@ -144,6 +144,126 @@ const cases = [
     },
     notes: 'Falls scenario. If <3 Beers hits OR <2 STOPP hits, fall-risk rules are thin.',
   },
+  {
+    id: 'B1-dementia-bpsd-antipsychotic',
+    description: '84F advanced dementia + BPSD agitation, on risperidone + benzo + trazodone',
+    meds: [
+      { name: 'Risperidone', dose: '0.5mg', freq: 'QHS' },
+      { name: 'Lorazepam', dose: '0.5mg', freq: 'QHS PRN' },
+      { name: 'Donepezil', dose: '10mg', freq: 'QHS' },
+      { name: 'Memantine', dose: '10mg', freq: 'BID' },
+      { name: 'Trazodone', dose: '50mg', freq: 'QHS' },
+    ],
+    patient: {
+      age: 84, sex: 'F',
+      conditions: ['dementia-advanced', 'BPSD', 'fall-history', 'HTN'],
+    },
+    predicted: {
+      beers: ['ANTIPSYCHOTIC-DEMENTIA-BBW (risperidone in dementia, increased mortality)',
+              'BENZO-ELDER (lorazepam)', 'BENZO-DEMENTIA'],
+      stopp: ['ANTIPSYCHOTIC-DEMENTIA (non-emergency BPSD)',
+              'BENZO-FALLS (lorazepam + fall history)'],
+      start: [],
+      acbMin: 3, // risperidone + trazodone + lorazepam each ~1
+    },
+    notes: 'Antipsychotic-in-dementia BBW is the headline. If Beers misses risperidone, the dementia-mortality rule is broken.',
+  },
+  {
+    id: 'B2-parkinsons-dopamine-blockers',
+    description: '78M PD + nausea, accidentally on metoclopramide + promethazine (drug-induced parkinsonism risk)',
+    meds: [
+      { name: 'Carbidopa-Levodopa', dose: '25/100', freq: 'TID' },
+      { name: 'Quetiapine', dose: '25mg', freq: 'QHS' },
+      { name: 'Sertraline', dose: '50mg', freq: 'QD' },
+      { name: 'Metoclopramide', dose: '10mg', freq: 'TID' },
+      { name: 'Promethazine', dose: '12.5mg', freq: 'Q6H PRN' },
+    ],
+    patient: {
+      age: 78, sex: 'M',
+      conditions: ['Parkinsons', 'depression', 'GERD', 'nausea'],
+    },
+    predicted: {
+      beers: ['METOCLOPRAMIDE-PD (extrapyramidal worsening)',
+              'PROMETHAZINE-ELDER-PD (anticholinergic + DRB)',
+              'ANTICHOLINERGIC (promethazine ACB 3)'],
+      stopp: ['DRBLOCKER-PD (metoclopramide + promethazine in PD = direct antagonism of L-DOPA)'],
+      start: [],
+      acbMin: 4, // promethazine 3 + quetiapine 1
+    },
+    notes: 'PD-specific rules. Quetiapine is allowed in PD (along with clozapine/pimavanserin); metoclopramide and promethazine are not. If engine flags quetiapine = false positive.',
+  },
+  {
+    id: 'B3-dialysis-dose-mismatch',
+    description: '72F ESRD on HD + T2DM + AF, regimen has 3 dose-mismatched meds',
+    meds: [
+      { name: 'Metformin', dose: '1000mg', freq: 'BID' },
+      { name: 'Apixaban', dose: '5mg', freq: 'BID' },
+      { name: 'Gabapentin', dose: '300mg', freq: 'TID' },
+      { name: 'Atorvastatin', dose: '40mg', freq: 'QHS' },
+      { name: 'Sevelamer', dose: '800mg', freq: 'TID' },
+    ],
+    patient: {
+      age: 72, sex: 'F',
+      conditions: ['ESRD-on-dialysis', 'T2DM', 'AF', 'neuropathy'],
+      egfr: 8,
+    },
+    predicted: {
+      beers: ['METFORMIN-CKD (contraindicated eGFR <30)',
+              'GABAPENTIN-CKD (needs HD-dose adjust to 100mg post-HD)',
+              'APIXABAN-DOSE (HD: 2.5mg BID per AHA, not 5mg BID)'],
+      stopp: ['METFORMIN-EGFR<30'],
+      start: [],
+      acbMin: 0,
+    },
+    notes: 'Renal-dose engine test. If no eGFR-driven hits fire, dose-adjust logic is missing or threshold is wrong.',
+  },
+  {
+    id: 'B4-mci-z-drug-benzo-stack',
+    description: '80F MCI + insomnia + anxiety, sedating cocktail (zolpidem + diazepam + anticholinergic antihistamine)',
+    meds: [
+      { name: 'Zolpidem', dose: '5mg', freq: 'QHS' },
+      { name: 'Mirtazapine', dose: '15mg', freq: 'QHS' },
+      { name: 'Diazepam', dose: '2mg', freq: 'QHS PRN' },
+      { name: 'Cetirizine', dose: '10mg', freq: 'QD' },
+    ],
+    patient: {
+      age: 80, sex: 'F',
+      conditions: ['MCI', 'insomnia', 'anxiety', 'allergic-rhinitis'],
+    },
+    predicted: {
+      beers: ['Z-DRUG-ELDER (zolpidem)',
+              'BENZO-ELDER-LONG-HALF (diazepam half-life >100h in elders)',
+              'ANTIHISTAMINE-ELDER (cetirizine — borderline; 1st-gen worse but Beers 2023 lists 2nd-gen as caution)'],
+      stopp: ['Z-DRUG-FALLS', 'LONG-BENZO-ELDER'],
+      start: [],
+      acbMin: 3, // mirtazapine 1 + diazepam 1 + cetirizine 1
+    },
+    notes: 'MCI + sedation stack. If Beers misses diazepam (long half-life is the key Beers anchor for this drug class), the BZD half-life rule is thin.',
+  },
+  {
+    id: 'B5-uti-delirium-paradox',
+    description: '86F UTI + delirium with reduced eGFR, regimen tests delirium-specific Beers + nitrofurantoin renal threshold',
+    meds: [
+      { name: 'Nitrofurantoin', dose: '100mg', freq: 'BID' },
+      { name: 'Lorazepam', dose: '0.25mg', freq: 'Q6H PRN' },
+      { name: 'Haloperidol', dose: '0.5mg', freq: 'PRN' },
+      { name: 'Acetaminophen', dose: '500mg', freq: 'Q6H PRN' },
+    ],
+    patient: {
+      age: 86, sex: 'F',
+      conditions: ['UTI', 'delirium', 'CKD-3b'],
+      egfr: 28,
+    },
+    predicted: {
+      beers: ['NITROFURANTOIN-CKD (eGFR <30 contraindicated; <60 caution)',
+              'BENZO-DELIRIUM (lorazepam paradoxically worsens delirium except in alcohol-withdrawal/seizure)',
+              'ANTIPSYCHOTIC-DELIRIUM-NEW (Beers 2023: avoid for non-emergency delirium)'],
+      stopp: ['BENZO-DELIRIUM', 'NITROFURANTOIN-RENAL'],
+      start: [],
+      acbMin: 1, // haloperidol low ACB
+    },
+    notes: 'Delirium-context test. Beers 2023 specifically calls out benzo-in-delirium AND new-onset antipsychotic-in-delirium. If neither fires, delirium-context recognition is missing.',
+  },
 ];
 
 // ---- Runner ----
