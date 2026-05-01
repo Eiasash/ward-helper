@@ -130,6 +130,91 @@ describe('costs: per-patient attribution', () => {
   });
 });
 
+describe('costs: malformed-input defense (NaN / negative / non-finite)', () => {
+  // Defends against malformed proxy responses (the Toranot proxy strips
+  // tools/tool_choice and reshapes responses — a bad usage block is plausible)
+  // and against pre-sanitization-era localStorage values that may already hold
+  // NaN. NaN propagates through arithmetic and would corrupt totals permanently.
+
+  it('NaN input_tokens is treated as 0', () => {
+    addTurn({ input_tokens: NaN, output_tokens: 100 });
+    const t = load();
+    expect(t.inputTokens).toBe(0);
+    expect(t.outputTokens).toBe(100);
+    expect(Number.isFinite(t.usd)).toBe(true);
+  });
+
+  it('NaN output_tokens is treated as 0', () => {
+    addTurn({ input_tokens: 100, output_tokens: NaN });
+    const t = load();
+    expect(t.inputTokens).toBe(100);
+    expect(t.outputTokens).toBe(0);
+    expect(Number.isFinite(t.usd)).toBe(true);
+  });
+
+  it('Infinity is treated as 0', () => {
+    addTurn({ input_tokens: Infinity, output_tokens: -Infinity });
+    const t = load();
+    expect(t.inputTokens).toBe(0);
+    expect(t.outputTokens).toBe(0);
+    expect(t.usd).toBe(0);
+  });
+
+  it('negative tokens are treated as 0', () => {
+    addTurn({ input_tokens: -500, output_tokens: -100 });
+    const t = load();
+    expect(t.inputTokens).toBe(0);
+    expect(t.outputTokens).toBe(0);
+    expect(t.usd).toBe(0);
+  });
+
+  it('non-integer tokens are floored', () => {
+    addTurn({ input_tokens: 100.9, output_tokens: 50.4 });
+    const t = load();
+    expect(t.inputTokens).toBe(100);
+    expect(t.outputTokens).toBe(50);
+  });
+
+  it('missing usage fields (undefined) are treated as 0', () => {
+    addTurn({ input_tokens: undefined as unknown as number, output_tokens: undefined as unknown as number });
+    const t = load();
+    expect(t.inputTokens).toBe(0);
+    expect(t.outputTokens).toBe(0);
+    expect(t.usd).toBe(0);
+  });
+
+  it('one bad turn does not corrupt subsequent good turns', () => {
+    addTurn({ input_tokens: NaN, output_tokens: NaN });
+    addTurn({ input_tokens: 100, output_tokens: 50 });
+    const t = load();
+    expect(t.inputTokens).toBe(100);
+    expect(t.outputTokens).toBe(50);
+    expect(t.usd).toBeCloseTo(100 * IN_PER_TOKEN + 50 * OUT_PER_TOKEN, 10);
+  });
+
+  it('load() rehabilitates pre-sanitization-era NaN already in localStorage', () => {
+    // Simulate a corrupted state from before the sanitizer existed.
+    localStorage.setItem('ward-helper.costs', JSON.stringify({
+      inputTokens: NaN,
+      outputTokens: 500,
+      usd: NaN,
+    }));
+    const t = load();
+    expect(t.inputTokens).toBe(0);
+    expect(t.outputTokens).toBe(500);
+    expect(t.usd).toBe(0);
+  });
+
+  it('load() rehabilitates negative usd already in localStorage', () => {
+    localStorage.setItem('ward-helper.costs', JSON.stringify({
+      inputTokens: 100,
+      outputTokens: 100,
+      usd: -42,
+    }));
+    expect(load().usd).toBe(0);
+  });
+});
+
 describe('costs: reset', () => {
   it('clears accumulated totals to zero', () => {
     addTurn({ input_tokens: 5000, output_tokens: 1000 });
