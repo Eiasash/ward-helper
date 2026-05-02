@@ -47,6 +47,11 @@ export function NoteEditor() {
   const [noteType, setNoteType] = useState<NoteType>('admission');
   const [copied, setCopied] = useState(false);
   const [copiedSection, setCopiedSection] = useState<number | null>(null);
+  // 'edit' = the editable textarea (default, lets the doctor tweak the draft).
+  // 'cards' = a read-only stack of section cards with per-card copy buttons,
+  // designed for the paste-into-Chameleon workflow where the user wants to
+  // grab one section at a time without scrolling/selecting in a wall of text.
+  const [viewMode, setViewMode] = useState<'edit' | 'cards'>('edit');
   const [regenSectionIdx, setRegenSectionIdx] = useState<number | null>(null);
   const [regenError, setRegenError] = useState<string>('');
   const [snippetMap, setSnippetMap] = useState<SnippetMap>({});
@@ -408,19 +413,59 @@ export function NoteEditor() {
       <label htmlFor="note-editor-body" className="visually-hidden">
         טקסט הטיוטה — {NOTE_LABEL[noteType]}
       </label>
-      <textarea
-        id="note-editor-body"
-        ref={textareaRef}
-        dir="auto"
-        rows={18}
-        value={body}
-        onChange={(e) => setBody(e.target.value)}
-        onKeyUp={onTextareaKeyUp}
-        aria-label={`טקסט הטיוטה — ${NOTE_LABEL[noteType]}`}
-        style={{ minHeight: 400, fontSize: 15, lineHeight: 1.6 }}
-      />
+      {viewMode === 'edit' ? (
+        <textarea
+          id="note-editor-body"
+          ref={textareaRef}
+          dir="auto"
+          rows={18}
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          onKeyUp={onTextareaKeyUp}
+          aria-label={`טקסט הטיוטה — ${NOTE_LABEL[noteType]}`}
+          style={{ minHeight: 400, fontSize: 15, lineHeight: 1.6 }}
+        />
+      ) : (
+        <div className="section-cards" aria-label="קטעי הרשומה — מוכנים להעתקה">
+          {sections.length === 0 ? (
+            <p className="muted">אין תוכן להצגה.</p>
+          ) : (
+            sections.map((s, i) => (
+              <article key={`${i}:${s.name}`} className="section-card">
+                <header className="section-card__header">
+                  <h3 className="section-card__title">{s.name}</h3>
+                  <button
+                    type="button"
+                    className="section-card__copy"
+                    onClick={() => onCopySection(i, s.body)}
+                    aria-label={`העתק את הקטע ${s.name}`}
+                  >
+                    {copiedSection === i ? '✓ הועתק' : '📋 העתק'}
+                  </button>
+                </header>
+                <pre className="section-card__body" dir="auto">
+                  {s.body}
+                </pre>
+              </article>
+            ))
+          )}
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
         <button onClick={onCopy}>{copied ? '✓ הועתק' : '📋 העתק הכל'}</button>
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => setViewMode((m) => (m === 'edit' ? 'cards' : 'edit'))}
+          aria-pressed={viewMode === 'cards'}
+          title={
+            viewMode === 'edit'
+              ? 'הצג את הרשומה כקטעים נפרדים, עם כפתור העתקה לכל קטע'
+              : 'חזור למצב עריכה (טקסט פתוח)'
+          }
+        >
+          {viewMode === 'edit' ? '📑 צפייה בקטעים' : '✏ חזרה לעריכה'}
+        </button>
         <button className="ghost" onClick={() => nav('/save')}>המשך לשמירה ←</button>
         <button
           type="button"
