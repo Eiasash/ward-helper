@@ -85,3 +85,32 @@ Hebrew clinical prose embeds English drug names, acronyms, lab abbreviations. Ne
 - [docs/superpowers/plans/2026-04-22-ward-helper-v1.md](docs/superpowers/plans/2026-04-22-ward-helper-v1.md)
 - [docs/superpowers/specs/2026-04-23-soap-daily-followup-design.md](docs/superpowers/specs/2026-04-23-soap-daily-followup-design.md)
 - [docs/superpowers/plans/2026-04-23-soap-daily-followup.md](docs/superpowers/plans/2026-04-23-soap-daily-followup.md)
+
+## Operations runbooks
+
+### Lost password — admin-mediated reset (Tier 1, ship-ready)
+
+The auth scheme is username-only — there's no email-based self-service reset yet (Tier 2, not built). When a user forgets their password, the admin (you) resets it directly via Supabase SQL:
+
+1. Open the Supabase SQL Editor for project `krmlzwwelqvlfslwltol` (the shared Toranot project — ward-helper auth lives in the cross-app `app_users` table).
+2. Run:
+
+   ```sql
+   -- Replace 'username' and 'newPassword' with actual values.
+   -- bcrypt cost factor 10 matches what auth_register_user uses.
+   UPDATE app_users
+   SET password_hash = crypt('newPassword', gen_salt('bf', 10))
+   WHERE username = 'username';
+   ```
+
+3. Confirm the row was updated (`UPDATE 1`).
+4. Tell the user to log in with the new password, then change it via Settings → Account.
+
+**Failure modes & fixes:**
+- `0 rows updated` → username typo (usernames are stored lowercase per `USERNAME_RE` in `src/auth/auth.ts`).
+- `function crypt does not exist` → enable the `pgcrypto` extension once: `CREATE EXTENSION IF NOT EXISTS pgcrypto;` (should already be enabled per project setup).
+- User still can't log in → check `app_users.locked_out_until`; clear it: `UPDATE app_users SET failed_attempts = 0, locked_out_until = NULL WHERE username = 'username';`
+
+### Self-service password reset — Tier 2 (DEFERRED, design only)
+
+Multi-step project, not yet implemented. When prioritized, the staged plan is: schema migration (`email TEXT NULL UNIQUE` column on `app_users`) → reset RPCs (`auth_request_password_reset`, `auth_reset_password_with_token`) → Resend.com email integration via a new Netlify function → "שכחת סיסמה?" UI flow with token-bearing reset route. ~half-day of focused work spread across 5 PRs. Until shipped, **all password resets go through the Tier 1 runbook above**.
