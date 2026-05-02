@@ -298,7 +298,21 @@ function errorMessage(code: string | undefined, fallback: string | undefined): s
       return 'החשבון נעול אחרי 5 ניסיונות. נסה שוב מאוחר יותר';
     case 'network':
       return 'בעיית רשת. בדוק חיבור ונסה שוב.';
+    case 'rpc_error':
+      // Backend RPC threw — surface the raw message so the user has something
+      // actionable instead of bare 'שגיאה'.
+      return fallback ? `שגיאת שרת: ${fallback}` : 'שגיאת שרת. נסה שוב.';
+    case 'bad_response':
+      // RPC returned null/non-object — typically transient backend issue.
+      return 'תגובה לא תקינה מהשרת. נסה שוב בעוד כמה שניות.';
     default:
+      // Pre-2026-05-02: failures of any kind landed on bare 'שגיאה' with no
+      // hint about cause. Now we surface the raw code + message so the user
+      // can paste it into a support thread (or a Claude session) and have
+      // something to act on. Last-resort 'שגיאה' only fires when neither is
+      // present — unlikely but kept for back-compat.
+      if (code && fallback) return `שגיאה (${code}): ${fallback}`;
+      if (code) return `שגיאה: ${code}`;
       return fallback || 'שגיאה';
   }
 }
