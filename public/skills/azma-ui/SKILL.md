@@ -1,117 +1,65 @@
 ---
 name: azma-ui
-description: SZMC AZMA/Chameleon EMR reference for the vision extractor. Read every time a ward photo comes in.
+description: SZMC AZMA EMR (ניהול מחלקה / inpatient chart + הוראות תרופתיות / order grid) interface reference. Trigger whenever the user uploads a screenshot of the AZMA/Chameleon EMR, asks about what an icon/column/color/indicator means in AZMA, mentions "ניהול מחלקה" or "הוראות תרופתיות", asks to decode EMR columns, asks what a row state means in the medication-orders grid, or when looking at the department patient census grid at SZMC. Contains: meaning of every patient-grid column (1-21), double-click behaviors, color-code conventions (red diagnosis=isolation, blue pen=unsigned admission, green circle=unsigned shift summary, blood bank colors), the canonical 7-icon legend for the medication-orders grid (pen=pending / 🔴=given / 🔵=order finished / ℹ️=linked protocol / 📋=Rx attached / 💬red=active comment / 💬grey=empty), 4-axis row-state read for medication orders (text color × strikethrough × admin icon × view filter), 5 official quiz Q&As with manifest-grade answers, the SCORM manifest, and 20 slide-art images (note: these are decorative slide backgrounds, NOT EMR captures — the actual EMR screens are composited inside slide JS in the source SCORM). Read AZMA_REFERENCE.md first; consult azma_reference.json for programmatic lookup; consult manifest.json for canonical Storyline answer keys.
 ---
 
-# AZMA / Chameleon — vision extract reference
+See `AZMA_REFERENCE.md` for the full reference (R4, 2026-05-02).
 
-This reference exists so the extractor does not confuse interface chrome with patient data. Applies to **every** ward photo. The single most common extract failure is reading the application header (which shows the **logged-in doctor**) as the patient — prevent that first, worry about everything else second.
+**Quick navigation:**
+- §3 — Department-management toolbar (6 icons)
+- §4 — Patient-list grid (21 columns)
+- §5 — Global toolbar icons
+- §6 — Patient-grid color codes (red diagnosis, blue pen, green circle, blood-bank colors)
+- **§7 — `הוראות תרופתיות` order-grid 4-axis row-state read** (text color × strikethrough × **canonical 7-icon legend** × view filter)
+- §8 — 5 official quiz Q&As (manifest-grade answers)
 
----
+**Programmatic lookup:** `azma_reference.json` (v4.0.0). Top-level keys: `deptMgmt`, `colorCodes`, `medGridRowStates`, `quiz` (with `manifestEvidence` + `provenance` per item), `iconDischargeMapping`, `_source.scenes` (raw Storyline slide content).
 
-## 1. Where the patient's identity actually lives
+**Canonical SCORM source:** `manifest.json` — explicit `"status":"correct"` markers tie answer records to choice IDs. Use this when verifying quiz answers programmatically.
 
-AZMA puts TWO different identity clusters on screen. They look similar at a glance. Only one of them is the patient.
+**Slide art (slide_art/):** 20 background images — SZMC logo, geometric blue shapes, stock photos (doctors / lab equipment / laptop+stethoscope), a few EMR-adjacent dialogs (password change, comment dialog). **These are NOT AZMA EMR screen captures.** The actual EMR screens shown in the course are composited inside slide JS files in the source SCORM zip, not exported as standalone PNGs. R1 docs that described these as "EMR screenshots" were misleading.
 
-### 1.1 The trap: top-left title bar (NEVER read as patient)
-The far top-left of every AZMA window shows:
+When Eias sends a photo of AZMA:
+- **Patient-list / department census** → match against §4 columns and §6 color codes
+- **Order grid (`הוראות תרופתיות` / `נזלים` / `לוינים-ונקזים`)** → use §7's 4-axis read. Always check all 4 axes (text color, strikethrough, icon, view filter) — misreading one flips clinical meaning
+- **Toolbar** → §3 (department-management) or §5 (global)
 
+## Workflow links to clinical writing
+
+When decoding a patient row, three patient-grid icons drive content in the **discharge note** (see `szmc-clinical-notes` skill):
+
+### 1. Tube/catheter icon (T-shape, leftmost in icon cluster)
+Indicates the patient currently has, or recently had, an indwelling tube or catheter. **Hover reveals the event log** with insertion/removal dates per device:
 ```
-Eitan 4   <Doctor name>   <Patient code>
-```
-
-Example: `Eitan 4   אשרב איאס   p15695`
-
-- **`Eitan 4`** is the application name (the Chameleon/Eitan EMR vendor).
-- **Doctor name** (e.g. `אשרב איאס`, `אבו זיד גיהאד`, `אסלן אורי`) is the **logged-in clinician** — NOT the patient. This is the single biggest vision trap. Never emit the doctor's name as `fields.name`.
-- **Patient code** is a short internal code like `p15695`. It is NOT the Israeli ת.ז. and must not be placed in `fields.teudatZehut`. A real ת.ז. is 9 digits, no letters.
-
-Common SZMC geriatrics doctor names that may appear in this strip — treat any of these as **interface text, not patient text**:
-`אשרב איאס` · `אבו זיד גיהאד` · `אסלן אורי` · `אחמרו מאלק` · any name followed by a `pNNNNN` code in the same line.
-
-### 1.2 The truth: patient card (top-right / center-right panel)
-The authoritative patient identity is in a **patient card** near the top-center/right, above the tabs. It renders vertically-stacked fields with labels on the right (Hebrew RTL):
-
-```
-שם מטופל:     <patient's full name>
-ת.זהות:       <9-digit Israeli ID>
-גיל:          <age in years>
-נקבה / זכר:   <sex>
-מחלקה:        <ward, e.g. גריאטריה-מח>
-ת.אשפוז:      <admission date DD/MM/YY HH:MM>
-מ.אשפוז:      <admission number>
+22/04 PEG
+27/04 עירוי פריפרי
+24/04 NGT
+25/04 Foley
 ```
 
-**This card is the only source of truth for `name`, `teudatZehut`, `age`, `sex`.** If this card is not visible in any of the images provided, return no value for those four fields — do NOT substitute from the top-left strip.
+**Discharge writing rule (Eias 28/04/26):**
+- **NGT, urinary catheter (Foley), PEG insert/remove events** → put as entries under **`ניתוחים באשפוז`** in the discharge with the date.
+- **Peripheral IV (`עירוי פריפרי`) → SKIP.** Routine, not clinically tracked, gets stripped from final discharge.
+- If a tube was placed before this admission and is still in place (e.g., chronic PEG, suprapubic catheter), it goes under `ניתוחים בעבר`, not `ניתוחים באשפוז`.
 
----
+### 2. Red spiral icon
+Pressure ulcer present. If active during this admission:
+- Add to `אבחנות פעילות` if it required active management (debridement, dressings, consult)
+- Surface in `# תפקוד` block of `מהלך ודיון`
+- Add to המלצות בשחרור: pressure-relief schedule, dressing protocol, follow-up plan
 
-## 2. The numeric strip (top-center) — labeled, not positional
+### 3. Wheelchair icon
+Disabled / wheelchair-bound. Reflect in:
+- `הצגת החולה` ("מתגוררת בבית עם מטפלת, מרותקת לכיסא גלגלים")
+- `תפקוד` section ("עזרה מלאה במעברים, ניידות בכיסא גלגלים")
 
-Next to the patient card there is a small numbers grid that shows current observations. Each number has a **Hebrew label** next to it. Read by label, never by position.
+## Order-grid → discharge med rec
 
-Labels you will see (these look alike at a glance — do not confuse):
+When using the order-grid (§7) to reconstruct the discharge medication list, the canonical formula is:
 
-| Hebrew label | Meaning | Typical unit |
-|---|---|---|
-| גיל | age | years |
-| משקל | weight | kg |
-| חום | temperature | °C |
-| ל"ד / לחץ דם | blood pressure | mmHg (X/Y) |
-| דופק | heart rate | bpm |
-| סטורציה | SpO₂ | % |
-| BMI | BMI | kg/m² |
+> **Home meds list** = (gray + struck + 🔵 rows representing pre-admission regimen) ∪ (black, no-strike rows started in admission and intended to continue)
 
-Critical pairs that get confused:
-- **גיל (age) ≠ משקל (weight).** A 92-year-old patient weighing 62 kg will show `גיל: 92` and `משקל: 62.00`. Returning `age: 62` in that case is a wrong-patient-age error.
-- **דופק (pulse) ≠ חום (temp).** Pulse is usually 50–110; temp is 35.5–39.5.
-
-When the image is a phone photo of a monitor and a label is not sharp, do **not** guess the field from the number's magnitude — return the field as unread rather than filling it from a plausibly-sized number.
-
----
-
-## 3. Ward list grid (the patient census)
-
-When the photo shows a many-row table, that's the department list, not one patient. Columns left-to-right (RTL: right-to-left visually):
-
-1. `מס'` — line number
-2. `מ` — ventilation indicator (check = on ventilator / BIPAP)
-3. `חדר` — room number (first digit = floor)
-4. `מיטה` — bed
-5. `שם משפחה` — surname
-6. `שם פרטי` — given name
-7. `ת.ז.` — 9-digit Israeli ID
-8. `גיל` — age
-9. `מין` — sex
-10. `מס' אשפוז` — admission number
-11. Diagnosis column — **red text = isolation precaution**
-12. `ב.בוקר` / `י.טלפוני` — morning/telephonic rounds checkmarks
-13. Blood-bank chip — **green = valid crossmatch · purple = type known · yellow = 4–7 days**
-14. Signature chips — **blue pen = unsigned admission · green circle = unsigned shift summary**
-
-If the image is a ward list, multiple patients are present; do not conflate rows. If a specific row is highlighted/selected, treat that row as the patient in focus.
-
----
-
-## 4. Consult/visit history panel (left pane, many views)
-
-Left pane shows prior doctor visits as rows: date, doctor name, discipline. These rows are **history**, not the current note; do not read doctor names or dates from here as patient fields.
-
----
-
-## 5. When to return a field, when to omit
-
-This extractor's output goes directly into a clinical note. An omitted field shows a blank that the doctor fills; a wrong field becomes a wrong-patient note. Bias toward omission.
-
-- Return `name` only if the patient card's `שם מטופל` line is clearly readable.
-- Return `teudatZehut` only if it's a 9-digit number. A string starting with `p` is a patient code, not a ת.ז.
-- Return `age` only if the `גיל` label is visible next to it. If only an unlabeled number is visible, return nothing.
-- Return `sex` only from the patient card's `נקבה/זכר` line OR from an unambiguous given-name signal. Do NOT infer sex from the doctor's name in the title bar.
-- Return `chiefComplaint`, `pmh`, `meds`, `labs` from the main content panes only, never from the title bar.
-
-Confidence labels (which the extractor emits only for `name`/`teudatZehut`/`age`):
-- `high` — patient card clearly visible and sharp, all three identifiers legible.
-- `med` — card visible but one identifier blurry or partially occluded.
-- `low` — card not fully visible OR fields are being inferred from surrounding context.
-
-If you can't assess, omit the confidence key entirely. Do not mark `high` just because a number is present.
+Each membership decision is a clinical judgment, not a UI artifact. Specifically:
+- A struck-out row with 🔵 (course completed) **does not necessarily** belong on the discharge list — it might have been a one-off (Ceftriaxone for CAP, NaCl bolus, etc.) that was supposed to end.
+- A black no-strike row added in admission **does not necessarily** belong on the discharge list either — some are bridges (e.g., therapeutic Enoxaparin during AC hold) that should stop on discharge.
+- Always verify the AC story explicitly when there's an Apixaban → HOLD → Enoxaparin sequence (see §7.6 workflow).

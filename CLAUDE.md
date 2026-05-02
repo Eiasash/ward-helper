@@ -62,13 +62,28 @@ mark ready when green, merge via squash. Branch protection enforces this.
 
 Client-only React + TS + Vite. No server owned by this app. Static bundle deployed to GitHub Pages at `/ward-helper/`. Claude accessed via the Toranot proxy (`toranot.netlify.app/api/claude`, shared secret header). Supabase client called direct from browser for ciphertext-only blob storage.
 
-Four SZMC skills bundled as static markdown in `public/skills/`:
-- `azma-ui` — AZMA EMR interface reference (extract turn)
-- `szmc-clinical-notes` — admission / discharge / consult format (emit turn for types 1-3)
+Five SZMC skills bundled as static markdown / JSON in `public/skills/`:
+- `azma-ui` (R4) — AZMA EMR interface reference (extract + census turns). Includes:
+  - `SKILL.md` (5.7 KB) — skill manifest with trigger phrases for the order grid + 7-icon legend
+  - `AZMA_REFERENCE.md` (21.4 KB) — column-by-column reference for the patient-list grid (1-21), color codes, the §7 4-axis read for the medication-orders grid, manifest-grade quiz answers
+  - `azma_reference.json` (43.9 KB) — structured lookup with `manifestEvidence` + `provenance` per quiz answer
+- `szmc-clinical-notes` — admission / discharge / consult format (emit turn for those 3 types)
 - `szmc-interesting-cases` — case conference format (emit turn for type 4)
 - `hebrew-medical-glossary` — bidi + Hebrew medical terminology (every turn)
+- `geriatrics-knowledge` — clinical reasoning corpus: STOPP/START, Beers, AKI/CKD dosing, capacity law (ייפוי כוח מתמשך / מקבל החלטות זמני), driving fitness, antibiotic selection. Loaded into the emit turn for admission/discharge/consult.
 
-`scripts/sync-skills.mjs` copies the full skill directory from `~/.claude/skills/<n>/` at prebuild time. Override source with `SKILL_SOURCE` env var.
+`scripts/sync-skills.mjs` copies skills from `~/.claude/skills/<n>/` at prebuild time using a per-skill file whitelist (defined in the script + mirrored in `src/skills/loader.ts` `SKILL_FILES`). Decorative / verification-only files in the source dir (e.g. azma-ui's `slide_art/` directory of decorative slide backgrounds, `manifest.json`'s 198 KB SCORM source) are intentionally excluded from the bundle. Override source with `SKILL_SOURCE` env var.
+
+### Sync flow with claude.ai web project skills
+
+When you update a skill in your claude.ai project and want ward-helper to pick it up:
+
+1. Re-download the `.skill` ZIP from claude.ai (or extract one from a packaged drop, e.g. `E:\Downloads\<name>.skill`)
+2. Extract into `~/.claude/skills/<name>/` (overwriting the old version). For multi-file bundles like azma-ui R4, the source folder will contain SKILL.md + companion files; ward-helper's whitelist only takes the runtime-relevant ones.
+3. `cd ward-helper && npm run build` → `scripts/sync-skills.mjs` runs as prebuild and copies the source-of-truth into `public/skills/`. Per-file text patches (e.g. swapping out `project_knowledge_search` references for `geriatrics-knowledge` since that tool isn't in the runtime) are applied in the same pass.
+4. `git push` → GitHub Pages auto-deploy → next clinical session sees the new skill.
+
+Adding a NEW skill: add an entry to `SKILL_FILES` in BOTH `scripts/sync-skills.mjs` and `src/skills/loader.ts`, plus extend the `SkillName` type. If the skill needs runtime adjustments (instructions for non-runtime tools), add an entry to `SKILL_PATCHES` in sync-skills.mjs.
 
 ## Bidi (mixed Hebrew / English)
 

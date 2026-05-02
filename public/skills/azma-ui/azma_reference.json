@@ -1,0 +1,958 @@
+{
+  "$schema": "https://eiasash.github.io/schemas/azma_reference.v4.json",
+  "version": "4.0.0",
+  "revisedUtc": "2026-05-02",
+  "meta": {
+    "source": "SZMC AZMA familiarization e-learning (Articulate Storyline 3.5 SCORM, projectId 66MVezv2vF7) + clinical observation of the live medication-orders grid + Eias's canonical icon-legend table",
+    "courseFile": "familiaritywithazma",
+    "blossomAssignment": 79,
+    "language": "he-IL",
+    "rtl": true,
+    "summary": "AZMA is SZMC's central inpatient EMR aggregating inpatient, maternity, and ambulatory records, plus Ofek/Eitan, lab, imaging (PACS), medical devices, and BI feeds."
+  },
+  "interfaces": [
+    "תיק מטופל באשפוז",
+    "תיק יולדת בחדרי לידה",
+    "תיק מטופל אמבולטורי",
+    "Ofek / Eitan (cross-institutional records)",
+    "מעבדות (lab feed)",
+    "מערך הדימות (imaging / PACS)",
+    "מכשור רפואי (monitors, gluco-check, BP cuffs)",
+    "BI reports"
+  ],
+  "access": {
+    "steps": [
+      "Fill the request form from the HR welcome packet (include mobile number for callback).",
+      "Submit the form and have your department head (הממונה / מנהל מחלקה) sign it.",
+      "HR forwards to IT (אגף מערכות מידע); IT calls you with login credentials after provisioning."
+    ],
+    "loginUsernameFormat": "P + first 5 digits of employee number",
+    "loginButtonHe": "אשר",
+    "support": {
+      "phone": "02-6555990",
+      "extensions": [
+        "2",
+        "5"
+      ],
+      "hours": "24/7"
+    }
+  },
+  "deptMgmt": {
+    "toolbar": [
+      {
+        "n": 1,
+        "labelHe": "ניהול מחלקה",
+        "meaning": "Patient census of your primary ward; can switch to any other ward you're authorized for."
+      },
+      {
+        "n": 2,
+        "labelHe": "תיק מטופל",
+        "meaning": "Full hospital-wide patient chart: tests, visits, imaging, institutes, etc."
+      },
+      {
+        "n": 3,
+        "labelHe": "דוחות ניתוח (למנתחים)",
+        "meaning": "Surgeon-only: write operative notes."
+      },
+      {
+        "n": 4,
+        "labelHe": "inbox",
+        "meaning": "Abnormal/critical lab results AND unsigned reports."
+      },
+      {
+        "n": 5,
+        "labelHe": "נעילת מסך",
+        "meaning": "Lock screen; on return you land back where you were. Use at end of every session."
+      },
+      {
+        "n": 6,
+        "labelHe": "כפתור יציאה",
+        "meaning": "Exit the system."
+      }
+    ],
+    "patientList": {
+      "columns": [
+        {
+          "n": 1,
+          "labelHe": "מחלקה",
+          "meaning": "Department's patient roster.",
+          "doubleClick": null
+        },
+        {
+          "n": 2,
+          "labelHe": "חיידק עמיד",
+          "meaning": "Flag: patient has a resistant organism.",
+          "doubleClick": "Open window with details of the organism and isolation info."
+        },
+        {
+          "n": 3,
+          "labelHe": "(antibiotic icon)",
+          "meaning": "Antibiotic order requiring Infection Control approval.",
+          "doubleClick": null
+        },
+        {
+          "n": 4,
+          "labelHe": "case manager",
+          "meaning": "The attending (senior physician) responsible for the patient.",
+          "doubleClick": null
+        },
+        {
+          "n": 5,
+          "labelHe": "צד",
+          "meaning": "Internal division (side) of the ward.",
+          "doubleClick": null
+        },
+        {
+          "n": 6,
+          "labelHe": "חדר",
+          "meaning": "Room number. First digit = floor.",
+          "doubleClick": null
+        },
+        {
+          "n": 7,
+          "labelHe": "(bottom bar)",
+          "meaning": "Ward status: # admitted, free beds, waiting for bed assignment.",
+          "doubleClick": null
+        },
+        {
+          "n": 8,
+          "labelHe": "גיל",
+          "meaning": "Patient's age.",
+          "doubleClick": "Order tests."
+        },
+        {
+          "n": 9,
+          "labelHe": "אבחנה",
+          "meaning": "Primary diagnosis from the admission note. Red text = isolation.",
+          "doubleClick": "On a red diagnosis: open isolation details window."
+        },
+        {
+          "n": 10,
+          "labelHe": "מ (vent status)",
+          "meaning": "Mechanical ventilation status.",
+          "doubleClick": null
+        },
+        {
+          "n": 11,
+          "labelHe": "דם",
+          "meaning": "Blood type.",
+          "doubleClick": null
+        },
+        {
+          "n": 12,
+          "labelHe": "מספר (blood bank units)",
+          "meaning": "Number of blood units available; color coded — green = valid sample, units issuable; purple = patient known to blood bank; yellow = sample is 4–7 days old.",
+          "doubleClick": null
+        },
+        {
+          "n": 13,
+          "labelHe": "בדיקות",
+          "meaning": "Tests ordered for this patient.",
+          "doubleClick": "Open order-tests screen."
+        },
+        {
+          "n": 14,
+          "labelHe": "יעוץ",
+          "meaning": "Consults ordered for this patient.",
+          "doubleClick": "Open order-consult screen."
+        },
+        {
+          "n": 15,
+          "labelHe": "רפואי — קבלה",
+          "meaning": "Medical-admission status. States: done-and-signed, done-but-unsigned (blue pen), not done.",
+          "doubleClick": null
+        },
+        {
+          "n": 16,
+          "labelHe": "רפואי — ביקור",
+          "meaning": "Flags absence of the daily morning round.",
+          "doubleClick": null
+        },
+        {
+          "n": 17,
+          "labelHe": "רפואי — סיכום",
+          "meaning": "Discharge summary; only visible once one is started. States: written-but-unsigned, no signed summary yet.",
+          "doubleClick": null
+        },
+        {
+          "n": 18,
+          "labelHe": "סיעוד — קבלה סיעודית",
+          "meaning": "Nursing-admission status: not done / done-unsigned / done-signed.",
+          "doubleClick": null
+        },
+        {
+          "n": 19,
+          "labelHe": "סיעוד — מעקב",
+          "meaning": "Nursing handoff. Green circle 2h before shift-end = no signed shift summary yet.",
+          "doubleClick": null
+        },
+        {
+          "n": 20,
+          "labelHe": "סיעוד — חדש",
+          "meaning": "New physician order the nurse hasn't yet extracted/actioned.",
+          "doubleClick": "Hover (not click) to reveal the specific order list."
+        },
+        {
+          "n": 21,
+          "labelHe": "סיעוד — איחור",
+          "meaning": "Bell icon reminding nurses of overdue tasks.",
+          "doubleClick": null
+        }
+      ],
+      "extras": [
+        {
+          "labelHe": "רקע",
+          "meaning": "Social-work involvement: red = current admission, gray = prior admissions."
+        },
+        {
+          "labelHe": "תנועה אחרונה",
+          "meaning": "Patient's admission date to this ward."
+        }
+      ]
+    },
+    "globalIcons": [
+      {
+        "labelHe": "חץ ירוק (green arrow)",
+        "action": "Refresh — fetch new data after changing a filter/query."
+      },
+      {
+        "labelHe": "מדפסת",
+        "action": "Print."
+      },
+      {
+        "labelHe": "חדש (new)",
+        "action": "Open a new row / field / window."
+      },
+      {
+        "labelHe": "מחק (delete)",
+        "action": "Cancel/delete current row / field / window."
+      },
+      {
+        "labelHe": "יציאה (exit)",
+        "action": "Close the current window."
+      },
+      {
+        "labelHe": "זכוכית מגדלת (magnifier)",
+        "action": "Search / lookup."
+      },
+      {
+        "labelHe": "שמירה (save)",
+        "action": "Save data."
+      },
+      {
+        "labelHe": "תיק אשפוז",
+        "action": "Open the inpatient chart. Shortcut: double-click the patient's name in the grid."
+      },
+      {
+        "labelHe": "קליק שמאלי בשדה טקסט",
+        "action": "Open the templates window for that field."
+      },
+      {
+        "labelHe": "תפריט המבורגר",
+        "action": "Topic / chapter menu."
+      }
+    ]
+  },
+  "colorCodes": [
+    {
+      "where": "diagnosis text",
+      "color": "red",
+      "meaning": "Patient is on isolation. Double-click → isolation window."
+    },
+    {
+      "where": "admission column (col 15) pen",
+      "color": "blue",
+      "meaning": "Admission started but not signed (unsigned-admission indicator). Verified — see quiz[4]."
+    },
+    {
+      "where": "nursing follow-up (col 19)",
+      "color": "green-circle",
+      "meaning": "Appears 2h before shift-end. No signed shift summary exists yet."
+    },
+    {
+      "where": "blood bank 'מספר' column (col 12)",
+      "color": "green",
+      "meaning": "Sample is valid; units issuable."
+    },
+    {
+      "where": "blood bank 'מספר' column (col 12)",
+      "color": "purple",
+      "meaning": "Patient is known to the blood bank."
+    },
+    {
+      "where": "blood bank 'מספר' column (col 12)",
+      "color": "yellow",
+      "meaning": "Sample is 4–7 days old."
+    },
+    {
+      "where": "'רקע' column",
+      "color": "red",
+      "meaning": "Social work involved in the current admission."
+    },
+    {
+      "where": "'רקע' column",
+      "color": "gray",
+      "meaning": "Social work involved in prior admissions."
+    }
+  ],
+  "medGridRowStates": {
+    "_note": "הוראות תרופתיות + נזלים + לוינים-ונקזים. Read 4 axes orthogonally; misreading any one flips clinical meaning. Sourced from Eias's clinical observation 2026-05-02 + canonical icon legend table.",
+    "axes": {
+      "1_textColor": {
+        "axis": "Medication-name text color",
+        "values": {
+          "black": "New / current order — active in the present admission.",
+          "gray": "Old / historical order — audit-trail entry from earlier in this admission or a prior period."
+        }
+      },
+      "2_strikethrough": {
+        "axis": "Strikethrough (blue line cutting through the row)",
+        "values": {
+          "absent": "Order is still in force.",
+          "present": "Order is FINISHED — its prescription period has ended (ran its course, was cancelled, or was replaced by a new order). Past tense — NOT 'currently held'."
+        },
+        "warning": "Strikethrough always cuts both the medication name and the dose/freq columns. Do not confuse with the row-selection blue border (which only outlines the row)."
+      },
+      "3_rowIcons": {
+        "axis": "Row icon strip (canonical 7-icon legend)",
+        "icons": [
+          {
+            "key": "pen",
+            "glyph": "🖊",
+            "meaning": "Order written by physician, nurse has NOT yet given today's dose (or new order awaiting first administration).",
+            "category": "administration-status"
+          },
+          {
+            "key": "redCircle",
+            "glyph": "🔴",
+            "meaning": "Dose GIVEN by nurse today (administration confirmed). For non-medication items (Foley, peripheral IV, diet) this means action performed / device in place.",
+            "category": "administration-status"
+          },
+          {
+            "key": "blueCircle",
+            "glyph": "🔵",
+            "meaning": "Order FINISHED / course completed — naturally ended, all doses given, or superseded. Typically appears on struck-through rows.",
+            "category": "administration-status"
+          },
+          {
+            "key": "blueInfo",
+            "glyph": "ℹ️",
+            "meaning": "Linked instructions (typically the insulin sliding-scale protocol or an Rx note). Click to view.",
+            "category": "context"
+          },
+          {
+            "key": "rxClipboard",
+            "glyph": "📋",
+            "meaning": "Prescription / protocol attached to this order (e.g., antibiotic protocol). Distinct from blueInfo — this is the formal prescription document.",
+            "category": "context"
+          },
+          {
+            "key": "redSpeechBubble",
+            "glyph": "💬",
+            "color": "red",
+            "meaning": "Active nurse comment on this row — read it on round (administration timing, patient response, observed issue, etc.).",
+            "category": "comment"
+          },
+          {
+            "key": "greySpeechBubble",
+            "glyph": "💬",
+            "color": "grey",
+            "meaning": "Empty comment slot — nurse has logged nothing on this row.",
+            "category": "comment"
+          }
+        ],
+        "completenessWarning": "Source canonical table showed 7 icons with a 'more below' scroll arrow. Additional icons may exist — confirm with Eias if a screenshot shows an icon outside this set."
+      },
+      "4_viewFilter": {
+        "axis": "View filter at top of grid (הצג הוראות)",
+        "values": {
+          "בתוקף": "Default — hides strikethrough/finished rows. Shows only active orders.",
+          "הכל": "Shows the full audit log including finished / replaced / superseded orders. Use to reconstruct what's been given through this admission."
+        }
+      }
+    },
+    "practical3x3": {
+      "_note": "When filter='הכל', the most clinically useful read is textColor×strikethrough × administrationIcon (3 admin states: pen / redCircle / blueCircle).",
+      "blackNoStrike_pen": "Active order, dose still due today.",
+      "blackNoStrike_redCircle": "Active order, dose already given today.",
+      "blackNoStrike_blueCircle": "(Rare) Active order in the process of completing — verify there's no replacement order.",
+      "grayStrike_pen": "(Rare) Historical pending — old draft never administered.",
+      "grayStrike_redCircle": "Historical, was administered. Audit-log entry documenting prior nursing administration.",
+      "grayStrike_blueCircle": "Historical, course completed. The typical retired-order signature."
+    },
+    "ambiguities": [
+      "Strikethrough on a black-text row = order finished within the current view-day. Confirm by looking for a black non-struck replacement order in the rows below.",
+      "Selection-row blue border (row highlight on click) is NOT strikethrough."
+    ],
+    "workflows": {
+      "morningRound": "Scan 🖊 rows → 'what's still pending for today.' Scan 🔴 rows on this morning's date → 'what's already on board.' For each row also scan the speech-bubble icon — 💬red rows have a nursing comment worth reading.",
+      "anticoagulationStory": "Flip filter to הכל. Read all AC rows top-to-bottom. Black/no-strike = current AC; gray+strike+🔵 = course completed (deliberate transition); gray+strike+🔴 = was administered then ended.",
+      "dischargeMedRec": "Home-meds list = (gray+struck+🔵 rows representing pre-admission regimen) ∪ (black, no-strike rows started in admission and intended to continue). Each membership decision is a clinical judgment, not a UI artifact.",
+      "insulinSlidingScaleLookup": "Find insulin row → click ℹ️ blue info → read linked sliding-scale protocol.",
+      "antibioticProtocolVerification": "Find antibiotic row → click 📋 Rx clipboard → review attached prescription/protocol document."
+    }
+  },
+  "quiz": [
+    {
+      "n": 1,
+      "questionHe": "מה המשמעות של אבחנה המסומנת בצבע אדום?",
+      "options": [
+        "מציג תוצאות של חיידק עמיד",
+        "מציג מעורבות של עובדת סוציאלית מעורבת בתיק",
+        "ממתין לביצוע משימה",
+        "מעיד על בידוד - בלחיצה כפולה מוצג חלון בידוד"
+      ],
+      "correctIndex": 3,
+      "correctHe": "מעיד על בידוד - בלחיצה כפולה מוצג חלון בידוד",
+      "type": "single-choice",
+      "manifestEvidence": {
+        "interactionId": "69QN0fmRaw3",
+        "correctChoiceId": "choice_6BQ9pqhHktb",
+        "lmstext": "מעיד על בידוד - בלחיצה כפולה מוצג חלון בידוד",
+        "marker": "status: correct, points: 10"
+      },
+      "feedbackRevealerEvidence": "JSON wrong-feedback string = 'לא נכון\\nמעיד על בידוד...' — convention-confirmed.",
+      "provenance": "manifest-grade"
+    },
+    {
+      "n": 2,
+      "questionHe": "מהי המשמעות של העמודה \"מ\"?",
+      "options": [
+        "מציג סטטוס מעקב רפואי",
+        "מציג תוצאות מעבדה",
+        "מציג סוג דם של חולה",
+        "מציג סטטוס חולה מונשם"
+      ],
+      "correctIndex": 3,
+      "correctHe": "מציג סטטוס חולה מונשם",
+      "type": "single-choice",
+      "manifestEvidence": {
+        "interactionId": "5pxqeRCXm84",
+        "correctChoiceId": "choice_5matUQID1Cs",
+        "lmstext": "מציג סטטוס חולה מונשם",
+        "marker": "status: correct, points: 10"
+      },
+      "feedbackRevealerEvidence": "JSON wrong-feedback string = 'לא נכון\\nמציג סטטוס חולה מונשם' — convention-confirmed.",
+      "provenance": "manifest-grade"
+    },
+    {
+      "n": 3,
+      "questionHe": "לחץ על האזור בצילום המסך שלפניך בו ניתן למצוא מטופלים ששהו במחלקה בעבר.",
+      "options": null,
+      "correctIndex": null,
+      "correctHe": "Ward-selector dropdown (also exposes past patients alongside current census).",
+      "type": "hotspot",
+      "manifestEvidence": null,
+      "feedbackRevealerEvidence": "Generic 'לא נכון' — no answer reveal in feedback.",
+      "provenance": "course-content-only (hotspot coordinates not extractable from this bundle)"
+    },
+    {
+      "n": 4,
+      "questionHe": "על איזה אייקון תלחץ לחיצה כפולה לקבלת מידע על סוג ומהות חיידק עמיד?",
+      "options": [
+        "Picture 10",
+        "Picture 13",
+        "Picture 14",
+        "Picture 15"
+      ],
+      "correctIndex": 1,
+      "correctHe": "Picture 13 — the 'חיידק עמיד' column icon (column 2).",
+      "type": "picture-pick",
+      "manifestEvidence": {
+        "interactionId": "6j5rpBF44eW",
+        "correctChoiceId": "choice_6ZECgvVmdpT",
+        "lmstext": "Picture 13",
+        "marker": "status: correct, points: 10"
+      },
+      "feedbackRevealerEvidence": null,
+      "semanticMapping": "Picture 13 → 'חיידק עמיד' column icon. Cross-reference: slide-content extract Scene 1 / Slide 7 — 'חיידק עמיד - מעיד על הימצאות חיידק עמיד אצל מטופל. בלחיצה כפולה יוצג חלון מידע.'",
+      "provenance": "manifest-grade for picture identity; semantic mapping by slide-content cross-reference"
+    },
+    {
+      "n": 5,
+      "questionHe": "איזה חיווי יופיע כאשר יש קבלה רפואית שאינה חתומה?",
+      "options": [
+        "Picture 5 / עט אדום",
+        "Picture 6 / עט ירוק",
+        "Picture 7 / עט כחול",
+        "Picture 8 / ללא סימון"
+      ],
+      "correctIndex": 2,
+      "correctHe": "Picture 7 — inferred to be 'עט כחול' (blue pen) by DOM-order convention.",
+      "type": "picture-pick",
+      "manifestEvidence": {
+        "interactionId": "6nXp9KUYDZU",
+        "correctChoiceId": "choice_5pqStZzuY19",
+        "lmstext": "Picture 7",
+        "marker": "status: correct, points: 10"
+      },
+      "feedbackRevealerEvidence": "JSON wrong-feedback string = 'לא נכון\\nעט כחול' — convention yields blue pen as the correct answer.",
+      "semanticMapping": "Picture 7 → 'עט כחול' (blue pen) by Storyline DOM-order convention (3rd of 4 pictures matches 3rd of 4 captions). Corroborated by feedback-revealer convention.",
+      "caveat": "Definitive picture→caption mapping requires the rendered slide JS (6LAZnfEUaB4.js, in the source SCORM zip but not in the asset bundle) or a live screenshot of the Q5 slide. Currently rests on manifest + DOM-order + feedback-revealer triangulation.",
+      "provenance": "manifest-grade for picture identity; blue-pen mapping by triangulation"
+    }
+  ],
+  "iconDischargeMapping": {
+    "_note": "From azma-ui SKILL.md — when decoding a patient row, these icons drive specific content in the discharge note (szmc-clinical-notes skill).",
+    "tubeCatheter": {
+      "appearance": "T-shaped icon, leftmost in icon cluster",
+      "hover": "Reveals event log with insertion/removal dates per device (e.g., '22/04 PEG', '24/04 NGT', '25/04 Foley', '27/04 עירוי פריפרי').",
+      "dischargeRules": [
+        "NGT, urinary catheter (Foley), PEG insert/remove events → list under 'ניתוחים באשפוז' with the date.",
+        "Peripheral IV ('עירוי פריפרי') → SKIP. Routine, gets stripped from final discharge.",
+        "If a tube was placed before this admission and is still in place (e.g., chronic PEG, suprapubic catheter) → 'ניתוחים בעבר', not 'ניתוחים באשפוז'."
+      ]
+    },
+    "redSpiral": {
+      "appearance": "Red spiral icon",
+      "meaning": "Pressure ulcer present.",
+      "dischargeRules": [
+        "Add to 'אבחנות פעילות' if it required active management (debridement, dressings, consult).",
+        "Surface in '# תפקוד' block of 'מהלך ודיון'.",
+        "Add to המלצות בשחרור: pressure-relief schedule, dressing protocol, follow-up plan."
+      ]
+    },
+    "wheelchair": {
+      "appearance": "Wheelchair icon",
+      "meaning": "Disabled / wheelchair-bound.",
+      "dischargeRules": [
+        "Reflect in 'הצגת החולה' (e.g., 'מתגוררת בבית עם מטפלת, מרותקת לכיסא גלגלים').",
+        "Reflect in 'תפקוד' section (e.g., 'עזרה מלאה במעברים, ניידות בכיסא גלגלים')."
+      ]
+    }
+  },
+  "feedbackConvention": {
+    "_note": "Decoded from the source JSON 2026-05-02. Shared across all single-choice quiz items in this course. Kept as a fallback evidence layer; manifest is the canonical source.",
+    "pattern": "לא נכון\\n<correct answer text>",
+    "interpretation": "Wrong-answer feedback string contains the correct answer (Storyline 'wrong-revealer' pattern). To extract correct answer for any single-choice item: parse wrong-feedback for substring after leading 'לא נכון\\n'.",
+    "verifiedAgainst": [
+      "Q1 (isolation, manifest match)",
+      "Q2 (ventilation, manifest match)"
+    ],
+    "appliedTo": [
+      "Q5 (blue pen, also corroborated by manifest Picture 7 + DOM-order)"
+    ]
+  },
+  "_source": {
+    "format": "Original Storyline scene/slide content extraction. Preserved verbatim for audit/traceability.",
+    "warnings": [
+      "Several content rows are truncated mid-sentence in the original extraction (e.g., scene 1 slide 9 col-12 ends at 'צהו', slide 10 multiple rows end mid-string). Authoritative meanings are in the structured fields above; do not re-derive from `_source.scenes` alone.",
+      "Scene 1 slides 13, 15, 16 are empty in the extraction ('(script not captured)') — likely interactive widgets where content lives in slide variables / states.",
+      "The Storyline source covers the patient-list grid (toolbar/columns/colorCodes/quiz). The medGridRowStates section was added in R3+ from clinical observation of the live AZMA medication grid — not in the e-learning course. The 7-icon legend in R4 was supplied by Eias 2026-05-02.",
+      "The 20 PNGs sometimes referenced as 'slide screenshots' or 'EMR screen captures' are slide-background ART (logo, stock photos, geometric decorations, a few unrelated EMR-adjacent dialogs) — NOT AZMA EMR screen captures. The actual EMR screens shown in the course are composited inside slide JS files in the source SCORM zip, not exported as standalone PNGs. R1 docs incorrectly described these as 'EMR screenshots'."
+    ],
+    "scenes": {
+      "1": [
+        {
+          "slide": 1,
+          "id": "5zAkcBP9qEN",
+          "label": "Opening",
+          "title": null,
+          "content": [
+            "הכרת מערכת AZMA"
+          ]
+        },
+        {
+          "slide": 2,
+          "id": "647yPrEqLUA",
+          "label": "How we'll learn",
+          "title": null,
+          "content": [
+            "איך נלמד?",
+            "בלומדה זאת תלמד באמצעות הסברים, תמונות ושאלות.\n\n\n\nההנחיות מנוסחות בלשון זכר \nאך מיועדות לנשים וגברים כאחד.",
+            "בוא והכר את הלחצנים שיעזרו לך להתקדם בלומדה:",
+            "*עבור על האייקונים עם העכבר",
+            "קדימה ואחורה",
+            "סרגל התקדמות",
+            "זכוכית\nמגדלת",
+            "בדיקת תשובה",
+            "תפריט נושאים"
+          ]
+        },
+        {
+          "slide": 3,
+          "id": "5Xn2m3rWMpf",
+          "label": "Intro to AZMA",
+          "title": null,
+          "content": [
+            "לומדה זו היא הראשונה מבין מספר לומדות והדרכות  \nבהן תכיר את מערכת AZMA לניהול התיק הרפואי. \r\nמיד תצלול פנימה להיכרות עם המערכת."
+          ]
+        },
+        {
+          "slide": 4,
+          "id": "5XGPzPUpC68",
+          "label": "Table of contents",
+          "title": "תוכן \nעניינים",
+          "content": [
+            "תוכן \nעניינים",
+            "היכרות עם מערכת AZMA",
+            "קבלת הרשאות",
+            "כניסה למערכת",
+            "ניהול מחלקה",
+            "אייקונים עיקריים במערכת",
+            "תרגול",
+            "היכרות מערכת AZMA"
+          ]
+        },
+        {
+          "slide": 5,
+          "id": "63PVg3KuTex",
+          "label": "How to get system access (permissions)",
+          "title": null,
+          "content": [
+            "קבלת גישה למערכת ",
+            "עבור על המלל כדי לראות \nאת ההסבר",
+            "שלב 1",
+            "עליך למלא את טופס הבקשה המופיע בערכת הקליטה שקיבלת\n ממשאבי אנוש ביום קליטתך. חשוב למלא מספר נייד לחזרה.",
+            "שלב 2",
+            "      יש למלא את הטופס ולהחתים את הממונה (מנהל מחלקה)",
+            "שלב 3",
+            "הטופס יועבר ממשאבי אנוש לאגף מערכות מידע \nולאחר קליטתך במערכת יצרו אתך קשר טלפוני \nלקבלת פרטי הכניסה",
+            "היכרות מערכת AZMA",
+            "קבלת הרשאות",
+            "כניסה למערכת",
+            "ניהול מחלקה",
+            "אייקונים עיקריים במערכת",
+            "תרגול"
+          ]
+        },
+        {
+          "slide": 6,
+          "id": "5u9JhQnWLsY",
+          "label": "Dept mgmt — main toolbar (6 icons)",
+          "title": null,
+          "content": [
+            "ניהול מחלקה",
+            "סרגל כלים זה מכיל כניסה למסכי עבודה הנחוצים לך לעבודתך.\nבמסך זה מוצג מידע חשוב אודות המטופלים השוהים במחלקה, \rוכעת נפרט על כל אחד מהם:\nעבור עם העכבר על המספרים לחשיפת המידע.",
+            "ניהול מחלקה – המערכת מציגה את מצבת המטופלים במחלקה הראשית  בה אתה עובד. \nבנוסף ניתן לבחור מחלקה נוספת או אחרת מתוך רשימת המחלקות אליהן אתה מורשה להיכנס.",
+            " תיק מטופל – מציג את היסטוריית המידע על המטופל בבית החולים: בדיקות, ביקורים, צילומים מכונים ועוד",
+            "דוחות ניתוח עבור מנתחים – כניסה לכתיבת דוחות ניתוח ",
+            "inbox - מציג תוצאות חריגות מהמעבדות + דוחות שאינם חתומים במערכת",
+            "נעילת מסך – בסיום העבודה יש לנעול את המערכת, כך תחזור בקלות לאותו המקום ",
+            "  כפתור יציאה",
+            "היכרות מערכת AZMA",
+            "קבלת הרשאות",
+            "כניסה למערכת",
+            "אייקונים עיקריים במערכת",
+            "תרגול"
+          ]
+        },
+        {
+          "slide": 7,
+          "id": "6pXPI3Uacbc",
+          "label": "Dept patient list — cols 1-7",
+          "title": null,
+          "content": [
+            "ניהול מחלקה",
+            "במסך זה מוצג מידע חשוב אודות המטופלים השוהים במחלקה. \nכעת נפרט על כל אחד מהם.\n\nעבור עם העכבר על המספרים לחשיפת המידע",
+            "מחלקה -  מציג רשימה של מצבת המטופלים במחלקה",
+            "חיידק עמיד - מעיד על הימצאות חיידק עמיד אצל מטופל. \rבלחיצה כפולה יוצג חלון מידע ",
+            "        הזמנת אנטיביוטיקה המצריכה אישור היחידה למניעת זיהומים",
+            " - case managerהרופא הבכיר האחראי על המטופל",
+            "צד - חלוקה פנימית של המטופלים במחלקה",
+            "חדר - מספר החדר בו שוהה המטופל. ספרה ראשונה מייצגת את מספר הקומה",
+            "בתחתית המסך מוצגת מצבת המחלקה: מספר מאושפזים, מיטות פנויות \rוממתינים לשיבוץ",
+            "היכרות מערכת AZMA",
+            "קבלת הרשאות",
+            "כניסה למערכת",
+            "אייקונים עיקריים במערכת",
+            "תרגול"
+          ]
+        },
+        {
+          "slide": 8,
+          "id": "5W5iJZyjEHp",
+          "label": "Dept patient list — cols 8-9 (age, dx)",
+          "title": null,
+          "content": [
+            "ניהול מחלקה - המשך",
+            "\nעבור עם העכבר על המספרים לחשיפת המידע",
+            "  גיל - גיל המטופל. בלחיצה כפולה ניתן להזמין בדיקות (נלמד בהמשך כיצד)",
+            " אבחנה- מציגה את האבחנה הראשית מתוך הקבלה. אבחנה המופיעה באדום מעידה על בידוד. בלחיצה כפולה מוצג חלון בידוד.",
+            "היכרות מערכת AZMA",
+            "קבלת הרשאות",
+            "כניסה למערכת",
+            "ניהול מחלקה",
+            "אייקונים עיקריים במערכת",
+            "תרגול"
+          ]
+        },
+        {
+          "slide": 9,
+          "id": "5W3QOX6UcZx",
+          "label": "Dept patient list — cols 10-14 (vent, blood, tests, consult)",
+          "title": null,
+          "content": [
+            "ניהול מחלקה - המשך ",
+            "\nעבור עם העכבר על המספרים לחשיפת המידע",
+            "סטטוס הנשמה - האם המטופל מונשם",
+            "דם - סוג דמו של המטופל",
+            "מספר - מספר מנות הדם בבנק הדם. חיווי הצבעים:\n ירוק – דגימה בתוקף וניתן להנפיק מנות דם\n סגול  – המטופל מוכר בבנק הדם\n צהוב – דגימה בין 7-4 ימים",
+            "בדיקות - בדיקות שהוזמנו עבור המטופל. \nבלחיצה כפולה יפתח מסך להזמנת בדיקות.",
+            "יעוץ - יעוץ שהוזמן עבור המטופל. \rבלחיצה כפולה יופיע מסך להזמנת יעוצים.",
+            "היכרות מערכת AZMA",
+            "קבלת הרשאות",
+            "כניסה למערכת",
+            "ניהול מחלקה",
+            "אייקונים עיקריים במערכת",
+            "תרגול"
+          ]
+        },
+        {
+          "slide": 10,
+          "id": "6UUJsM969Pp",
+          "label": "Dept patient list — cols 15-21 (medical/nursing statuses)",
+          "title": null,
+          "content": [
+            "ניהול מחלקה - המשך",
+            "\nעבור עם העכבר על המספרים לחשיפת המידע",
+            "רפואי \nקבלה – סטטוס ביצוע קבלה רפואית למטופל:\n        – בוצעה קבלה\n        – בוצעה קבלה ולא נחתמה\n        – לא בוצעה קבלה",
+            "רפואי\nביקור - מסמן שלא בוצע ביקור בוקר יומי ",
+            "רפואי\nסיכום - מופיע רק במידה \nוהתחלת לכתוב סיכום אשפוז \n        –  נכתב סיכום ולא נחתם\n        -   לא קיים ביצוע סיכום אשפוז חתום",
+            "סיעוד\nקבלה סיעודית - ביצוע קבלה סיעודית למטופל\n        – לא בוצעה קבלה\n        – בוצעה קבלה ולא נחתמה\n        – בוצעה קבלה",
+            "סיעוד\nמעקב - שעתיים לפני סיום משמרת יופיע עיגול ירוק המסמן שאין סיכום משמרת חתום",
+            "סיעוד \nחדש - הוראה חדשה שנכתבה ע\"י הרופא, \nואחות טרם הוציאה אותה. \rבעמידה על האייקון הרלוונטי מוצג פירוט ההוראות",
+            "סיעוד \nאיחור - פעמון המתזכר את האחיות לבצע מטלות במועדן",
+            "רקע \nמציג מעורבות עובדת סוציאלית באשפוז\n אדום - מציג אשפוז נוכחי\n אפור - מציג אשפוזים קודמים",
+            "תנועה אחרונה - מציג את תאריך כניסת המטופל למחלקה",
+            "היכרות מערכת AZMA",
+            "קבלת הרשאות",
+            "כניסה למערכת",
+            "ניהול מחלקה",
+            "אייקונים עיקריים במערכת",
+            "תרגול"
+          ]
+        },
+        {
+          "slide": 11,
+          "id": "6is4DIMRne4",
+          "label": "Main system icons (toolbar icons reference)",
+          "title": null,
+          "content": [
+            "פעולה",
+            "הסבר",
+            "חץ ירוק",
+            "מדפסת",
+            "חדש",
+            "מחק",
+            "יציאה",
+            "קליק שמאלי בשדה טקסט",
+            "שמירה",
+            "תיק אשפוז ",
+            "כדי להיכנס לתיק המטופל יש ללחוץ קליק כפול על שם \rהמטופל או לחילופין ללחוץ על כפתור \"תיק אשפוז\"",
+            "שליפה של נתונים חדשים לאחר בקשת הגדרות",
+            "להדפסה",
+            "פתיחת שורה \\שדה\\חלון רלוונטי",
+            "ביטול שורה\\שדה\\חלון רלוונטי",
+            "יציאה מחלון נוכחי",
+            "פותח חלון תבניות",
+            "שמירת נתונים",
+            "אייקון",
+            "אייקונים  עיקריים במערכת",
+            "היכרות מערכת AZMA",
+            "קבלת הרשאות",
+            "כניסה למערכת",
+            "ניהול מחלקה",
+            "אייקונים עיקריים במערכת",
+            "תרגול"
+          ]
+        },
+        {
+          "slide": 12,
+          "id": "5eyEELuo5Lb",
+          "label": "AZMA interfaces overview",
+          "title": null,
+          "content": [
+            " תיק מטופל באשפוז",
+            "מערך הדימות- \nישנם ממשקים לתוצאות הדמייה PACS  ",
+            "תיק יולדת בחדרי לידה",
+            "תיק מטופל אמבולטורי",
+            "ממשק למערכות אופק/איתן- קישור לקבלת מידע רפואי \nעל המטופל ממקורות אחרים",
+            "מעבדות- ישנם ממשקים לתוצאות בדיקות מעבדה ",
+            "מכשור רפואי- ממשקים למוניטורים, גלוקוצ'ק, \nמדי לחץ דם ועוד",
+            "מערכת AZMA מאגדת בתוכה את כלל המידע על המטופל ",
+            "דוחות BI",
+            "היכרות מערכת AZMA",
+            "קבלת הרשאות",
+            "כניסה למערכת",
+            "ניהול מחלקה",
+            "אייקונים עיקריים במערכת",
+            "תרגול"
+          ]
+        },
+        {
+          "slide": 13,
+          "id": "6dGHc1QcN4l",
+          "label": "unknown (JS not captured)",
+          "title": "(script not captured)",
+          "content": []
+        },
+        {
+          "slide": 14,
+          "id": "6iyGK28HVzN",
+          "label": "Login to system",
+          "title": null,
+          "content": [
+            "כניסה למערכת",
+            "על שולחן העבודה קיים קיצור דרך למערכת\nבמסך שהתקבל יש להזין שם משתמש וסיסמה\nשם המשתמש יתחיל באות P ולאחריו חמש ספרות ראשונות של מספר העובד\nבסיום לחץ על \"אשר\" ",
+            "היכרות מערכת AZMA",
+            "קבלת הרשאות",
+            "ניהול מחלקה",
+            "אייקונים עיקריים במערכת",
+            "תרגול"
+          ]
+        },
+        {
+          "slide": 15,
+          "id": "5su02v4aMr0",
+          "label": "unknown (JS not captured)",
+          "title": "(script not captured)",
+          "content": []
+        },
+        {
+          "slide": 16,
+          "id": "6gN0v5HGGkR",
+          "label": "unknown (JS not captured)",
+          "title": "(script not captured)",
+          "content": []
+        }
+      ],
+      "2": [
+        {
+          "slide": 1,
+          "id": "5uEYzPuYAds",
+          "label": "Quiz: red diagnosis meaning",
+          "title": "מה המשמעות של אבחנה המסומנת בצבע אדום?",
+          "content": [
+            "בדוק",
+            "מציג תוצאות של חיידק עמיד",
+            "מציג מעורבות של עובדת סוציאלית מעורבת בתיק",
+            "ממתין לביצוע משימה",
+            "מעיד על בידוד - בלחיצה כפולה מוצג חלון בידוד",
+            "מה המשמעות של אבחנה המסומנת בצבע אדום?",
+            "! נכון",
+            "המשך",
+            "לא נכון\nמעיד על בידוד - בלחיצה כפולה מוצג חלון בידוד",
+            " לא נכון",
+            "נסה שנית",
+            "היכרות מערכת AZMA",
+            "קבלת הרשאות",
+            "כניסה למערכת",
+            "ניהול מחלקה",
+            "אייקונים עיקריים במערכת",
+            "תרגול"
+          ]
+        },
+        {
+          "slide": 2,
+          "id": "5VaavSMRkWw",
+          "label": "Quiz: \"מ\" column meaning",
+          "title": "מהי המשמעות של העמודה “מ”?",
+          "content": [
+            "בדוק",
+            "מציג סטטוס מעקב רפואי",
+            "מציג תוצאות מעבדה",
+            "מציג סוג דם של חולה",
+            "מציג סטטוס חולה מונשם",
+            "מהי המשמעות של העמודה “מ”?",
+            "! נכון",
+            "המשך",
+            "לא נכון\nמציג סטטוס חולה מונשם",
+            " לא נכון",
+            "נסה שנית",
+            "היכרות מערכת AZMA",
+            "קבלת הרשאות",
+            "כניסה למערכת",
+            "ניהול מחלקה",
+            "אייקונים עיקריים במערכת",
+            "תרגול"
+          ]
+        },
+        {
+          "slide": 3,
+          "id": "6m6TNJUe8rG",
+          "label": "Quiz: where to find past patients",
+          "title": "לחץ על האזור בצילום המסך שלפניך בו ניתן למצוא מטופלים \nששהו במחלקה בעבר",
+          "content": [
+            "לחץ על האזור בצילום המסך שלפניך בו ניתן למצוא מטופלים \nששהו במחלקה בעבר",
+            "! נכון",
+            "המשך",
+            " לא נכון",
+            "נסה שנית",
+            "לא נכון",
+            "היכרות מערכת AZMA",
+            "קבלת הרשאות",
+            "כניסה למערכת",
+            "ניהול מחלקה",
+            "אייקונים עיקריים במערכת",
+            "תרגול"
+          ]
+        },
+        {
+          "slide": 4,
+          "id": "6bNqI81GyK5",
+          "label": "Quiz: resistant bacteria icon",
+          "title": "על איזה אייקון תלחץ לחיצה כפולה לקבלת מידע על סוג ומהות חיידק עמיד?",
+          "content": [
+            "על איזה אייקון תלחץ לחיצה כפולה לקבלת מידע על סוג ומהות חיידק עמיד?",
+            "בדוק",
+            "! נכון",
+            "המשך",
+            "לא נכון\n",
+            " לא נכון",
+            "נסה שנית",
+            "היכרות מערכת AZMA",
+            "קבלת הרשאות",
+            "כניסה למערכת",
+            "ניהול מחלקה",
+            "אייקונים עיקריים במערכת",
+            "תרגול"
+          ]
+        },
+        {
+          "slide": 5,
+          "id": "6LAZnfEUaB4",
+          "label": "Quiz: unsigned admission indicator",
+          "title": "איזה חיווי יופיע כאשר יש קבלה רפואית שאינה חתומה?",
+          "content": [
+            "איזה חיווי יופיע כאשר יש קבלה רפואית שאינה חתומה?",
+            "בדוק",
+            "עט אדום",
+            "עט ירוק",
+            "עט כחול",
+            "ללא סימון",
+            "! נכון",
+            "המשך",
+            "לא נכון\nעט כחול",
+            " לא נכון",
+            "נסה שנית",
+            "היכרות מערכת AZMA",
+            "קבלת הרשאות",
+            "כניסה למערכת",
+            "ניהול מחלקה",
+            "אייקונים עיקריים במערכת",
+            "תרגול"
+          ]
+        },
+        {
+          "slide": 6,
+          "id": "6X0ORKnH8TU",
+          "label": "Closing — well done",
+          "title": null,
+          "content": [
+            "כל הכבוד!\nסיימת את לומדת ההיכרות עם מערכת AZMA.\n\nבכל שאלה ניתן לפנות למוקד התמיכה הטלפוני \nהפעיל 24 שעות ביממה בטלפון 02-6555990 שלוחה 2 או 5.\n\n"
+          ]
+        },
+        {
+          "slide": 7,
+          "id": "6Zetmh26prA",
+          "label": "End — finished",
+          "title": null,
+          "content": [
+            "סיימת \nאת הלומדה!"
+          ]
+        }
+      ]
+    }
+  }
+}
