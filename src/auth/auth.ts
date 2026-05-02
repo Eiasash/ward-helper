@@ -128,23 +128,55 @@ async function _rpc(fn: string, body: Record<string, unknown>): Promise<RpcResul
 
 // ───────────────────── auth actions (programmatic) ─────────────────────
 
+/**
+ * Server-side `auth_register_user` and `auth_login_user` return the success
+ * shape FLAT — `{ok: true, username, display_name}` — not nested under
+ * `user`. The RPCs are shared across Geri/IM/FM/ward-helper so we can't
+ * change the server shape without coordinating across all four apps.
+ *
+ * This normalizer wraps the flat shape into `{ok: true, user: {...}}` so
+ * the rest of the client (which type-checks against `RpcResult.user`) sees
+ * a consistent shape regardless of whether the RPC was updated to nest the
+ * fields. If the server ever does start returning nested, this is a no-op.
+ *
+ * Without this, every successful login/register silently fell through to
+ * the `errorMessage(undefined, undefined)` → bare 'שגיאה' branch — the
+ * server marked the user logged in (last_login updated) while the client
+ * never called setAuthSession. Bug observed 2026-05-02 across the entire
+ * auth history of the app.
+ */
+function normalizeUserShape(res: RpcResult & Record<string, unknown>): RpcResult {
+  if (res.ok && !res.user && typeof res.username === 'string') {
+    return {
+      ...res,
+      user: {
+        username: res.username,
+        display_name: typeof res.display_name === 'string' ? res.display_name : null,
+      },
+    };
+  }
+  return res;
+}
+
 export async function authRegister(
   username: string,
   password: string,
   displayName?: string | null,
 ): Promise<RpcResult> {
-  return _rpc('auth_register_user', {
+  const res = await _rpc('auth_register_user', {
     p_username: username,
     p_password: password,
     p_display_name: displayName ?? null,
   });
+  return normalizeUserShape(res as RpcResult & Record<string, unknown>);
 }
 
 export async function authLogin(username: string, password: string): Promise<RpcResult> {
-  return _rpc('auth_login_user', {
+  const res = await _rpc('auth_login_user', {
     p_username: username,
     p_password: password,
   });
+  return normalizeUserShape(res as RpcResult & Record<string, unknown>);
 }
 
 export async function authChangePassword(
