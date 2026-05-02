@@ -42,6 +42,19 @@ export function AccountSection() {
 function AuthedAccount({ user }: { user: AuthUser }) {
   const [showChangePwd, setShowChangePwd] = useState(false);
   const [showEmailForm, setShowEmailForm] = useState(false);
+  // One-shot warning: if onRegister persisted a partial-failure flag (email
+  // step failed but account was created and the user was auto-logged-in),
+  // show it once and consume the flag so it doesn't repeat across navigations.
+  const [registerEmailWarning] = useState<string | null>(() => {
+    try {
+      const code = sessionStorage.getItem('ward-helper.register-email-failed');
+      if (!code) return null;
+      sessionStorage.removeItem('ward-helper.register-email-failed');
+      return code;
+    } catch {
+      return null;
+    }
+  });
 
   const initial = (user.displayName || user.username).slice(0, 1).toUpperCase();
   const display = user.displayName || user.username;
@@ -76,6 +89,22 @@ function AuthedAccount({ user }: { user: AuthUser }) {
           🚪 התנתק
         </button>
       </div>
+      {registerEmailWarning && (
+        <div
+          className="account-status err"
+          style={{
+            marginTop: 10,
+            padding: 10,
+            border: '1px solid #f59e0b66',
+            borderRadius: 6,
+            background: '#f59e0b14',
+            fontSize: 13,
+          }}
+        >
+          ⚠ האימייל לא נשמר במהלך הרשמה ({registerEmailWarning}). לחץ 📧 אימייל
+          לאיפוס למעלה כדי להוסיף אותו עכשיו — זה נדרש לפני שמשחזרים סיסמה.
+        </div>
+      )}
       {showChangePwd && <ChangePasswordForm username={user.username} onDone={() => setShowChangePwd(false)} />}
       {showEmailForm && <SetEmailForm username={user.username} onDone={() => setShowEmailForm(false)} />}
       <div className="account-note">
@@ -354,29 +383,38 @@ function GuestAccount() {
       setStatus({ tone: 'err', msg: errorMessage(res.error, res.message) });
       return;
     }
-    // Account created. Establish session before the email step so the user is
-    // logged in even if the chained authSetEmail rejects (e.g., email_taken).
-    setAuthSession(res.user.username, res.user.display_name, 'register');
-
-    if (!trimmedEmail) {
-      // No email provided — done. Account is usable; password recovery can be
-      // enabled later via the 📧 אימייל לאיפוס button in the authed view.
-      setBusy(false);
-      setPassword('');
-      return;
+    // Critical ordering: do the email step BEFORE setAuthSession, because
+    // setAuthSession fires the auth-change event which causes useAuth() to
+    // swap <GuestAccount> → <AuthedAccount>. Awaiting authSetEmail across
+    // that unmount means subsequent setStatus calls land on a stale closure
+    // (silently ignored in React 18). Bug observed in production
+    // 2026-05-02: account `eiasashhab55555` was created, the email step
+    // never landed, user saw bare "שגיאה" with no indication that
+    // registration had actually succeeded.
+    if (trimmedEmail) {
+      const emailRes = await authSetEmail(res.user.username, password, trimmedEmail);
+      if (!emailRes.ok) {
+        // Persist a one-shot flag so the AuthedAccount surfaces this too if
+        // the user dismisses the inline message and we still auto-login.
+        sessionStorage.setItem(
+          'ward-helper.register-email-failed',
+          emailRes.error || 'unknown',
+        );
+        setStatus({
+          tone: 'err',
+          msg: `✓ חשבון נוצר אך האימייל לא נשמר: ${setEmailErrorMessage(emailRes.error, emailRes.message)} ניתן להוסיף אותו דרך 📧 אימייל לאיפוס לאחר התחברות.`,
+        });
+        // Don't auto-login — keep the GuestAccount mounted so the user reads
+        // the message. They can switch to the login tab to enter the new
+        // account, where the SetEmailForm under 📧 אימייל לאיפוס will retry.
+        setBusy(false);
+        return;
+      }
     }
-    // Chain: attach email to the freshly-created account.
-    const emailRes = await authSetEmail(res.user.username, password, trimmedEmail);
+    // All steps succeeded (or email was skipped). Auto-login last.
+    setAuthSession(res.user.username, res.user.display_name, 'register');
     setBusy(false);
     setPassword('');
-    if (!emailRes.ok) {
-      // Account is created and the user is logged in, but the email failed
-      // to attach. Show a partial-success so they know to retry from Settings.
-      setStatus({
-        tone: 'err',
-        msg: `✓ חשבון נוצר. אבל האימייל לא נשמר: ${setEmailErrorMessage(emailRes.error, emailRes.message)} ניתן להוסיף אותו דרך 📧 אימייל לאיפוס.`,
-      });
-    }
   }
 
   return (
