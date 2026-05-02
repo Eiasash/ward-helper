@@ -4,6 +4,7 @@ import {
   authRegister,
   authChangePassword,
   authRequestPasswordReset,
+  authSetEmail,
   setAuthSession,
   logout,
   validateUsername,
@@ -40,6 +41,7 @@ export function AccountSection() {
 
 function AuthedAccount({ user }: { user: AuthUser }) {
   const [showChangePwd, setShowChangePwd] = useState(false);
+  const [showEmailForm, setShowEmailForm] = useState(false);
 
   const initial = (user.displayName || user.username).slice(0, 1).toUpperCase();
   const display = user.displayName || user.username;
@@ -63,11 +65,19 @@ function AuthedAccount({ user }: { user: AuthUser }) {
         >
           🔑 שנה סיסמה
         </button>
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => setShowEmailForm((v) => !v)}
+        >
+          📧 אימייל לאיפוס
+        </button>
         <button type="button" className="ghost" onClick={() => logout()}>
           🚪 התנתק
         </button>
       </div>
       {showChangePwd && <ChangePasswordForm username={user.username} onDone={() => setShowChangePwd(false)} />}
+      {showEmailForm && <SetEmailForm username={user.username} onDone={() => setShowEmailForm(false)} />}
       <div className="account-note">
         חשבון אחד פותח את ארבע האפליקציות (Mishpacha, Pnimit, Geri, ward-helper).
         סנכרון הערות בין מכשירים — בקרוב.
@@ -136,6 +146,105 @@ function ChangePasswordForm({
       {status && <div className={`account-status ${status.tone}`}>{status.msg}</div>}
     </form>
   );
+}
+
+/**
+ * Add or update the email on the user's account. Required before they can
+ * use the password-recovery flow ('שכחת סיסמה?'). Calls auth_set_email RPC
+ * which validates the current password (sensitive op).
+ *
+ * UX: form is idempotent — submitting an email that already matches the
+ * current value is a no-op. Submitting a different email updates it.
+ * Server enforces uniqueness across all app_users (Geri/IM/FM/ward-helper).
+ */
+function SetEmailForm({
+  username,
+  onDone,
+}: {
+  username: string;
+  onDone: () => void;
+}) {
+  const [pwd, setPwd] = useState('');
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<{ tone: 'ok' | 'err'; msg: string } | null>(null);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setStatus(null);
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed || !EMAIL_RE.test(trimmed)) {
+      setStatus({ tone: 'err', msg: 'כתובת אימייל לא תקינה' });
+      return;
+    }
+    if (!pwd) {
+      setStatus({ tone: 'err', msg: 'נדרשת הסיסמה הנוכחית כדי לעדכן אימייל' });
+      return;
+    }
+    setBusy(true);
+    const res = await authSetEmail(username, pwd, trimmed);
+    setBusy(false);
+    if (res.ok) {
+      setStatus({ tone: 'ok', msg: `✓ אימייל עודכן: ${res.email ?? trimmed}` });
+      setPwd('');
+      setEmail('');
+      setTimeout(onDone, 1500);
+    } else {
+      setStatus({ tone: 'err', msg: setEmailErrorMessage(res.error, res.message) });
+    }
+  }
+
+  return (
+    <form className="account-form" onSubmit={onSubmit} style={{ marginTop: 10 }}>
+      <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 4 }}>
+        הוסף אימייל כדי שתוכל לאפס סיסמה דרך 'שכחת סיסמה?'. נדרשת הסיסמה הנוכחית.
+      </div>
+      <input
+        type="email"
+        placeholder="כתובת אימייל"
+        autoComplete="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        disabled={busy}
+        dir="ltr"
+        required
+      />
+      <input
+        type="password"
+        placeholder="הסיסמה הנוכחית"
+        autoComplete="current-password"
+        value={pwd}
+        onChange={(e) => setPwd(e.target.value)}
+        disabled={busy}
+        required
+      />
+      <button type="submit" className="primary" disabled={busy}>
+        {busy ? 'מעדכן…' : '📧 שמור אימייל'}
+      </button>
+      {status && <div className={`account-status ${status.tone}`}>{status.msg}</div>}
+    </form>
+  );
+}
+
+function setEmailErrorMessage(code: string | undefined, fallback: string | undefined): string {
+  switch (code) {
+    case 'missing_field':
+      return 'חסרים שדות. מלא את שניהם.';
+    case 'invalid_email':
+      return 'כתובת אימייל לא תקינה.';
+    case 'invalid_credentials':
+      return 'הסיסמה הנוכחית שגויה.';
+    case 'email_taken':
+      return 'אימייל זה כבר רשום לחשבון אחר. השתמש באימייל אחר או צור קשר עם המנהל.';
+    case 'network':
+      return 'בעיית רשת. בדוק חיבור ונסה שוב.';
+    case 'rpc_error':
+      return fallback ? `שגיאת שרת: ${fallback}` : 'שגיאת שרת. נסה שוב.';
+    default:
+      if (code && fallback) return `שגיאה (${code}): ${fallback}`;
+      if (code) return `שגיאה: ${code}`;
+      return fallback || 'שגיאה. נסה שוב.';
+  }
 }
 
 function GuestAccount() {
