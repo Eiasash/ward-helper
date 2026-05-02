@@ -24,6 +24,11 @@ const NoteViewer = lazy(() =>
 const Census = lazy(() =>
   import('./screens/Census').then((m) => ({ default: m.Census })),
 );
+// Reset-password is the cold-path entry from the password-recovery email link.
+// Lazy-load to keep it out of the entry chunk — almost no one hits it.
+const PasswordReset = lazy(() =>
+  import('./screens/PasswordReset').then((m) => ({ default: m.PasswordReset })),
+);
 
 // Injected at build time by vite.config.ts (reads package.json). Kept in a
 // single place so any screen that needs the version can import it — and the
@@ -53,6 +58,7 @@ export function App() {
             <Route path="/history" element={<History />} />
             <Route path="/census" element={<Census />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/reset-password" element={<PasswordReset />} />
             <Route path="*" element={<Capture />} />
           </Routes>
         </Suspense>

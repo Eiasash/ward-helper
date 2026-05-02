@@ -159,6 +159,82 @@ export async function authChangePassword(
   });
 }
 
+// ───────── Password recovery (Tier 2, 2026-05-02) ─────────
+
+/** Result shape for set-email RPC. Includes `email` on success (normalized). */
+export interface SetEmailResult extends RpcResult {
+  email?: string;
+}
+
+/**
+ * Set or update the email on an existing account. The user must re-enter
+ * their current password — this is a sensitive operation that gates the
+ * password-recovery channel.
+ *
+ * Error codes: missing_field, invalid_email, invalid_credentials, email_taken
+ */
+export async function authSetEmail(
+  username: string,
+  password: string,
+  email: string,
+): Promise<SetEmailResult> {
+  return _rpc('auth_set_email', {
+    p_username: username,
+    p_password: password,
+    p_email: email,
+  }) as Promise<SetEmailResult>;
+}
+
+/**
+ * Request a password-reset email. The Edge Function `send-password-reset`
+ * applies anti-enumeration: it returns ok=true regardless of whether the
+ * email matches a known account, only sending mail when matched. The client
+ * should always show the same "check your email" confirmation — never
+ * "we don't know that email."
+ *
+ * Error codes (ok=false): function_error, bad_response, invalid_email,
+ *   invalid_json, email_not_configured, email_send_failed, network.
+ */
+export async function authRequestPasswordReset(
+  email: string,
+): Promise<RpcResult> {
+  try {
+    const sb = getSupabase();
+    const { data, error } = await sb.functions.invoke('send-password-reset', {
+      body: { email },
+    });
+    if (error) {
+      return { ok: false, error: 'function_error', message: error.message };
+    }
+    if (!data || typeof data !== 'object') {
+      return { ok: false, error: 'bad_response' };
+    }
+    return data as RpcResult;
+  } catch (e) {
+    return {
+      ok: false,
+      error: 'network',
+      message: e instanceof Error ? e.message : String(e),
+    };
+  }
+}
+
+/**
+ * Apply a new password using the token from a password-reset email link.
+ *
+ * Error codes: missing_field, weak_password, invalid_token, token_used,
+ *   token_expired
+ */
+export async function authResetPasswordWithToken(
+  token: string,
+  newPassword: string,
+): Promise<RpcResult> {
+  return _rpc('auth_reset_password_with_token', {
+    p_token: token,
+    p_new_password: newPassword,
+  });
+}
+
 /**
  * Persist a successful auth result. Caller must invoke only after `result.ok`.
  * Fires 'ward-helper:auth' so subscribers (HeaderStrip, useAuth hook) refresh.

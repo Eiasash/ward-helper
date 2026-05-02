@@ -3,6 +3,7 @@ import {
   authLogin,
   authRegister,
   authChangePassword,
+  authRequestPasswordReset,
   setAuthSession,
   logout,
   validateUsername,
@@ -11,6 +12,10 @@ import {
   type AuthUser,
 } from '@/auth/auth';
 import { useAuth } from '../hooks/useAuth';
+
+// Loose email format check — full RFC validation rejects valid edge cases
+// for marginal benefit. Server (auth_set_email RPC) does the same regex.
+const EMAIL_RE = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
 
 /**
  * Account section embedded in Settings. Logged-in: shows the account chip
@@ -141,11 +146,44 @@ function GuestAccount() {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{ tone: 'ok' | 'err'; msg: string } | null>(null);
 
+  // Forgot-password flow state. Three steps:
+  //   'idle' = link visible, form hidden
+  //   'form' = email input visible
+  //   'sent' = "check your email" confirmation
+  const [forgotMode, setForgotMode] = useState<'idle' | 'form' | 'sent'>('idle');
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotBusy, setForgotBusy] = useState(false);
+  const [forgotError, setForgotError] = useState<string | null>(null);
+
   function switchTab(t: 'login' | 'register') {
     setTab(t);
     setStatus(null);
     // Don't clear username — likely the same on re-login attempt — but clear password.
     setPassword('');
+    // Reset forgot flow when switching tabs
+    setForgotMode('idle');
+    setForgotEmail('');
+    setForgotError(null);
+  }
+
+  async function onForgotSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setForgotError(null);
+    const trimmed = forgotEmail.trim().toLowerCase();
+    if (!trimmed || !EMAIL_RE.test(trimmed)) {
+      setForgotError('כתובת אימייל לא תקינה');
+      return;
+    }
+    setForgotBusy(true);
+    const res = await authRequestPasswordReset(trimmed);
+    setForgotBusy(false);
+    if (res.ok) {
+      // Anti-enumeration: ALWAYS show "check your email", whether or not the
+      // server actually had a matching account.
+      setForgotMode('sent');
+    } else {
+      setForgotError(forgotErrorMessage(res.error, res.message));
+    }
   }
 
   async function onLogin(e: React.FormEvent) {
@@ -227,27 +265,83 @@ function GuestAccount() {
       </div>
 
       {tab === 'login' ? (
-        <form className="account-form" onSubmit={onLogin}>
-          <input
-            type="text"
-            placeholder="שם משתמש"
-            autoComplete="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            disabled={busy}
-          />
-          <input
-            type="password"
-            placeholder="סיסמה"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={busy}
-          />
-          <button type="submit" className="primary" disabled={busy}>
-            {busy ? 'מתחבר…' : '🔓 התחבר'}
-          </button>
-        </form>
+        <>
+          <form className="account-form" onSubmit={onLogin}>
+            <input
+              type="text"
+              placeholder="שם משתמש"
+              autoComplete="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              disabled={busy}
+            />
+            <input
+              type="password"
+              placeholder="סיסמה"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={busy}
+            />
+            <button type="submit" className="primary" disabled={busy}>
+              {busy ? 'מתחבר…' : '🔓 התחבר'}
+            </button>
+          </form>
+
+          {/* Forgot-password — collapsed link → email form → confirmation */}
+          {forgotMode === 'idle' && (
+            <button
+              type="button"
+              className="account-link"
+              onClick={() => setForgotMode('form')}
+              style={{ background: 'none', border: 'none', color: '#2563eb', textDecoration: 'underline', cursor: 'pointer', padding: '8px 0', fontSize: 13 }}
+            >
+              שכחת סיסמה?
+            </button>
+          )}
+
+          {forgotMode === 'form' && (
+            <form className="account-form" onSubmit={onForgotSubmit} style={{ marginTop: 12, padding: 12, border: '1px solid #e5e7eb', borderRadius: 8 }}>
+              <div style={{ fontSize: 13, marginBottom: 8 }}>
+                הזן את כתובת האימייל המקושרת לחשבון שלך — נשלח לך קישור לאיפוס סיסמה.
+              </div>
+              <input
+                type="email"
+                placeholder="כתובת אימייל"
+                autoComplete="email"
+                value={forgotEmail}
+                onChange={(e) => setForgotEmail(e.target.value)}
+                disabled={forgotBusy}
+                dir="ltr"
+              />
+              <button type="submit" className="primary" disabled={forgotBusy}>
+                {forgotBusy ? 'שולח…' : '📧 שלח קישור איפוס'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setForgotMode('idle'); setForgotEmail(''); setForgotError(null); }}
+                style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 12, marginTop: 4 }}
+              >
+                ביטול
+              </button>
+              {forgotError && <div className="account-status err">{forgotError}</div>}
+            </form>
+          )}
+
+          {forgotMode === 'sent' && (
+            <div className="account-status ok" style={{ marginTop: 12, padding: 12, border: '1px solid #22c55e44', borderRadius: 8, background: '#22c55e11' }}>
+              ✉️ אם לכתובת זו מקושר חשבון, תוך זמן קצר תקבל אימייל עם קישור לאיפוס. תוקף הקישור: 24 שעות.
+              <br />
+              <button
+                type="button"
+                onClick={() => { setForgotMode('idle'); setForgotEmail(''); }}
+                style={{ background: 'none', border: 'none', color: '#2563eb', textDecoration: 'underline', cursor: 'pointer', fontSize: 12, marginTop: 8 }}
+              >
+                חזרה
+              </button>
+            </div>
+          )}
+        </>
       ) : (
         <form className="account-form" onSubmit={onRegister}>
           <input
@@ -284,6 +378,28 @@ function GuestAccount() {
       {status && <div className={`account-status ${status.tone}`}>{status.msg}</div>}
     </div>
   );
+}
+
+function forgotErrorMessage(code: string | undefined, fallback: string | undefined): string {
+  switch (code) {
+    case 'invalid_email':
+      return 'כתובת אימייל לא תקינה';
+    case 'email_not_configured':
+      return 'שירות איפוס סיסמה לא מוגדר עדיין. פנה למנהל המערכת.';
+    case 'email_send_failed':
+      return 'שליחת האימייל נכשלה. נסה שוב או פנה למנהל המערכת.';
+    case 'function_error':
+    case 'rpc_error':
+      return fallback ? `שגיאת שרת: ${fallback}` : 'שגיאת שרת. נסה שוב בעוד כמה שניות.';
+    case 'network':
+      return 'בעיית רשת. בדוק חיבור ונסה שוב.';
+    case 'bad_response':
+      return 'תגובה לא תקינה מהשרת. נסה שוב.';
+    default:
+      if (code && fallback) return `שגיאה (${code}): ${fallback}`;
+      if (code) return `שגיאה: ${code}`;
+      return fallback || 'שגיאה. נסה שוב.';
+  }
 }
 
 function errorMessage(code: string | undefined, fallback: string | undefined): string {
