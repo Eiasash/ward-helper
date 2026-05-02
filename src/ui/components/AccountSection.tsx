@@ -252,6 +252,11 @@ function GuestAccount() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  // Optional email at registration time. Empty string = skip; the account is
+  // created without an email (same as pre-2026-05-02 behavior). When provided,
+  // we chain authSetEmail right after authRegister so password-recovery works
+  // immediately on the new account.
+  const [registerEmail, setRegisterEmail] = useState('');
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{ tone: 'ok' | 'err'; msg: string } | null>(null);
 
@@ -269,6 +274,7 @@ function GuestAccount() {
     setStatus(null);
     // Don't clear username — likely the same on re-login attempt — but clear password.
     setPassword('');
+    setRegisterEmail('');
     // Reset forgot flow when switching tabs
     setForgotMode('idle');
     setForgotEmail('');
@@ -334,15 +340,42 @@ function GuestAccount() {
       setStatus({ tone: 'err', msg: pErr });
       return;
     }
+    // Email is optional. Validate format only when provided.
+    const trimmedEmail = registerEmail.trim().toLowerCase();
+    if (trimmedEmail && !EMAIL_RE.test(trimmedEmail)) {
+      setStatus({ tone: 'err', msg: 'כתובת אימייל לא תקינה' });
+      return;
+    }
     setBusy(true);
     const dn = displayName.trim() || null;
     const res = await authRegister(u, password, dn);
-    setBusy(false);
-    if (res.ok && res.user) {
-      setAuthSession(res.user.username, res.user.display_name, 'register');
-      setPassword('');
-    } else {
+    if (!res.ok || !res.user) {
+      setBusy(false);
       setStatus({ tone: 'err', msg: errorMessage(res.error, res.message) });
+      return;
+    }
+    // Account created. Establish session before the email step so the user is
+    // logged in even if the chained authSetEmail rejects (e.g., email_taken).
+    setAuthSession(res.user.username, res.user.display_name, 'register');
+
+    if (!trimmedEmail) {
+      // No email provided — done. Account is usable; password recovery can be
+      // enabled later via the 📧 אימייל לאיפוס button in the authed view.
+      setBusy(false);
+      setPassword('');
+      return;
+    }
+    // Chain: attach email to the freshly-created account.
+    const emailRes = await authSetEmail(res.user.username, password, trimmedEmail);
+    setBusy(false);
+    setPassword('');
+    if (!emailRes.ok) {
+      // Account is created and the user is logged in, but the email failed
+      // to attach. Show a partial-success so they know to retry from Settings.
+      setStatus({
+        tone: 'err',
+        msg: `✓ חשבון נוצר. אבל האימייל לא נשמר: ${setEmailErrorMessage(emailRes.error, emailRes.message)} ניתן להוסיף אותו דרך 📧 אימייל לאיפוס.`,
+      });
     }
   }
 
@@ -477,6 +510,15 @@ function GuestAccount() {
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             disabled={busy}
+          />
+          <input
+            type="email"
+            placeholder="אימייל לאיפוס סיסמה (אופציונלי)"
+            autoComplete="email"
+            value={registerEmail}
+            onChange={(e) => setRegisterEmail(e.target.value)}
+            disabled={busy}
+            dir="ltr"
           />
           <button type="submit" className="primary" disabled={busy}>
             {busy ? 'יוצר…' : '✨ צור חשבון'}
