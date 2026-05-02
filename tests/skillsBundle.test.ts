@@ -29,18 +29,21 @@ interface SkillFloor {
 const FLOORS: SkillFloor[] = [
   {
     name: 'azma-ui',
-    // Real content ~5 KB. Stub was 350 bytes. 2 KB floor rejects the
-    // stub and any near-empty regression without being so tight that
-    // a legitimate tightening of the reference would flunk CI.
-    minBytes: 2000,
-    // These strings name the two vision traps the extractor must warn
-    // against. If either disappears, the skill has been rewritten in a
-    // way that drops the essential guard — regenerate, don't paper over.
+    // R4 (2026-05-02) bundles SKILL.md + AZMA_REFERENCE.md + azma_reference.json
+    // — combined ~71 KB. Stub was 350 bytes. 5 KB floor rejects the stub and
+    // any near-empty regression without being so tight that a legitimate
+    // tightening of the reference would flunk CI.
+    minBytes: 5000,
+    // R4-specific substrings that prove substantive content. If any
+    // disappear, the skill has been rewritten in a way that drops an
+    // essential anchor — investigate, don't paper over.
     mustContain: [
-      'Doctor name',       // title-bar / patient-card distinction must survive rewrites
-      'שם מטופל',          // authoritative patient-card label must be referenced
-      'גיל',               // explicit age-label usage
-      'משקל',              // explicit weight-label usage (the 62-vs-92 mix-up)
+      'ניהול מחלקה',          // the main dept-mgmt screen name (§3, §4)
+      'הוראות תרופתיות',      // the order-grid screen (§7) — new in R4
+      'blue pen',              // manifest-grade Q5 answer (unsigned admission)
+      'blood bank',            // color-code reference (col 12)
+      'isolation',             // red-diagnosis = isolation rule (§6)
+      'גיל',                  // patient-grid age column (still present)
     ],
   },
   {
@@ -59,20 +62,34 @@ const FLOORS: SkillFloor[] = [
     minBytes: 1000,
     mustContain: ['Hebrew'],
   },
+  {
+    name: 'geriatrics-knowledge',
+    // SKILL.md is ~16 KB. Stub would be < 1 KB.
+    minBytes: 5000,
+    mustContain: [
+      'STOPP',              // STOPP/START framework
+      'Beers',              // Beers criteria
+      'inline-table',       // proves the project_knowledge_search → inline-table patch landed
+    ],
+  },
 ];
 
 function readSkillCombined(name: string): string {
   const dir = resolve(SKILLS_ROOT, name);
   if (!existsSync(dir)) return '';
-  // Match the runtime loader — primary SKILL.md plus any well-known
-  // reference files joined. Today azma-ui is the only skill with a
-  // multi-file layout (SKILL.md + AZMA_REFERENCE.md); others are
-  // single-file, so they just read SKILL.md.
+  // Mirror the runtime loader's file list (src/skills/loader.ts SKILL_FILES).
+  // azma-ui R4 is multi-file (SKILL.md + AZMA_REFERENCE.md + azma_reference.json);
+  // others are single-file. Keep this list in sync with the loader.
   const parts: string[] = [];
-  const skillMd = resolve(dir, 'SKILL.md');
-  if (existsSync(skillMd)) parts.push(readFileSync(skillMd, 'utf8'));
-  const azmaRef = resolve(dir, 'AZMA_REFERENCE.md');
-  if (existsSync(azmaRef)) parts.push(readFileSync(azmaRef, 'utf8'));
+  const candidates = [
+    'SKILL.md',
+    'AZMA_REFERENCE.md',
+    'azma_reference.json',
+  ];
+  for (const f of candidates) {
+    const fp = resolve(dir, f);
+    if (existsSync(fp)) parts.push(readFileSync(fp, 'utf8'));
+  }
   return parts.join('\n\n');
 }
 

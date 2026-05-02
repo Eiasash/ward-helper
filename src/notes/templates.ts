@@ -21,12 +21,18 @@ import type { SkillName } from '@/skills/loader';
  * one day grow a third skill without a schema change.
  */
 export const NOTE_SKILL_MAP: Record<NoteType, readonly SkillName[]> = {
-  admission: ['szmc-clinical-notes', 'hebrew-medical-glossary'],
-  discharge: ['szmc-clinical-notes', 'hebrew-medical-glossary'],
-  consult: ['szmc-clinical-notes', 'hebrew-medical-glossary'],
+  // admission/discharge/consult: full clinical depth. geriatrics-knowledge
+  // (16 KB / ~4K tokens, ~$0.012 per emit at Sonnet pricing) provides
+  // STOPP/START + Beers + AKI/CKD dosing + capacity-law + driving fitness
+  // tables that the model uses for the discussion + recommendations.
+  admission: ['szmc-clinical-notes', 'hebrew-medical-glossary', 'geriatrics-knowledge'],
+  discharge: ['szmc-clinical-notes', 'hebrew-medical-glossary', 'geriatrics-knowledge'],
+  consult: ['szmc-clinical-notes', 'hebrew-medical-glossary', 'geriatrics-knowledge'],
   case: ['szmc-interesting-cases', 'hebrew-medical-glossary'],
   // SOAP is driven entirely by orchestrate.ts's SOAP_STYLE prefix —
-  // ship ONLY the glossary for Hebrew term consistency.
+  // ship ONLY the glossary for Hebrew term consistency. Adding
+  // geriatrics-knowledge here would erode the context budget reserved
+  // for continuity (prior admission + recent SOAPs).
   soap: ['hebrew-medical-glossary'],
   // Census is not a clinical note — it's grid extraction. AZMA-UI is the
   // primary reference (column semantics, color codes, icon meanings); the
