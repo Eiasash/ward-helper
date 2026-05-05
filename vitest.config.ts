@@ -9,5 +9,11 @@ export default defineConfig({
     environment: 'happy-dom',
     setupFiles: ['tests/setup.ts'],
     globals: true,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html', 'json-summary'],
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['**/node_modules/**', '**/dist/**', 'tests/**', 'src/**/*.test.{ts,tsx}'],
+    },
   },
 });
