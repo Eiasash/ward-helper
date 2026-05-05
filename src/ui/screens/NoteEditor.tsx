@@ -235,6 +235,12 @@ export function NoteEditor() {
     // the model returned without any chance of pasting it as a "note" into
     // Chameleon. The textarea stays absent — only "Regenerate" can recover.
     const rawBody = debugSnapshot().emit?.body ?? '';
+    // Detect proxy timeout — the dominant failure mode for long admission/
+    // discharge emits without a BYO API key. The Toranot proxy has a ~10s
+    // upstream ceiling; emits with 25 KB of skill content + 4096 output
+    // tokens regularly hit 20-40s. Surface the actionable fix (set your
+    // own Anthropic API key in Settings) rather than just showing "504".
+    const is504 = /504|Upstream timeout|FUNCTION_INVOCATION_TIMEOUT/i.test(err);
     return (
       <section>
         <h1>שגיאה — {NOTE_LABEL[noteType]}</h1>
@@ -242,6 +248,36 @@ export function NoteEditor() {
           לא הצלחתי לקרוא את התגובה מהמודל. לחץ "צור מחדש" כדי לנסות שוב.
         </div>
         <p style={{ color: 'var(--muted)', fontSize: 13, marginBlock: 8 }}>{err}</p>
+        {is504 && (
+          <div
+            style={{
+              background: 'var(--warn)',
+              color: 'black',
+              padding: '10px 12px',
+              borderRadius: 8,
+              marginBlock: 12,
+              fontSize: 13,
+              lineHeight: 1.5,
+            }}
+          >
+            <strong>Timeout בפרוקסי (10s).</strong>
+            <br />
+            פתקי קבלה / שחרור ארוכים חוצים את התקרה. הפתרון: הוסף מפתח Anthropic
+            אישי ב-<button
+              onClick={() => nav('/settings')}
+              style={{
+                background: 'transparent',
+                border: 0,
+                padding: 0,
+                color: 'var(--app-primary)',
+                textDecoration: 'underline',
+                cursor: 'pointer',
+                font: 'inherit',
+              }}
+            >הגדרות</button> — המפתח עובר ישירות ל-Anthropic
+            (90s timeout במקום 10s) ומסתנכרן בין מכשירים אם הפעלת סיסמת ענן.
+          </div>
+        )}
         {rawBody && (
           <details style={{ marginBlock: 12 }}>
             <summary style={{ cursor: 'pointer', color: 'var(--muted)' }}>
