@@ -4,6 +4,29 @@ Auto-appended by the audit-fix-deploy pipeline. Most recent run on top.
 
 ---
 
+## 2026-05-05 — v1.33.0 bundle telemetry follow-up
+
+After PR #48 (azma-ui R4 + geriatrics-knowledge skills bundle) and PR #49 (SOAP capsule-in-A v4) both landed in parallel during the deep-audit session, the entry chunk grew. Capturing the new baseline so future audits can delta against it:
+
+| Asset | R2 (2026-05-01) | v1.33.0 (post-#48/#49) | Δ |
+|---|---|---|---|
+| Entry chunk gz | 154,419 b (83.78%) | 159,230 b (86.39%) | **+4.81 kB** |
+| Trigger threshold for lazy-load | 165 kB | 165 kB | — |
+| Headroom to 180 kB ceiling | 29.9 kB | 25.1 kB | -4.8 kB |
+| Headroom to lazy-load trigger | 10.6 kB | 5.8 kB | -4.8 kB |
+
+**Status:** still under the lazy-load trigger (159 < 165 kB), but ~5.8 kB below it. The next feature commit landing in `index-*.js` is plausibly the one that crosses. Watch list:
+- **If next bump pushes entry ≥165 kB**: trigger lazy-load of `@supabase/supabase-js` per the R2-deferred plan (defer `getSupabase()` until first cloud-push attempt, save ~30 kB gz).
+- **If skill bundle grows further** (azma-ui R5, new SZMC skill): re-confirm the runtime-only file whitelist in `scripts/sync-skills.mjs` is excluding decorative assets (slide_art/ already excluded).
+
+CI bundle gate (`[ "$SIZE" -le 184320 ]`) still passing. No action needed.
+
+### Why this isn't a code-change PR
+
+Per session working rule #2 ("Minimum code that solves the problem. Nothing speculative."), the lazy-load is reserved for the trigger crossing. Pre-emptive split would risk pessimizing cache behavior on the current stable bundle for no measured user-impact.
+
+---
+
 ## 2026-05-05 — v1.32.0 deep audit (audit-only, no behavior change)
 
 **Trigger:** workspace-wide deep audit pass across the 4 medical PWAs. ward-helper baseline is v1.32.0; tests + tsc + build green earlier today.
