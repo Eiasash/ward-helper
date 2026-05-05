@@ -37,11 +37,27 @@ export function Save() {
   const emailTarget = getEmailTarget();
 
   async function onSave() {
+    // Re-entry guard. Without this, double-clicking the Save button triggers
+    // two parallel saveBoth() calls, each calling crypto.randomUUID() — the
+    // result is two notes for the same body. The patient is upserted by
+    // teudatZehut so it dedupes, but the notes don't. Status check covers
+    // both rapid double-click and the React 18 dev-mode StrictMode double-
+    // invocation (effects, not handlers, but defensive belt-and-braces).
+    if (status === 'saving' || status === 'done') return;
     setStatus('saving');
     try {
       const noteType = (sessionStorage.getItem('noteType') ?? 'admission') as NoteType;
       const validated: ParseFields = JSON.parse(sessionStorage.getItem('validated') ?? '{}');
       const body = sessionStorage.getItem('body') ?? '';
+      // Refuse to "save" when we have nothing meaningful to save. Without
+      // this check, refresh-on-/save (sessionStorage cleared by a prior
+      // successful save) → click Save → empty save written to IDB. Real
+      // data loss class: a phantom note shadowing the real one in History.
+      if (!body || body.trim().length === 0) {
+        setErr('אין תוכן לשמור. חזור למסך הסקירה ובדוק שהפתק לא ריק.');
+        setStatus('error');
+        return;
+      }
       // Safety flags computed in Review and persisted to sessionStorage. Absent
       // for older sessions or when no meds were extracted — the saveBoth call
       // omits the field rather than writing an empty placeholder.
