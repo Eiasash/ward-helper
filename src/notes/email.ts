@@ -41,7 +41,7 @@ export async function sendNoteEmail(
   if (!body.trim()) throw new Error('גוף ההערה ריק');
 
   await ensureAnonymousAuth();
-  const sb = getSupabase();
+  const sb = await getSupabase();
 
   const { data, error } = await sb.functions.invoke<FnOk | FnErr>('send-note-email', {
     body: { to: to.trim(), subject: subject.trim(), body },

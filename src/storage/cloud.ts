@@ -1,4 +1,10 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+// Lazy-load supabase-js: type-only import at top (zero runtime cost),
+// dynamic `await import('@supabase/supabase-js')` inside getSupabase().
+// This defers the ~30 kB gz client off the entry chunk until first cloud
+// operation. Earmarked in IMPROVEMENTS.md R2 ("if entry climbs past
+// ~165 kB"); we're at 159.97 kB now and proactively splitting before
+// the next feature lands and crosses the trigger.
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { aesEncrypt, aesDecrypt } from '@/crypto/aes';
 
 /**
@@ -28,11 +34,12 @@ const SUPABASE_KEY =
 
 let client: SupabaseClient | null = null;
 
-export function getSupabase(): SupabaseClient {
+export async function getSupabase(): Promise<SupabaseClient> {
   if (!client) {
     if (!SUPABASE_URL || !SUPABASE_KEY) {
       throw new Error('Supabase not configured — VITE_SUPABASE_URL/KEY missing and fallback unavailable');
     }
+    const { createClient } = await import('@supabase/supabase-js');
     client = createClient(SUPABASE_URL, SUPABASE_KEY);
   }
   return client;
@@ -68,7 +75,7 @@ export async function decryptFromCloud<T>(
 }
 
 export async function ensureAnonymousAuth(): Promise<string> {
-  const sb = getSupabase();
+  const sb = await getSupabase();
   const { data: { session } } = await sb.auth.getSession();
   if (session) return session.user.id;
   const { data, error } = await sb.auth.signInAnonymously();
@@ -104,7 +111,8 @@ export async function pushBlob(
     updated_at: new Date().toISOString(),
   };
   if (cleanUsername !== null) row.username = cleanUsername;
-  const { error } = await getSupabase()
+  const sb = await getSupabase();
+  const { error } = await sb
     .from('ward_helper_backup')
     .upsert(row, { onConflict: 'user_id,blob_type,blob_id' });
   if (error) throw error;
@@ -139,7 +147,8 @@ export type CloudBlobRow = {
  */
 export async function pullAllBlobs(): Promise<CloudBlobRow[]> {
   await ensureAnonymousAuth();
-  const { data, error } = await getSupabase()
+  const sb = await getSupabase();
+  const { data, error } = await sb
     .from('ward_helper_backup')
     .select('blob_type, blob_id, ciphertext, iv, salt, updated_at')
     .order('blob_type')
@@ -167,7 +176,8 @@ export async function pullAllBlobs(): Promise<CloudBlobRow[]> {
  */
 export async function pullByUsername(username: string): Promise<CloudBlobRow[]> {
   if (!username || !username.trim()) return [];
-  const { data, error } = await getSupabase().rpc('ward_helper_pull_by_username', {
+  const sb = await getSupabase();
+  const { data, error } = await sb.rpc('ward_helper_pull_by_username', {
     p_username: username.trim(),
   });
   if (error) throw error;

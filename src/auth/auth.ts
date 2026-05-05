@@ -108,7 +108,7 @@ export function getDeviceId(): string {
 
 async function _rpc(fn: string, body: Record<string, unknown>): Promise<RpcResult> {
   try {
-    const sb = getSupabase();
+    const sb = await getSupabase();
     const { data, error } = await sb.rpc(fn, body);
     if (error) {
       return { ok: false, error: 'rpc_error', message: error.message };
@@ -231,7 +231,7 @@ export async function authRequestPasswordReset(
   email: string,
 ): Promise<RpcResult> {
   try {
-    const sb = getSupabase();
+    const sb = await getSupabase();
     const { data, error } = await sb.functions.invoke('send-password-reset', {
       body: { email },
     });
