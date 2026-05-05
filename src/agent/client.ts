@@ -150,7 +150,14 @@ async function callDirectOnce(
 
 async function callProxyOnce(req: AnthropicRequest): Promise<AnthropicResponse> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), PROXY_TIMEOUT_MS);
+  const timer = setTimeout(() => {
+    // Log the timeout abort path explicitly. Browser-level cancels (user navigated
+    // away mid-call, network interruption) won't reach this branch — they surface
+    // as net::ERR_ABORTED in the catch below. Visibility for "AI never returned"
+    // user reports — was opaque before, surfaced by 1h chaos run 2026-05-05.
+    console.warn('[ai] proxy abort fired (timeout)', { ms: PROXY_TIMEOUT_MS });
+    controller.abort();
+  }, PROXY_TIMEOUT_MS);
   try {
     const res = await fetch(PROXY_URL, {
       method: 'POST',
@@ -166,6 +173,18 @@ async function callProxyOnce(req: AnthropicRequest): Promise<AnthropicResponse> 
       throw new Error(`proxy HTTP ${res.status}${text ? ': ' + text.slice(0, 200) : ''}`);
     }
     return (await res.json()) as AnthropicResponse;
+  } catch (err) {
+    // Distinguish the three failure flavors so future "request canceled" reports
+    // are diagnosable without re-running chaos:
+    //   - controller.signal.aborted → our 30s timeout fired
+    //   - err.name === 'AbortError' from elsewhere → browser-level cancel (nav, etc.)
+    //   - other → real network/HTTP error (already covered by msg above)
+    if (controller.signal.aborted) {
+      console.warn('[ai] proxy request aborted by client timeout');
+    } else if (err && (err as { name?: string }).name === 'AbortError') {
+      console.warn('[ai] proxy request aborted by browser (nav or external cancel)');
+    }
+    throw err;
   } finally {
     clearTimeout(timer);
   }
