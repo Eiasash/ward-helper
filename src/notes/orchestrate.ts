@@ -34,23 +34,72 @@ Chameleon paste rules — these are hard constraints:
 `.trim();
 
 /**
- * SOAP-specific style. SOAP runs "in the spirit of a consult": short,
- * problem-focused, action-oriented — the daily handoff, not a chart biography.
+ * SOAP-specific style — geriatric daily handoff (rehab AND acute medicine).
+ * First-follow-up after admission has a patient capsule in A; subsequent
+ * follow-ups skip it. Daily-asks (sleep/BM/urine/pain/cooperation) live in
+ * S every round. O is bedside-only — no labs, no imaging printouts. Labs
+ * and imaging go inline in A per relevant problem bullet, only when
+ * actionable today.
+ *
+ * Section structure follows SZMC convention (Dr. עביד ראפת pattern).
+ * Format applies to both rehab-ward daily rounds (ביקור רופא) and the
+ * first SOAP follow-up in acute geriatric/internal medicine wards.
  */
 const SOAP_STYLE = `
-SOAP note style — short daily handoff written in the spirit of a geriatric consult:
-- Total length 150-350 Hebrew words. Every line earns its place.
-- S (סובייקטיבי): 1-3 sentences on overnight complaints / pain / sleep / appetite. If none: "ללא תלונות חדשות".
-- O (אובייקטיבי): compact blocks, one line per block:
-    סימנים חיוניים: BP, HR, SpO2, Temp (exact numbers).
-    בדיקה: key positives/negatives only — no system-by-system sweep.
-    מעבדה: short prose trends — "CRP בקבלה 12.3, ירד ל-9.8". NEVER arrows, NEVER ">" symbol — Chameleon corrupts these in lab context. Strip H/L suffixes — use "(מעל/מתחת לנורמה)" parens if needed.
-    הדמיה: only if new.
-- A (הערכה): problem list by #hashtag category, one short Hebrew line each.
-  Canonical categories (use only those relevant): # הימודינמי  # נשימתי  # זיהומי  # כלייתי  # נוירולוגי  # מטבולי  # המטולוגי  # גריאטרי  # תפקוד
-- P (תוכנית): numbered 1., 2., 3. — 24-hour horizon. Each item a short imperative verb phrase.
-  Drug changes use the drug-card pattern (drug name English, Hebrew instruction next line).
-  Consult-spirit: when recommending meds, be specific and concrete (dose, route, frequency in Hebrew).
+SOAP note — geriatric daily handoff. Format applies to both rehab daily rounds (ביקור רופא בשיקום) and acute-ward daily rounds (ביקור רופא במחלקה).
+
+Length budget: 150-300 Hebrew words for stable follow-ups, 200-400 for first follow-up after admission (capsule adds ~80 words), 250-500 for complex follow-ups with multiple active acute issues.
+
+Section order (standard SZMC, headers underlined):
+  S דיווח המטופל:
+  O בדיקה גופנית וממצאי עזר:
+  A מסקנה והערכה:
+  P לביצוע:
+  תוכנית טיפול (יעדי טיפול):
+
+— S (דיווח המטופל) — daily-asks ALWAYS, every round, every dept:
+  Standing ask line: sleep (ישן/ה טוב בלילה or לא ישן/ה), pain (ללא כאבים / כאב X/10 / כאב מאוזן עם הטיפול), BM (יציאות תקינות / עצירות X ימים / פעמ"ם אתמול), urine (שתן תקין / רטנציה / קטטר), rehab participation (משתתף/ת בטיפול שיקומי / לא משתף/ת).
+  Pain status determines whether the patient can do today's PT — don't bury it.
+  Then: today's specific complaints, family requests, mood, transfer-related concerns.
+  If patient feels well: "מרגיש/ה טוב, ישן/ה טוב בלילה. ללא כאבים. שתן ויציאות תקינים. משתתף/ת בטיפול שיקומי."
+
+— O (בדיקה גופנית וממצאי עזר) — bedside exam ONLY. NEVER paste lab tables or imaging blocks here. NEVER list "מעבדה:" or "הדמיה:" in this section.
+  Vitals: חום X.X, ד YY, ל"ד YY/YY, סטורציה NN%.
+  Exam: cooperation + cognition implicit + 4-system (קולות הלב / כניסת אוויר / בטן / גפיים) + indication-focused additions (surgical wound length & sutures & drainage; per-limb motor + sensation + DP for mobility cases; fistula thrill+bruit for HD; cranial nerves for post-CVA).
+  Labs and imaging belong in A under the relevant problem bullet — see below.
+
+— A (מסקנה והערכה) —
+  FIRST follow-up after admission (this is the patient's first daily round in the dept) opens with a 3-4 line PATIENT CAPSULE per SZMC convention (Dr. עביד ראפת pattern):
+    "בן/בת [age], [marital], [parent count]. מתגורר/ת [living situation - alone / with whom / floor / elevator / caregiver / institution]. איש קשר עיקרי: [name + relationship + phone if available].
+    רקע רפואי כולל [3-5 chronic dx prioritized for relevance].
+    בבסיס [pre-admission ADL / mobility one-liner — walker / wheelchair / cane / independent / dependent].
+    כעת לאחר [acute event] בתאריך [DD/MM]. התקבל/ה ל[ward] ביום [N] לאחר [event]."
+  Then literal word "בעיות:" introducing problem bullets. Capsule mandatory on first follow-up regardless of complexity. Cross-check demographics against admission הצגת החולה — wrong on day 1 propagates for the entire admission.
+
+  Subsequent follow-ups: NO capsule. Open A with a single one-line synthesis ("בשיקום לאחר X — מתקדם/יציב/החמרה ב-Y"), then bullets directly.
+
+  Bullet format: \`*[domain] - [status, relevant lab/imaging inline, decision]\`
+  Domain prefixes (Hebrew, with asterisk — NOT #hashtag):
+    *אורתופדית  *זיהומית  *תפקודית  *עצמות  *כלייתי  *לבבי  *נשימתי  *נוירולוגית
+    *כאב  *עצירות  *שינה  *תזונתי  *פסיכולוגית  *המטולוגית  *אא"ג  *קוגניטיבי
+    *לחץ דם  *שתן  *מטבולית  *פצע  *בצקת
+
+  Labs and imaging go INLINE in the relevant bullet, ONLY when actionable today. Examples:
+    *עצמות - שבר נמוך-אנרגיה ב-89, ויטמין D 23 (חוסר). יש להשלים PTH/אלבומין/Ca מתוקן/ALP. להעלות D מעל 30 לפני ביספוספונט.
+    *המטולוגית - Hb 10.1 (פרה-אופ 12.6). אנמיה לאחר ניתוח, מעקב מגמה.
+    *עצירות - CT (30/04) שלל חסימה. נמשיך PEG וחוקנים PRN.
+    *זיהומית - תרבית CRE רקטלית מ-03/05 בתהליך. רקע ERCP+ספסיס 2019.
+  If a lab/result isn't driving a decision today, leave it out. The acute team's discharge has the full panel; this is a daily handoff.
+
+— P (לביצוע) — bare-verb actions with explicit timing: היום / מחר בבוקר / לפני המנה הבאה / יומיומית / עד תאריך DD/MM. Usually shorter than A. For stable patients: "המשך טיפול שיקומי" alone is acceptable. For complex: 4-8 specific lines.
+
+— תוכנית טיפול (יעדי טיפול) — 1-2 lines: case header + concrete goal by indication.
+  Post-hip/knee replacement: "בן/בת X לאחר [procedure]. מטרה לעצמאות בניידות ובשרותים."
+  Post-spine: "מטרה לעצמאות במעברים והליכה עם עזרים."
+  Pre-cardiac: "מטרה לחיזוק תפקודי טרום-ניתוחי."
+  Post-CVA day 0-3 only: "מוקדם מדי לקבוע מטרה." (After day 3 set a concrete goal.)
+
+Forbidden tokens (Chameleon corrupts these): arrows (→ ← ↑ ↓), ** for bold, double-dash dividers, q8h/q6h/qd/bid notation, trailing "?", "**" anywhere. Use single ">" only for med tapers ("Lantus 22 > 10-12 יח"). Spell out: "כל 8 שעות" not "q8h", "מעל 200" not ">200". Drug names: English UPPERCASE GENERIC ( BRAND ) Route Dose Unit X Freq.
 `.trim();
 
 /**
@@ -238,11 +287,12 @@ export function buildSoapPromptPrefix(continuity: ContinuityContext | null): str
     const soapBlock = `MOST RECENT SOAP (${fmtDate(continuity.mostRecentSoap.createdAt)}):\n${continuity.mostRecentSoap.bodyHebrew}`;
     return [
       'Emit a SOAP note in Hebrew — follow-up for an existing admission episode.',
-      'For each #hashtag category from the prior SOAP, track the trajectory vs today:',
+      'No capsule — capsule appeared in the first SOAP after admission and does not repeat. Open A with a one-line synthesis ("בשיקום לאחר X — מתקדם/יציב/החמרה ב-Y"), then *domain bullets directly.',
+      'For each *domain bullet from the prior SOAP, track the trajectory vs today:',
       '- Same: "ללא שינוי משמעותי"',
       '- Changed: show the delta using a single ">" (e.g. "Cr: 2.1 > 1.8", "Apixaban הופסק", "חום 39.2 > afebrile")',
       '- Resolved: mark "נפתר"',
-      '- New: add under the right category',
+      '- New: add under the right *domain',
       '',
       '---',
       admBlock,
@@ -255,8 +305,8 @@ export function buildSoapPromptPrefix(continuity: ContinuityContext | null): str
   }
 
   return [
-    'Emit a SOAP note in Hebrew — first SOAP for an existing admission.',
-    'Use the admission note below to anchor the Assessment one-liner: "<age>yo <sex>, admitted <date> for <diagnosis>, PMH <PMH>". Populate hashtag categories from admission\'s active problems. Do not restate the full admission.',
+    'Emit a SOAP note in Hebrew — first SOAP after admission. This is the patient\'s first daily round in the dept.',
+    'A opens with the SZMC patient capsule (3-4 lines) per the format in SOAP_STYLE below. Pull demographics, marital/parent count, living situation, baseline ADL/mobility, and active problems from the admission note. Then "בעיות:" introducing problem bullets per *domain (*אורתופדית / *זיהומית / *תפקודית / *עצמות / etc.). Do not restate the full admission.',
     '',
     '---',
     admBlock,
