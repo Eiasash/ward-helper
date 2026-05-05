@@ -8,6 +8,11 @@ import {
 } from '@/storage/indexed';
 import { encryptForCloud, pushBlob } from '@/storage/cloud';
 import { deriveAesKey } from '@/crypto/pbkdf2';
+import {
+  pushApiKeyToCloud,
+  applyApiKeyFromCloud,
+  API_KEY_BLOB_ID,
+} from '@/crypto/keystore';
 import { getPassphrase } from '@/ui/hooks/useSettings';
 import { finalizeSessionFor } from '@/agent/costs';
 import { markSyncedNow, notifyNotesChanged } from '@/ui/hooks/glanceableEvents';
@@ -95,6 +100,16 @@ export async function saveBoth(
     const username = getCurrentUser()?.username ?? null;
     await pushBlob('patient', patientId, sealedP, username);
     await pushBlob('note', noteId, sealedN, username);
+    // Cross-device API key sync (Option A): if the user has a local
+    // Anthropic API key set, push it as an 'api-key' blob using the same
+    // AES key + salt derived above. No-op if no local key is set. Failure
+    // here is non-fatal — the patient + note already pushed.
+    try {
+      await pushApiKeyToCloud(key, salt, username);
+    } catch {
+      // Don't fail the save just because the api-key sync hiccuped.
+      // The api-key push is a convenience; the note push is the contract.
+    }
     // Header-strip "last sync" relies on this — marker for the glanceable
     // header so the rounding doctor knows the cloud backup is current.
     markSyncedNow();
@@ -125,6 +140,12 @@ export interface RestoreResult {
   scanned: number;
   restoredPatients: number;
   restoredNotes: number;
+  /**
+   * 1 if the user's api-key blob was found and applied to the local
+   * keystore, 0 if no api-key blob was present. (Decode failure or
+   * schema mismatch lands in `skipped`.)
+   */
+  restoredApiKey: 0 | 1;
   skipped: Array<{ blob_type: string; blob_id: string; reason: string }>;
   /**
    * Which path the rows came from. 'username' = cross-device pull via
@@ -177,6 +198,7 @@ export async function restoreFromCloud(passphrase: string): Promise<RestoreResul
     scanned: rows.length,
     restoredPatients: 0,
     restoredNotes: 0,
+    restoredApiKey: 0,
     skipped: [],
     source: user ? 'username' : 'anon',
   };
@@ -195,6 +217,22 @@ export async function restoreFromCloud(passphrase: string): Promise<RestoreResul
       } else if (row.blob_type === 'note') {
         await putNote(decrypted as Note);
         result.restoredNotes++;
+      } else if (row.blob_type === 'api-key' && row.blob_id === API_KEY_BLOB_ID) {
+        // API-key blobs go through their own apply path (writes the
+        // keystore via saveApiKey internally). The decrypted payload was
+        // already consumed above by decryptFromCloud<Patient | Note>;
+        // we re-decrypt with the api-key blob shape here. Cheap because
+        // PBKDF2 was the expensive part — already done.
+        const applied = await applyApiKeyFromCloud(ct, iv, key);
+        if (applied) {
+          result.restoredApiKey = 1;
+        } else {
+          result.skipped.push({
+            blob_type: row.blob_type,
+            blob_id: row.blob_id,
+            reason: 'api-key blob failed v:1 schema check',
+          });
+        }
       } else {
         result.skipped.push({
           blob_type: row.blob_type,

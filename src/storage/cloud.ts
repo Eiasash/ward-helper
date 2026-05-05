@@ -84,7 +84,7 @@ export async function ensureAnonymousAuth(): Promise<string> {
 }
 
 export async function pushBlob(
-  type: 'patient' | 'note',
+  type: 'patient' | 'note' | 'api-key',
   id: string,
   sealed: SealedBlob,
   username?: string | null,
@@ -125,7 +125,7 @@ export async function pushBlob(
  * strings on read. Callers of pullAllBlobs get this back and must decode.
  */
 export type CloudBlobRow = {
-  blob_type: 'patient' | 'note';
+  blob_type: 'patient' | 'note' | 'api-key';
   blob_id: string;
   ciphertext: string; // base64
   iv: string; // base64
