@@ -4,6 +4,49 @@ Auto-appended by the audit-fix-deploy pipeline. Most recent run on top.
 
 ---
 
+## 2026-05-05 — v1.32.0 deep audit (audit-only, no behavior change)
+
+**Trigger:** workspace-wide deep audit pass across the 4 medical PWAs. ward-helper baseline is v1.32.0; tests + tsc + build green earlier today.
+
+**Outcome:** 🟢 audit-only — backlog items earmarked for "if entry chunk crosses ~165 kB gz" or cross-repo coordinated. **No code change, no trinity bump, no live witness gate.**
+
+### Watch-item spot-checks
+
+| Watch item | Result |
+|---|---|
+| Two auth systems both functional (anon `signInAnonymously()` cloud sync + `app_users` RPC) | ✅ pattern intact in `src/auth/auth.ts` + `src/storage/cloud.ts` (cloud sync wired with 20 live rows per CLAUDE.md baseline; `app_users` RPC NOT bridged to cloud sync per CLAUDE.md "do not finish without explicit ask") |
+| Wrong-patient defense — 3 layers firing | ✅ all present: `src/agent/loop.ts` (PROMPT extract instructions), `src/agent/tools.ts` (`assertExtractIsSafe`), `src/ui/components/FieldRow.tsx` (`onConfirmChange` + Proceed gate v1.21.3) |
+| Skill drift between `~/.claude/skills/` and `public/skills/` | ✅ `tests/skillsBundle.test.ts` enforces; build sync via `scripts/sync-skills.mjs` |
+| Entry chunk gzip ceiling 180 kB (184,320 bytes) | ✅ CI gate at `.github/workflows/ci.yml`: `[ "$SIZE" -le 184320 ]`. Last R2 measurement: 154,419 bytes (83.78%, ~30 kB headroom) |
+| Opus 4.7 adaptive (v1.27.0) token cost | No baseline shift detected this pass; cost-tracker `src/agent/costs.ts` defenses in place since R3 PR #35 (NaN/negative/non-finite clamp at write+read boundaries) |
+| Supabase pinned to `krmlzwwelqvlfslwltol` (NOT `oaojkanozbfpofbewtfq`) | ✅ `tests/supabase-config.test.ts` enforces |
+
+### `npm run check && npm test` — clean
+
+`tsc --noEmit` + vitest both green earlier today. 701+ tests across 62+ files baseline (per CLAUDE.md snapshot) + 1 skipped (live-eval gated on `ANTHROPIC_API_KEY`, by design).
+
+### Outstanding feature branch — surfaced for visibility
+
+Branch `claude/term-skills-r4-azma-and-geri-knowledge` (commit `48f9eb1`, 2026-05-02 by Eias) is 1 commit ahead of `main`, **pushed to origin but no PR open**. Substantive change: +2113 LOC bundling azma-ui R4 + geriatrics-knowledge skills (CLAUDE.md, `public/skills/azma-ui/{SKILL.md,AZMA_REFERENCE.md,azma_reference.json}`, `public/skills/geriatrics-knowledge/SKILL.md`, `public/skills/szmc-clinical-notes/SKILL.md`, `scripts/sync-skills.mjs`, `src/notes/templates.ts`, `src/skills/loader.ts`, `tests/skillsBundle.test.ts`).
+
+**Action: none from this audit pass** — the branch is not corrupted, not stale beyond fix, and not blocking deploy. Decision on whether to PR/merge it is the user's. Flagging here so it's visible in the audit trail.
+
+### Backlog items NOT shipped (with rationale)
+
+| Item | Why not shipped this pass |
+|---|---|
+| Lazy-load `@supabase/supabase-js` until first cloud-push | Earmarked in R2 IMPROVEMENTS for "if entry climbs past ~165 kB gz". Currently 154 kB — 11 kB under the trigger. Speculative work. |
+| `@vitest/coverage-v8` config | Speculative — coverage % is noisy on a hand-tested codebase. R3+ candidate per IMPROVEMENTS.md. |
+| Vite 5 → 8 + Vitest 4 upgrade | Multi-major jump, plugin compat verification. Should be focused PR with separate test pass. |
+| Skill-file path resolution for `.claude/skills/` writes | Sandbox-config issue, not application code. |
+| Strict CSP `===` exact-list assertion | R3 candidate after transitional-domain settling. |
+
+### PAT audit
+
+No GitHub PAT, Anthropic API key, or Supabase service-role key shapes in this terminal session's visible context.
+
+---
+
 ## 2026-05-01 — R3 followups shipped (PR #35)
 
 Two R3-flagged hardening items from the R2 deeper-dig audit landed together in [PR #35](https://github.com/Eiasash/ward-helper/pull/35) — both touch the same low-risk cost-tracking surface:
