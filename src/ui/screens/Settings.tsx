@@ -28,6 +28,7 @@ import {
 import { pushAllToCloud } from '@/notes/manualPush';
 import { exportLocalBackup } from '@/notes/exportLocal';
 import { importLocalBackup } from '@/notes/importLocal';
+import { pushBreadcrumb } from '../components/MobileDebugPanel';
 
 export function Settings() {
   const { present, save, clear } = useApiKey();
@@ -53,6 +54,16 @@ export function Settings() {
   const [passphraseActive, setPassphraseActive] = useState<boolean>(
     () => getPassphrase() !== null,
   );
+  // Inline button-state for "הפעל סיסמה". The bottom-of-page <p>{msg}</p>
+  // was below the fold on mobile, so users couldn't see whether their tap
+  // had registered. This state drives a state pill RIGHT NEXT to the button
+  // so feedback is always in viewport.
+  type PassSaveState =
+    | { kind: 'idle' }
+    | { kind: 'busy' }
+    | { kind: 'ok'; text: string }
+    | { kind: 'err'; text: string };
+  const [passSaveState, setPassSaveState] = useState<PassSaveState>({ kind: 'idle' });
   const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -115,30 +126,42 @@ export function Settings() {
   }
 
   async function onSavePass() {
+    pushBreadcrumb('savePass.click', { len: pass.length });
     if (pass.length < 8) {
-      setMsg('סיסמה קצרה מדי');
+      setPassSaveState({ kind: 'err', text: 'סיסמה קצרה מדי (לפחות 8 תווים)' });
+      pushBreadcrumb('savePass.tooShort');
       return;
     }
     const p = pass;
+    setPassSaveState({ kind: 'busy' });
     setPassphrase(p);
     const username = getCurrentUser()?.username ?? null;
+    pushBreadcrumb('savePass.verifyCanary.start', { username });
     let status: 'ok' | 'wrong-passphrase' | 'absent' | 'error' = 'error';
     try {
       status = await verifyCanary(p, username);
+      pushBreadcrumb('savePass.verifyCanary.done', { status });
     } catch (e) {
       // Network/cloud unreachable — still let the user activate the passphrase
       // locally so saves can be queued. Surface a soft warning.
       console.warn('verifyCanary failed', e);
+      pushBreadcrumb('savePass.verifyCanary.err', (e as Error).message);
       setPass('');
       setPassphraseActive(true);
-      setMsg(`סיסמה בזיכרון ✓ (לא ניתן היה לאמת מול הענן: ${(e as Error).message})`);
+      setPassSaveState({
+        kind: 'ok',
+        text: `✓ הופעלה (לא ניתן היה לאמת מול הענן: ${(e as Error).message})`,
+      });
       return;
     }
     if (status === 'wrong-passphrase') {
       // Bail without keeping the bad passphrase active.
       clearPassphrase();
       setPassphraseActive(false);
-      setMsg('הסיסמה שגויה (לא הסיסמה ששמרה את הגיבויים בענן).');
+      setPassSaveState({
+        kind: 'err',
+        text: 'הסיסמה שגויה (לא הסיסמה ששמרה את הגיבויים בענן).',
+      });
       return;
     }
     if (status === 'absent') {
@@ -149,23 +172,31 @@ export function Settings() {
         ) as Uint8Array<ArrayBuffer>;
         const canaryKey = await deriveAesKey(p, canarySalt);
         await pushCanary(canaryKey, canarySalt, username);
+        pushBreadcrumb('savePass.pushCanary.ok');
       } catch (e) {
         console.warn('pushCanary failed', e);
+        pushBreadcrumb('savePass.pushCanary.err', (e as Error).message);
       }
     }
     // Cache the unlock blob with the user's login password — so next login
     // auto-unlocks without prompting.
     const loginPwd = getLastLoginPasswordOrNull();
+    pushBreadcrumb('savePass.cacheUnlock.check', { hasLoginPwd: !!loginPwd });
     if (loginPwd) {
       try {
         await cacheUnlockBlob(p, loginPwd);
+        pushBreadcrumb('savePass.cacheUnlock.ok');
       } catch (e) {
         console.warn('cacheUnlockBlob failed', e);
+        pushBreadcrumb('savePass.cacheUnlock.err', (e as Error).message);
       }
     }
     setPass('');
     setPassphraseActive(true);
-    setMsg('סיסמה בזיכרון ✓');
+    setPassSaveState({
+      kind: 'ok',
+      text: loginPwd ? '✓ הופעלה ונשמרה לכניסה הבאה' : '✓ הופעלה (אבל לא נשמרה — התנתק והתחבר מחדש כדי שתישמר)',
+    });
   }
 
   async function onClearKey() {
@@ -271,17 +302,60 @@ export function Settings() {
         autoComplete="new-password"
         style={{ marginBottom: 8 }}
       />
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button onClick={onSavePass}>הפעל סיסמה</button>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button onClick={onSavePass} disabled={passSaveState.kind === 'busy'}>
+          {passSaveState.kind === 'busy' ? 'מפעיל...' : 'הפעל סיסמה'}
+        </button>
         <button
           className="ghost"
           onClick={() => {
             clearPassphrase();
             setPassphraseActive(false);
+            setPassSaveState({ kind: 'idle' });
+            pushBreadcrumb('savePass.cleared');
           }}
         >
           נקה סיסמה
         </button>
+        {passSaveState.kind === 'ok' && (
+          <span
+            role="status"
+            style={{
+              color: '#059669',
+              fontSize: 13,
+              fontWeight: 600,
+              marginInlineStart: 4,
+            }}
+          >
+            {passSaveState.text}
+          </span>
+        )}
+        {passSaveState.kind === 'err' && (
+          <span
+            role="alert"
+            style={{
+              color: '#b91c1c',
+              fontSize: 13,
+              fontWeight: 600,
+              marginInlineStart: 4,
+            }}
+          >
+            {passSaveState.text}
+          </span>
+        )}
+        {passSaveState.kind === 'busy' && (
+          <span
+            role="status"
+            aria-live="polite"
+            style={{
+              color: 'var(--muted)',
+              fontSize: 13,
+              marginInlineStart: 4,
+            }}
+          >
+            מאמת מול הענן...
+          </span>
+        )}
       </div>
 
       {passphraseActive && (
