@@ -1,41 +1,37 @@
 /**
  * PostLoginRestorePrompt — fresh-device discoverability for cloud restore.
  *
- * The 2026-04-30 v1.31.0 cross-device sync ship landed the wiring (push w/
- * username, pullByUsername RPC, auth-aware branching in restoreFromCloud)
- * but left a UX gap: a user logging in on a fresh device still has to walk
- * to Settings → type passphrase → tap Restore. The blobs land instantly
- * once they do, but the action isn't discoverable. SESSION_LEARNINGS_2026-
- * 04-30.md §1 documented this as the remaining ticketable follow-up.
+ * v1.35.2 redesign: no more separate-passphrase prompt. Cloud encryption
+ * uses the user's login password directly (the stash from AccountSection).
+ * If the login password is in memory, the prompt presents a one-tap
+ * "שחזר" button. If it's not (very rare — would mean the user just
+ * logged in but the stash isn't populated), we direct them to log out
+ * and back in.
  *
  * What this component does:
  *   - Listens for `ward-helper:auth` CustomEvents with `detail.action='login'`.
- *     Register events are ignored intentionally — a brand-new account has
- *     no cloud data to restore.
+ *     Register events are ignored — a brand-new account has no cloud data
+ *     to restore.
  *   - On login, checks `getDbStats()`. If the device already has any
- *     patients or notes locally, the prompt is suppressed (the user is
- *     on their normal device — auto-pulling would feel intrusive and is
- *     redundant since they already have their data; they can still
- *     manually pull from Settings if needed).
+ *     patients or notes locally, the prompt is suppressed (the user is on
+ *     their normal device — auto-pulling would feel intrusive and is
+ *     redundant).
  *   - If the device is in zero-state AND the user hasn't been prompted
  *     before for this username on this device, surfaces a modal that
- *     asks for the cloud passphrase and runs `restoreFromCloud(p)`.
- *   - Either action (Restore or "Not now") sets a localStorage suppress
- *     marker keyed on the username so subsequent logins don't re-prompt.
+ *     offers a one-tap restore using the login password.
+ *   - Either action sets a localStorage suppress marker keyed on the
+ *     username so subsequent logins don't re-prompt.
  *
  * What this component does NOT do:
- *   - It never stores the passphrase. Mirrors the existing Settings
- *     restore card. The user will be re-prompted on the next zero-state
- *     login on a new device, which is the intended behaviour.
  *   - It does not gate any clinical functionality. It's purely additive.
- *   - It doesn't pre-decrypt or sample blobs to give a "X notes available"
- *     count — that would require the passphrase, which we don't have until
- *     they type it. The intro is intentionally vague about quantity.
+ *   - It does not pre-decrypt or sample blobs to give a "X notes available"
+ *     count.
  */
 
 import { useEffect, useState } from 'react';
 import {
   getCurrentUser,
+  getLastLoginPasswordOrNull,
   subscribeAuthChanges,
   type AuthChangeAction,
 } from '@/auth/auth';
@@ -52,14 +48,6 @@ export function _suppressKey(username: string): string {
 /**
  * Decide whether to surface the prompt for this user on this device.
  * Pure function so tests can pin the heuristic without mounting React.
- *
- * Returns false (skip) on:
- *   - any localStorage read error (defensive — never surface a prompt
- *     in a state where we can't honour later "don't show again")
- *   - prior prompt marker for this username
- *   - non-empty IndexedDB (the device already has data)
- *   - getDbStats throws (e.g. IDB unavailable in private mode) — fail
- *     silent, don't blow up the auth event handler
  */
 export async function shouldPromptRestore(username: string): Promise<boolean> {
   if (!username) return false;
@@ -80,7 +68,6 @@ export async function shouldPromptRestore(username: string): Promise<boolean> {
 export function PostLoginRestorePrompt() {
   const [show, setShow] = useState(false);
   const [username, setUsername] = useState('');
-  const [pass, setPass] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [result, setResult] = useState<RestoreResult | null>(null);
@@ -108,23 +95,28 @@ export function PostLoginRestorePrompt() {
       try {
         localStorage.setItem(_suppressKey(username), String(Date.now()));
       } catch {
-        // ignore — worst case we re-prompt next login, which is mild
+        // Worst case: re-prompt next login. Mild.
       }
     }
     setShow(false);
-    setPass('');
     setErr('');
     setResult(null);
     setBusy(false);
   }
 
-  async function onRestore(e: React.FormEvent) {
-    e.preventDefault();
-    if (!pass || busy) return;
+  async function onRestore() {
+    if (busy) return;
+    const loginPwd = getLastLoginPasswordOrNull();
+    if (!loginPwd) {
+      setErr(
+        'סיסמת הכניסה לא בזיכרון. נסה להתנתק ולהתחבר מחדש לפני שחזור.',
+      );
+      return;
+    }
     setBusy(true);
     setErr('');
     try {
-      const r = await restoreFromCloud(pass);
+      const r = await restoreFromCloud(loginPwd);
       setResult(r);
     } catch (caught) {
       setErr(caught instanceof Error ? caught.message : String(caught));
@@ -146,61 +138,55 @@ export function PostLoginRestorePrompt() {
         <h2 id="restore-prompt-title">לשחזר מהענן?</h2>
         <p className="restore-prompt-intro">
           אין כאן הערות עדיין. אם יש לך גיבוי בענן עבור{' '}
-          <strong>{username}</strong> אפשר לשחזר אותו עכשיו.
-          <br />
-          סיסמת הגיבוי דרושה ולא נשמרת.
+          <strong>{username}</strong> אפשר לשחזר אותו עכשיו —
+          הגיבוי מוצפן עם סיסמת הכניסה שלך, לכן אין צורך בסיסמה נוספת.
         </p>
 
         {!result && (
-          <form className="restore-prompt-form" onSubmit={onRestore}>
-            <label htmlFor="restore-prompt-pass" className="visually-hidden">
-              סיסמת גיבוי
-            </label>
-            <input
-              id="restore-prompt-pass"
-              type="password"
-              value={pass}
-              onChange={(e) => setPass(e.target.value)}
-              placeholder="סיסמת גיבוי"
-              dir="ltr"
-              autoFocus
+          <div className="restore-prompt-actions">
+            <button
+              type="button"
+              className="primary"
               disabled={busy}
-              autoComplete="current-password"
-            />
-            <div className="restore-prompt-actions">
-              <button
-                type="submit"
-                className="primary"
-                disabled={busy || !pass}
-              >
-                {busy ? 'משחזר…' : 'שחזר'}
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => close(true)}
-                disabled={busy}
-              >
-                לא עכשיו
-              </button>
-            </div>
-            {err && <div className="restore-prompt-err">{err}</div>}
-          </form>
+              onClick={onRestore}
+            >
+              {busy ? 'משחזר…' : 'שחזר עכשיו'}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => close(true)}
+              disabled={busy}
+            >
+              לא עכשיו
+            </button>
+          </div>
         )}
+        {err && <div className="restore-prompt-err">{err}</div>}
 
         {result && (
           <div className="restore-prompt-result">
-            <p>
-              ✅ שוחזרו: {result.restoredPatients} מטופלים ·{' '}
-              {result.restoredNotes} הערות
-              {result.scanned > 0 ? ` (מתוך ${result.scanned})` : ''}
-              {' ('}
-              {result.source === 'username' ? 'חשבון מחובר' : 'מכשיר זה'}
-              {')'}
-            </p>
+            {result.wrongPassphrase ? (
+              <p>
+                ⚠️ הגיבוי בענן הוצפן עם סיסמת כניסה אחרת מהנוכחית
+                (כנראה שינוי סיסמה, או נתונים ישנים מגרסה קודמת). השחזור
+                האוטומטי לא הצליח. אפשר להמשיך לעבוד מקומית, ולהחליף את
+                הגיבוי הישן דרך Settings → גיבוי לענן עכשיו אחרי שתוסיף
+                כמה הערות.
+              </p>
+            ) : (
+              <p>
+                ✅ שוחזרו: {result.restoredPatients} מטופלים ·{' '}
+                {result.restoredNotes} הערות
+                {result.scanned > 0 ? ` (מתוך ${result.scanned})` : ''}
+                {' ('}
+                {result.source === 'username' ? 'חשבון מחובר' : 'מכשיר זה'}
+                {')'}
+              </p>
+            )}
             {result.skipped.length > 0 && (
               <p className="restore-prompt-skipped">
-                {result.skipped.length} רשומות דולגו (סיסמה שגויה / פגומות)
+                {result.skipped.length} רשומות דולגו (פורמט לא נתמך)
               </p>
             )}
             <button
