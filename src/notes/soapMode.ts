@@ -209,8 +209,8 @@ export const SOAP_MODE_LABEL: Record<SoapModeChoice, string> = {
 /* -------------------------------------------------------------------------
  * Persistence — keyed by SHA-256(teudatZehut) truncated to 8 bytes (64 bits).
  *
- * Why hash: localStorage is plain-text in DevTools; raw teudatZehut is PII
- * that must not be stored alongside non-sensitive UI prefs. SHA-256 is
+ * Why hash: browser storage is plain-text in DevTools; raw tz is PII that
+ * must not be stored alongside non-sensitive UI prefs. SHA-256 is
  * collision-safe at any realistic patient count, deterministic so the
  * same tz always resolves to the same key, and the truncation keeps the
  * key short (~16 hex chars) for inspectability when debugging cache
