@@ -20,6 +20,10 @@ vi.mock('@/notes/save', () => ({
     skipped: [],
     source: 'username' as const,
   })),
+  // v1.36.0: auth.ts::logout() now calls resetCanaryArmed for cross-user
+  // safety. Tests that mock @/notes/save without `importOriginal` must
+  // stub it explicitly or logout() throws on the missing export.
+  resetCanaryArmed: vi.fn(),
 }));
 
 import {
