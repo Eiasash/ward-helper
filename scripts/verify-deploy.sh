@@ -3,7 +3,10 @@
 #
 # Curls the live GitHub Pages sw.js for ward-helper and confirms the expected
 # version string appears in the deployed asset. Polls with backoff because
-# Pages takes ~60-90s to publish after push.
+# Pages publish time is bimodal — empirically observed range 11-90s, with
+# the v1.36.0 deploy hitting in 11s but earlier deploys taking the full
+# 60-90s. The 120s WAIT_MAX has slack for the slow tail; do NOT shorten
+# it thinking 90s is overcautious — the slow path is real.
 #
 # Why: ward-helper's index.html is a thin shell whose only version-bearing
 # JS lives in hashed bundle filenames, so it isn't a stable verification
