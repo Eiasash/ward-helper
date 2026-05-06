@@ -7,6 +7,8 @@ import {
   loadModeChoice,
   saveModeChoice,
   isSoapModeUiEnabled,
+  isHdContext,
+  ESCALATION_LOOKBACK_HOURS,
 } from '@/notes/soapMode';
 import type { ContinuityContext } from '@/notes/continuity';
 import type { Note, Patient } from '@/storage/indexed';
@@ -90,6 +92,44 @@ describe('resolveSoapMode', () => {
   });
 });
 
+describe('isHdContext (HD pattern detector — Phase C fixup 2)', () => {
+  it('matches standalone HD via ASCII word boundary', () => {
+    expect(isHdContext('Pt on HD M/W/F')).toBe(true);
+    expect(isHdContext('chronic HD since 2019')).toBe(true);
+  });
+
+  it('does NOT match HDL, HDR, HDPE — substring traps that \\b prevents', () => {
+    expect(isHdContext('HDL 35, LDL 110')).toBe(false);
+    expect(isHdContext('treated with HDR brachytherapy')).toBe(false);
+    expect(isHdContext('HDPE catheter')).toBe(false);
+  });
+
+  it('matches ESRD/ESKD/dialysis/hemodialysis/fistula in English', () => {
+    expect(isHdContext('ESRD on hemodialysis')).toBe(true);
+    expect(isHdContext('Background ESKD')).toBe(true);
+    expect(isHdContext('chronic dialysis')).toBe(true);
+    expect(isHdContext('AV fistula L arm')).toBe(true);
+  });
+
+  it('matches Hebrew variants (no \\b — Hebrew terms are full words)', () => {
+    expect(isHdContext('המודיאליזה כרונית פעמיים בשבוע')).toBe(true);
+    expect(isHdContext('דיאליזה')).toBe(true);
+    expect(isHdContext('פיסטולה ביד שמאל תקינה')).toBe(true);
+    expect(isHdContext('המוד 3 פעמים בשבוע')).toBe(true);
+    expect(isHdContext('מטופל על המודיאליזה')).toBe(true);
+  });
+
+  it('joins multiple fields with whitespace and detects across them', () => {
+    expect(isHdContext('rehab patient', null, 'AV fistula L arm')).toBe(true);
+    expect(isHdContext('admission text', undefined, 'שיקום-HD')).toBe(true);
+  });
+
+  it('returns false on empty/falsy input', () => {
+    expect(isHdContext()).toBe(false);
+    expect(isHdContext(null, undefined, '')).toBe(false);
+  });
+});
+
 describe('classifyRehabSubMode', () => {
   it('returns rehab-FIRST when no prior SOAPs exist', () => {
     expect(classifyRehabSubMode(null, 'שיקום')).toBe('rehab-FIRST');
@@ -130,11 +170,11 @@ describe('classifyRehabSubMode', () => {
     expect(classifyRehabSubMode(ctx, 'שיקום')).toBe('rehab-COMPLEX');
   });
 
-  it('does not flag escalation when the SOAP is older than the 48h window', () => {
+  it('does not flag escalation when the SOAP is older than the lookback window', () => {
     const ctx = makeContinuity({
       admissionBody: 'אדמיסיון לאחר ניתוח אורתופדי. ללא רקע נפרולוגי משמעותי.',
       soaps: [
-        makeSoap({ ageHours: 72, body: 'החמרה לפני שלושה ימים' }),
+        makeSoap({ ageHours: ESCALATION_LOOKBACK_HOURS + 24, body: 'החמרה לפני שלושה ימים' }),
       ],
     });
     expect(classifyRehabSubMode(ctx, 'שיקום')).toBe('rehab-STABLE');
@@ -146,6 +186,12 @@ describe('classifyRehabSubMode', () => {
       soaps: [makeSoap({ ageHours: 5, body: 'יציב, מתקדם בטיפול שיקומי' })],
     });
     expect(classifyRehabSubMode(ctx, 'שיקום')).toBe('rehab-STABLE');
+  });
+});
+
+describe('ESCALATION_LOOKBACK_HOURS (Phase C fixup 3)', () => {
+  it('is exported as a named constant set to 48', () => {
+    expect(ESCALATION_LOOKBACK_HOURS).toBe(48);
   });
 });
 
@@ -173,7 +219,7 @@ describe('decideSoapMode', () => {
 
   it('classifies into a rehab sub-mode when manual override is auto and room hints rehab', () => {
     const ctx = makeContinuity({
-      admissionBody: 'אדמיסיון לאחר ניתוח אורתופדי. ללא רקע נפרולוגי משמעותי.',
+      admissionBody: 'אדמיסיון לאחר ניתוח אורתופדי.',
       soaps: [],
     });
     expect(
@@ -196,28 +242,66 @@ describe('decideSoapMode', () => {
   });
 });
 
-describe('persistence helpers', () => {
+describe('persistence helpers (Phase C fixup 1 — hashed key, no PII)', () => {
   beforeEach(() => {
     localStorage.clear();
   });
 
-  it('round-trips a choice keyed by teudatZehut', () => {
-    saveModeChoice('111111118', 'rehab-HD-COMPLEX');
-    expect(loadModeChoice('111111118')).toBe('rehab-HD-COMPLEX');
+  it('round-trips a choice keyed by hashed teudatZehut', async () => {
+    await saveModeChoice('111111118', 'rehab-HD-COMPLEX');
+    expect(await loadModeChoice('111111118')).toBe('rehab-HD-COMPLEX');
   });
 
-  it('returns auto for an unknown patient', () => {
-    expect(loadModeChoice('222222226')).toBe('auto');
+  it('hashes teudatZehut into storage key — no PII reaches localStorage', async () => {
+    const tz = '123456789';
+    await saveModeChoice(tz, 'rehab-HD-COMPLEX');
+    const allKeys = Object.keys(localStorage);
+    expect(allKeys.some((k) => k.includes(tz))).toBe(false);
+    expect(allKeys.some((k) => k.startsWith('soap-mode:'))).toBe(true);
   });
 
-  it('is a no-op when teudatZehut is missing', () => {
-    saveModeChoice(null, 'rehab-FIRST');
-    expect(loadModeChoice(null)).toBe('auto');
+  it('produces a stable key across calls for the same tz', async () => {
+    await saveModeChoice('123456789', 'rehab-FIRST');
+    const keysAfterFirst = Object.keys(localStorage).filter((k) =>
+      k.startsWith('soap-mode:'),
+    );
+    await saveModeChoice('123456789', 'rehab-COMPLEX');
+    const keysAfterSecond = Object.keys(localStorage).filter((k) =>
+      k.startsWith('soap-mode:'),
+    );
+    expect(keysAfterFirst).toEqual(keysAfterSecond);
+    expect(keysAfterSecond.length).toBe(1);
   });
 
-  it('rejects garbage values stored externally', () => {
-    localStorage.setItem('soap-mode:111111118', 'not-a-real-mode');
-    expect(loadModeChoice('111111118')).toBe('auto');
+  it('produces distinct keys for distinct tz values', async () => {
+    await saveModeChoice('111111118', 'rehab-FIRST');
+    await saveModeChoice('222222226', 'rehab-COMPLEX');
+    const keys = Object.keys(localStorage).filter((k) =>
+      k.startsWith('soap-mode:'),
+    );
+    expect(keys.length).toBe(2);
+    expect(new Set(keys).size).toBe(2);
+  });
+
+  it('returns auto for an unknown patient', async () => {
+    expect(await loadModeChoice('222222226')).toBe('auto');
+  });
+
+  it('is a no-op when teudatZehut is missing', async () => {
+    await saveModeChoice(null, 'rehab-FIRST');
+    expect(await loadModeChoice(null)).toBe('auto');
+    expect(Object.keys(localStorage).length).toBe(0);
+  });
+
+  it('rejects garbage values stored externally', async () => {
+    // Compute the same hashed key the helper would produce, then poison it.
+    await saveModeChoice('111111118', 'rehab-FIRST');
+    const keys = Object.keys(localStorage).filter((k) =>
+      k.startsWith('soap-mode:'),
+    );
+    expect(keys).toHaveLength(1);
+    localStorage.setItem(keys[0]!, 'not-a-real-mode');
+    expect(await loadModeChoice('111111118')).toBe('auto');
   });
 });
 

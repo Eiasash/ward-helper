@@ -103,7 +103,12 @@ export function NoteEditor() {
         // — the effect re-runs, the load picks up the right tz.
         const validatedTz = validated.teudatZehut ?? null;
         setTz(validatedTz);
-        const persistedChoice = loadModeChoice(validatedTz);
+        // loadModeChoice is async (Phase C fixup 1: tz is hashed before
+        // hitting localStorage). The await blocks the effect briefly —
+        // SHA-256 of a 9-digit string is sub-ms even on phones, so the
+        // perceptible cost is zero.
+        const persistedChoice = await loadModeChoice(validatedTz);
+        if (cancelled) return;
         // Only set state if the persisted value differs from current —
         // setting to the same value would re-trigger the effect (modeChoice
         // is a dep) and produce a regen loop.
@@ -202,14 +207,14 @@ export function NoteEditor() {
 
   /**
    * Phase C: dropdown change handler. Persists the choice per-patient
-   * (key = teudatZehut, NOT patientId — the patient row is upserted
-   * AFTER generateNote returns, so patientId doesn't exist yet at this
-   * call site). Setting modeChoice triggers the generate effect via its
-   * dep array, which in turn invalidates the cache and re-emits.
+   * (key = SHA-256(teudatZehut) truncated — Phase C fixup 1, no PII in
+   * localStorage). Async because saveModeChoice hashes the key.
+   * Awaits the storage write before flipping state so the persisted
+   * value is durable by the time the gen effect re-fires.
    */
-  function onModeChoiceChange(next: SoapModeChoice) {
+  async function onModeChoiceChange(next: SoapModeChoice) {
     if (next === modeChoice) return;
-    saveModeChoice(tz, next);
+    await saveModeChoice(tz, next);
     sessionStorage.removeItem('body');
     sessionStorage.removeItem('bodyKey');
     setModeChoice(next);

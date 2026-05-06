@@ -1,7 +1,7 @@
 /**
  * SOAP-mode resolver for the rehab/general split.
  *
- * Phase C scaffolding (PR #pending). The wiring is live; the rehab-mode
+ * Phase C scaffolding (PR #73). The wiring is live; the rehab-mode
  * prompt augmentations in `rehabPrompts.ts` are stubs until the
  * `rehab-quickref` SKILL.md is dropped into ~/.claude/skills/. Until then
  * every rehab-* mode falls through to the existing SOAP_STYLE prefix —
@@ -58,13 +58,50 @@ export type SoapModeChoice = 'auto' | 'general' | SoapMode;
 const REHAB_ROOM_RE = /שיקום|rehab/i;
 
 /**
- * HD detection covers Hebrew + English transliteration variants. The
- * standalone "HD" lookup is anchored on word boundaries so we don't match
- * inside larger acronyms (CHD, AHD). פיסטולה is included even though it's
- * not strictly HD-only because in this patient population (geriatric rehab
- * post-vascular-access) it's a strong HD proxy.
+ * HD detection patterns. Pinned as an array (not a single alternation
+ * regex) because JS `\b` is ASCII-only — applying `\b` around Hebrew
+ * letters matches at non-word characters incorrectly (e.g. `\bהמוד\b`
+ * never fires because `ה` is non-word in `\b` semantics).
+ *
+ * Strategy:
+ *   - ASCII tokens use `\bX\b` — excludes HDL/HDR/HDPE substring traps.
+ *   - Multi-letter Hebrew words (המודיאליזה, דיאליזה, פיסטולה) match by
+ *     plain substring. They are distinctive enough that no common Hebrew
+ *     word contains them.
+ *   - Short Hebrew abbreviation `המוד` uses Unicode-aware lookaround
+ *     `(?<!\p{L})...(?!\p{L})` so it matches as a standalone word but
+ *     NOT as a prefix of המודיאליזה / המודינמית / המודרני.
+ *
+ * Conservative posture: false-positive HD-COMPLEX is safer than missing
+ * a real HD case (the manual dropdown can downgrade; an undetected HD
+ * patient gets the wrong template).
  */
-const HD_RE = /\bHD\b|המודיאליזה|דיאליזה|פיסטולה|hemodialysis|fistula/i;
+const HD_PATTERNS: readonly RegExp[] = [
+  /\bHD\b/i,
+  /\bESRD\b/i,
+  /\bESKD\b/i,
+  /\bdialysis\b/i,
+  /\bhemodialysis\b/i,
+  /\bfistula\b/i,
+  /המודיאליזה/,
+  /(?<!\p{L})המוד(?!\p{L})/u,
+  /דיאליזה/,
+  /פיסטולה/,
+  /על\s+המודיאליזה/,
+];
+
+/**
+ * Returns true when any of the supplied free-text fields contains an HD
+ * marker. Variadic so callers can pass admission body, room hint, and
+ * recent SOAP body without manual concatenation.
+ */
+export function isHdContext(
+  ...fields: ReadonlyArray<string | null | undefined>
+): boolean {
+  const text = fields.filter((f): f is string => Boolean(f)).join(' ');
+  if (!text) return false;
+  return HD_PATTERNS.some((rx) => rx.test(text));
+}
 
 /**
  * Narrow "recent escalation" lexicon. Conservative on purpose — false
@@ -74,8 +111,15 @@ const HD_RE = /\bHD\b|המודיאליזה|דיאליזה|פיסטולה|hemodia
 const ESCALATION_RE =
   /החמרה|חום\s*\d|זיהום|ספסיס|אנטיביוטיקה חדשה|fever|sepsis|deterioration|escalation/i;
 
-/** A SOAP newer than this counts as "recent" for escalation-flag purposes. */
-const RECENT_SOAP_WINDOW_MS = 48 * 60 * 60 * 1000;
+/**
+ * Lookback window for the "recent escalation" trigger that promotes
+ * STABLE → COMPLEX. 48h chosen because it covers yesterday's chart
+ * + today's morning round; shorter misses overnight events, longer
+ * over-promotes patients who've already stabilized. Tune via PR if
+ * calibration data says otherwise.
+ */
+export const ESCALATION_LOOKBACK_HOURS = 48;
+const ESCALATION_LOOKBACK_MS = ESCALATION_LOOKBACK_HOURS * 60 * 60 * 1000;
 
 /**
  * Top-level mode resolver.
@@ -122,12 +166,11 @@ export function classifyRehabSubMode(
   }
 
   const admissionBody = continuity.admission?.bodyHebrew ?? '';
-  const roomBlob = roomHint ?? '';
-  if (HD_RE.test(admissionBody) || HD_RE.test(roomBlob)) {
+  if (isHdContext(admissionBody, roomHint)) {
     return 'rehab-HD-COMPLEX';
   }
 
-  const cutoff = Date.now() - RECENT_SOAP_WINDOW_MS;
+  const cutoff = Date.now() - ESCALATION_LOOKBACK_MS;
   const recentSoap = continuity.priorSoaps.find((n) => n.createdAt >= cutoff);
   if (recentSoap && ESCALATION_RE.test(recentSoap.bodyHebrew)) {
     return 'rehab-COMPLEX';
@@ -163,13 +206,48 @@ export const SOAP_MODE_LABEL: Record<SoapModeChoice, string> = {
   'rehab-HD-COMPLEX': 'שיקום-HD מורכב',
 };
 
-/** Persistence helpers. Key by teudatZehut — patientId is minted post-gen. */
+/* -------------------------------------------------------------------------
+ * Persistence — keyed by SHA-256(teudatZehut) truncated to 8 bytes (64 bits).
+ *
+ * Why hash: localStorage is plain-text in DevTools; raw teudatZehut is PII
+ * that must not be stored alongside non-sensitive UI prefs. SHA-256 is
+ * collision-safe at any realistic patient count, deterministic so the
+ * same tz always resolves to the same key, and the truncation keeps the
+ * key short (~16 hex chars) for inspectability when debugging cache
+ * issues. The hash is one-way — no way to recover tz from a stored key.
+ * ------------------------------------------------------------------------- */
+
 const STORAGE_PREFIX = 'soap-mode:';
 
-export function loadModeChoice(teudatZehut: string | null | undefined): SoapModeChoice {
+/**
+ * Build a non-PII storage key for SOAP mode persistence.
+ * Async because crypto.subtle is async. Cheap (one shot, <1ms).
+ */
+async function modeStorageKey(teudatZehut: string): Promise<string> {
+  const buf = new TextEncoder().encode(teudatZehut);
+  const hash = await crypto.subtle.digest('SHA-256', buf);
+  const hex = Array.from(new Uint8Array(hash))
+    .slice(0, 8)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  return `${STORAGE_PREFIX}${hex}`;
+}
+
+/**
+ * Load the persisted mode choice for a patient. Returns 'auto' when:
+ *   - tz is missing
+ *   - no entry exists for this hashed key
+ *   - a stored value isn't a recognized SoapModeChoice (defensive against
+ *     manual localStorage edits or stale schema versions)
+ *   - localStorage is unavailable (private mode / quota / SecurityError)
+ */
+export async function loadModeChoice(
+  teudatZehut: string | null | undefined,
+): Promise<SoapModeChoice> {
   if (!teudatZehut) return 'auto';
   try {
-    const v = localStorage.getItem(STORAGE_PREFIX + teudatZehut);
+    const key = await modeStorageKey(teudatZehut);
+    const v = localStorage.getItem(key);
     if (v && v in SOAP_MODE_LABEL) return v as SoapModeChoice;
   } catch {
     // localStorage may throw in private/quota-exceeded contexts; degrade silently.
@@ -177,19 +255,25 @@ export function loadModeChoice(teudatZehut: string | null | undefined): SoapMode
   return 'auto';
 }
 
-export function saveModeChoice(
+/**
+ * Persist the mode choice. Async to mirror loadModeChoice — same hash
+ * derivation, same swallow-on-storage-failure posture. Callers must
+ * await before assuming the value is durable across reloads.
+ */
+export async function saveModeChoice(
   teudatZehut: string | null | undefined,
   choice: SoapModeChoice,
-): void {
+): Promise<void> {
   if (!teudatZehut) return;
   try {
-    localStorage.setItem(STORAGE_PREFIX + teudatZehut, choice);
+    const key = await modeStorageKey(teudatZehut);
+    localStorage.setItem(key, choice);
   } catch {
     // Same posture as load — never throw from a UI handler over storage hiccups.
   }
 }
 
-/** Feature-flag gate for the dropdown. */
+/** Feature-flag gate for the dropdown. Synchronous — reads a fixed key. */
 export function isSoapModeUiEnabled(): boolean {
   try {
     return localStorage.getItem('batch_features') === '1';
