@@ -50,10 +50,14 @@ function tailsAfterSetAuthSession(): string[] {
   const lines = src.split('\n');
   const tails: string[] = [];
   for (let i = 0; i < lines.length; i++) {
-    if (!lines[i].includes('setAuthSession(')) continue;
+    // Narrow lines[i] for noUncheckedIndexedAccess — bare access types as
+    // string|undefined under strict TS.
+    const line = lines[i];
+    if (!line || !line.includes('setAuthSession(')) continue;
     let endLine = lines.length;
     for (let j = i + 1; j < lines.length; j++) {
-      if (/^ {2}\}\s*$/.test(lines[j])) {
+      const inner = lines[j];
+      if (inner && /^ {2}\}\s*$/.test(inner)) {
         endLine = j;
         break;
       }
