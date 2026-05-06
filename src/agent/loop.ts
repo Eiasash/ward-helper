@@ -277,6 +277,7 @@ function blocksToContent(blocks: readonly CaptureBlock[]): AnthropicContentBlock
 export async function runExtractTurn(
   blocks: readonly CaptureBlock[],
   skillContent: string,
+  abortSignal?: AbortSignal,
 ): Promise<ParseResult> {
   if (blocks.length === 0) throw new Error('אין קלט לעיבוד');
   const content = blocksToContent(blocks);
@@ -301,7 +302,11 @@ export async function runExtractTurn(
       // them back to Capture is a worse UX than 2-3 extra seconds here.
       // We cap at 1 (not 2 like emit) because extract is much shorter — a
       // retry landing a cold proxy function usually works on the first try.
-      { retryOnTransient: 1 },
+      //
+      // abortSignal: Phase E batch driver passes its AbortController so a
+      // user "בטל" mid-batch cancels the in-flight extract immediately,
+      // not after the 45s extract timeout fires.
+      { retryOnTransient: 1, signal: abortSignal },
     );
   } catch (e) {
     recordError(e, { phase: 'extract' });
@@ -374,6 +379,7 @@ export async function runEmitTurn(
   noteType: NoteType,
   validatedFields: ParseFields,
   skillContent: string,
+  abortSignal?: AbortSignal,
 ): Promise<string> {
   const userText = [
     `Emit a SZMC ${noteType} note in Hebrew from the validated data below.`,
@@ -399,7 +405,7 @@ export async function runEmitTurn(
         output_config: { effort: 'high' },
         system: skillContent,
       },
-      { retryOnTransient: 2 },
+      { retryOnTransient: 2, signal: abortSignal },
     );
   } catch (e) {
     recordError(e, { phase: 'emit', context: noteType });
