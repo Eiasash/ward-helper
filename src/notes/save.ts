@@ -133,6 +133,7 @@ import {
   pullByUsername,
   decryptFromCloud,
   base64ToBytes,
+  verifyCanary,
   type CloudBlobRow,
 } from '@/storage/cloud';
 
@@ -146,6 +147,12 @@ export interface RestoreResult {
    * schema mismatch lands in `skipped`.)
    */
   restoredApiKey: 0 | 1;
+  /**
+   * True when the canary check failed before iterating any rows. The UI uses
+   * this to show "wrong passphrase" specifically (instead of generic "N
+   * skipped"). Mutually exclusive with restoredPatients/Notes/ApiKey > 0.
+   */
+  wrongPassphrase: boolean;
   skipped: Array<{ blob_type: string; blob_id: string; reason: string }>;
   /**
    * Which path the rows came from. 'username' = cross-device pull via
@@ -191,6 +198,20 @@ export async function restoreFromCloud(passphrase: string): Promise<RestoreResul
   // original device the RPC returns the same rows (idempotent). Guests
   // (no app_users session) keep using the legacy per-anon-user path.
   const user = getCurrentUser();
+  // Canary fail-fast: probe a single tiny blob with the passphrase before
+  // pulling N rows. Wrong passphrase exits in one decrypt rather than N.
+  const canaryStatus = await verifyCanary(passphrase, user?.username ?? null);
+  if (canaryStatus === 'wrong-passphrase') {
+    return {
+      scanned: 0,
+      restoredPatients: 0,
+      restoredNotes: 0,
+      restoredApiKey: 0,
+      wrongPassphrase: true,
+      skipped: [],
+      source: user ? 'username' : 'anon',
+    };
+  }
   const rows: CloudBlobRow[] = user
     ? await pullByUsername(user.username)
     : await pullAllBlobs();
@@ -199,6 +220,7 @@ export async function restoreFromCloud(passphrase: string): Promise<RestoreResul
     restoredPatients: 0,
     restoredNotes: 0,
     restoredApiKey: 0,
+    wrongPassphrase: false,
     skipped: [],
     source: user ? 'username' : 'anon',
   };
@@ -217,6 +239,9 @@ export async function restoreFromCloud(passphrase: string): Promise<RestoreResul
       } else if (row.blob_type === 'note') {
         await putNote(decrypted as Note);
         result.restoredNotes++;
+      } else if (row.blob_type === 'canary') {
+        // Already verified at top of function; ignore at row level.
+        continue;
       } else if (row.blob_type === 'api-key' && row.blob_id === API_KEY_BLOB_ID) {
         // API-key blobs go through their own apply path (writes the
         // keystore via saveApiKey internally). The decrypted payload was

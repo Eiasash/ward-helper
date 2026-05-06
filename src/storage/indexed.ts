@@ -43,11 +43,25 @@ export interface Note {
   safetyFlags?: SafetyFlags;
 }
 
+export interface CachedUnlockBlob {
+  v: 1;
+  ciphertext: Uint8Array<ArrayBuffer>;
+  iv: Uint8Array<ArrayBuffer>;
+  salt: Uint8Array<ArrayBuffer>;
+}
+
 export interface Settings {
   apiKeyXor: Uint8Array<ArrayBuffer>;
   deviceSecret: Uint8Array<ArrayBuffer>;
   lastPassphraseAuthAt: number | null;
   prefs: Record<string, unknown>;
+  /**
+   * Backup passphrase encrypted with PBKDF2(loginPassword)-derived AES key.
+   * Set after first successful passphrase entry; auto-unlocks on subsequent
+   * logins so the user types only their login password. null/undefined
+   * means "no cache, prompt for passphrase".
+   */
+  cachedUnlockBlob?: CachedUnlockBlob | null;
 }
 
 let dbPromise: Promise<IDBPDatabase> | null = null;

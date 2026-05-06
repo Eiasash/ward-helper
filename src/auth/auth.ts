@@ -30,10 +30,25 @@
  */
 
 import { getSupabase } from '@/storage/cloud';
+import { reencryptUnlockCache } from '@/crypto/unlock';
 
 const AUTH_LS_KEY = 'ward-helper.auth.user';
 const UID_LS_KEY = 'ward-helper.auth.uid';
 const DEV_LS_KEY = 'ward-helper.auth.devid';
+
+// Session-only stash of the user's login password — never persisted, never
+// logged. Used by Settings.tsx's "הפעל סיסמה" handler to derive the
+// cachedUnlockBlob key without prompting the user a second time.
+let _lastLoginPassword: string | null = null;
+export function stashLastLoginPassword(p: string): void {
+  _lastLoginPassword = p;
+}
+export function getLastLoginPasswordOrNull(): string | null {
+  return _lastLoginPassword;
+}
+export function clearLastLoginPassword(): void {
+  _lastLoginPassword = null;
+}
 
 /** Username pattern — same as the other 3 PWAs to keep accounts portable. */
 const USERNAME_RE = /^[a-z0-9][a-z0-9_-]{2,31}$/;
@@ -189,6 +204,24 @@ export async function authChangePassword(
     p_old_password: oldPwd,
     p_new_password: newPwd,
   });
+}
+
+/**
+ * Change the user's login password AND re-encrypt the cached unlock blob with
+ * the new password — so the user's auto-unlock keeps working after the change.
+ * Without the re-encrypt step, the user would silently lose their auto-unlock
+ * and have to retype the backup passphrase on next login.
+ */
+export async function changePasswordWithReencrypt(
+  username: string,
+  oldPwd: string,
+  newPwd: string,
+): Promise<RpcResult> {
+  const result = await authChangePassword(username, oldPwd, newPwd);
+  if (result.ok) {
+    await reencryptUnlockCache(oldPwd, newPwd);
+  }
+  return result;
 }
 
 // ───────── Password recovery (Tier 2, 2026-05-02) ─────────

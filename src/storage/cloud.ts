@@ -84,7 +84,7 @@ export async function ensureAnonymousAuth(): Promise<string> {
 }
 
 export async function pushBlob(
-  type: 'patient' | 'note' | 'api-key',
+  type: 'patient' | 'note' | 'api-key' | 'canary',
   id: string,
   sealed: SealedBlob,
   username?: string | null,
@@ -125,7 +125,7 @@ export async function pushBlob(
  * strings on read. Callers of pullAllBlobs get this back and must decode.
  */
 export type CloudBlobRow = {
-  blob_type: 'patient' | 'note' | 'api-key';
+  blob_type: 'patient' | 'note' | 'api-key' | 'canary';
   blob_id: string;
   ciphertext: string; // base64
   iv: string; // base64
@@ -218,3 +218,14 @@ function hexToBase64(hex: string): string {
   for (const b of bytes) s += String.fromCharCode(b);
   return btoa(s);
 }
+
+// Canary helpers live in a sibling module (./canary) so they can call
+// pushBlob / pullByUsername / pullAllBlobs through normal cross-module
+// imports. That makes them mockable via `vi.mock('@/storage/cloud', ...)`
+// in tests — lexical intra-module references would bypass the mock and
+// the canary unit tests would silently call real Supabase.
+//
+// Public API contract is preserved: callers still
+// `import { pushCanary, verifyCanary, CANARY_BLOB_ID } from '@/storage/cloud'`.
+export { pushCanary, verifyCanary, CANARY_BLOB_ID } from '@/storage/canary';
+

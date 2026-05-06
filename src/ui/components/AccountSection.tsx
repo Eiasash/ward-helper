@@ -2,16 +2,20 @@ import { useState } from 'react';
 import {
   authLogin,
   authRegister,
-  authChangePassword,
+  changePasswordWithReencrypt,
   authRequestPasswordReset,
   authSetEmail,
   setAuthSession,
   logout,
+  stashLastLoginPassword,
+  clearLastLoginPassword,
   validateUsername,
   validatePassword,
   normalizeUsername,
   type AuthUser,
 } from '@/auth/auth';
+import { tryAutoUnlock } from '@/crypto/unlock';
+import { setPassphrase } from '@/ui/hooks/useSettings';
 import { useAuth } from '../hooks/useAuth';
 
 // Loose email format check — full RFC validation rejects valid edge cases
@@ -85,7 +89,19 @@ function AuthedAccount({ user }: { user: AuthUser }) {
         >
           📧 אימייל לאיפוס
         </button>
-        <button type="button" className="ghost" onClick={() => logout()}>
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => {
+            // Drop the session-only login-password stash. Do NOT clear the
+            // cachedUnlockBlob itself — keeping it lets the same user re-login
+            // silently (a different user logging in on the same device gets
+            // tryAutoUnlock returning null because their password doesn't
+            // match the cached blob, falling through to the prompt).
+            clearLastLoginPassword();
+            logout();
+          }}
+        >
           🚪 התנתק
         </button>
       </div>
@@ -136,7 +152,7 @@ function ChangePasswordForm({
       return;
     }
     setBusy(true);
-    const res = await authChangePassword(username, oldPwd, newPwd);
+    const res = await changePasswordWithReencrypt(username, oldPwd, newPwd);
     setBusy(false);
     if (res.ok) {
       setStatus({ tone: 'ok', msg: 'הסיסמה עודכנה ✓' });
@@ -346,11 +362,22 @@ function GuestAccount() {
     }
     setBusy(true);
     const res = await authLogin(u, password);
-    setBusy(false);
     if (res.ok && res.user) {
+      // CRITICAL ordering (see feedback_react_setauthsession_unmount_race):
+      // any await that needs `password` must happen BEFORE setAuthSession,
+      // because that call swaps <GuestAccount> → <AuthedAccount> on the
+      // next tick and unmounts this component. Stash + auto-unlock are
+      // safe-before, the singleton setPassphrase mutation is also safe.
+      stashLastLoginPassword(password);
+      const cachedPass = await tryAutoUnlock(password);
+      if (cachedPass !== null) {
+        setPassphrase(cachedPass);
+      }
+      setBusy(false);
       setAuthSession(res.user.username, res.user.display_name, 'login');
       setPassword('');
     } else {
+      setBusy(false);
       setStatus({ tone: 'err', msg: errorMessage(res.error, res.message) });
     }
   }
