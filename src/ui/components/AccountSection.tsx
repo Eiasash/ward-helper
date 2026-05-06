@@ -9,6 +9,8 @@ import {
   logout,
   stashLastLoginPassword,
   clearLastLoginPassword,
+  persistLoginPassword,
+  clearPersistedLoginPassword,
   validateUsername,
   validatePassword,
   normalizeUsername,
@@ -92,12 +94,12 @@ function AuthedAccount({ user }: { user: AuthUser }) {
           type="button"
           className="ghost"
           onClick={() => {
-            // Drop the session-only login-password stash. Do NOT clear the
-            // cachedUnlockBlob itself — keeping it lets the same user re-login
-            // silently (a different user logging in on the same device gets
-            // tryAutoUnlock returning null because their password doesn't
-            // match the cached blob, falling through to the prompt).
+            // Drop the in-memory + IDB-persisted login password stash on
+            // logout. Without the persisted clear, a logout-then-different-
+            // user-login on the same device would inherit the prior user's
+            // cloud key. Fire-and-forget; logout() proceeds in parallel.
             clearLastLoginPassword();
+            void clearPersistedLoginPassword();
             logout();
           }}
         >
@@ -371,6 +373,13 @@ function GuestAccount() {
       // getLastLoginPasswordOrNull). Stashing is a sync module-level
       // mutation, safe before setAuthSession.
       stashLastLoginPassword(password);
+      // Fire-and-forget persist — UI doesn't wait. Failure to persist falls
+      // back to the v1.35.1 behavior (in-memory only, requires re-login on
+      // page reload). Logging the result so the next mobile diagnosis has
+      // the signal in the breadcrumb panel.
+      persistLoginPassword(password)
+        .then(() => pushBreadcrumb('login.persisted'))
+        .catch((e) => pushBreadcrumb('login.persistErr', (e as Error).message));
       pushBreadcrumb('login.stashed');
       setBusy(false);
       setAuthSession(res.user.username, res.user.display_name, 'login');

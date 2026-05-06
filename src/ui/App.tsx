@@ -1,5 +1,7 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { HashRouter, Routes, Route, NavLink } from 'react-router-dom';
+import { loadPersistedLoginPassword, getLastLoginPasswordOrNull } from '@/auth/auth';
+import { pushBreadcrumb } from './components/MobileDebugPanel';
 import { Capture } from './screens/Capture';
 import { Review } from './screens/Review';
 import { NoteEditor } from './screens/NoteEditor';
@@ -38,6 +40,19 @@ declare const __APP_VERSION__: string;
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
 
 export function App() {
+  // v1.35.2: rehydrate the in-memory login-password stash from IDB on app
+  // boot. The auth session is already persisted in localStorage so the user
+  // appears logged in across reloads — but the cloud encryption key (login
+  // password) was previously memory-only, which broke cloud backup until
+  // the user logged out + back in. This effect refills the stash so cloud
+  // ops keep working seamlessly across reloads.
+  useEffect(() => {
+    if (getLastLoginPasswordOrNull() !== null) return; // already in memory
+    loadPersistedLoginPassword().then((p) => {
+      pushBreadcrumb('boot.loadPersistedPwd', { hadPersisted: p !== null });
+    });
+  }, []);
+
   return (
     <HashRouter>
       {/* Skip-to-content link — visible only when keyboard-focused. Lets keyboard
