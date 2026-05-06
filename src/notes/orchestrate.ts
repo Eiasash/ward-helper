@@ -2,6 +2,8 @@ import { runEmitTurn } from '@/agent/loop';
 import { loadSkills } from '@/skills/loader';
 import { wrapForChameleon } from '@/i18n/bidi';
 import { NOTE_SKILL_MAP } from './templates';
+import { rehabAugmentationFor } from './rehabPrompts';
+import type { SoapMode } from './soapMode';
 import type { ParseResult } from '@/agent/tools';
 import type { NoteType } from '@/storage/indexed';
 import type { ContinuityContext } from './continuity';
@@ -267,15 +269,29 @@ Sections in order:
 10. חתימה: "חתימה: ד\"ר Eias Ashhab, מתמחה גריאטריה, DD/MM/YY".
 `.trim();
 
-/** SOAP with optional continuity context (admission + prior SOAPs). */
-export function buildSoapPromptPrefix(continuity: ContinuityContext | null): string {
+/**
+ * SOAP with optional continuity context (admission + prior SOAPs).
+ *
+ * `mode` (added Phase C, v1.37.0): defaults to 'general' which produces
+ * the pre-Phase-C output verbatim. Rehab-* modes append a small
+ * augmentation block from rehabPrompts.ts at the end of the system
+ * prompt — the augmentations are stubs until the rehab-quickref
+ * SKILL.md lands; see rehabPrompts.ts header for the porting plan.
+ */
+export function buildSoapPromptPrefix(
+  continuity: ContinuityContext | null,
+  mode: SoapMode = 'general',
+): string {
   const base = [CHAMELEON_RULES, SOAP_STYLE];
+  const augmentation = rehabAugmentationFor(mode);
+  const tail = augmentation ? [augmentation] : [];
 
   if (!continuity || (!continuity.admission && continuity.priorSoaps.length === 0)) {
     return [
       'Emit a SOAP note in Hebrew.',
       "First SOAP for this patient — anchor the Assessment one-liner on today's chief complaint + PMH + age/sex.",
       ...base,
+      ...tail,
     ].join('\n\n');
   }
 
@@ -301,6 +317,7 @@ export function buildSoapPromptPrefix(continuity: ContinuityContext | null): str
       '---',
       '',
       ...base,
+      ...tail,
     ].join('\n');
   }
 
@@ -313,13 +330,18 @@ export function buildSoapPromptPrefix(continuity: ContinuityContext | null): str
     '---',
     '',
     ...base,
+    ...tail,
   ].join('\n');
 }
 
-export function buildPromptPrefix(noteType: NoteType, continuity: ContinuityContext | null): string {
+export function buildPromptPrefix(
+  noteType: NoteType,
+  continuity: ContinuityContext | null,
+  soapMode: SoapMode = 'general',
+): string {
   switch (noteType) {
     case 'soap':
-      return buildSoapPromptPrefix(continuity);
+      return buildSoapPromptPrefix(continuity, soapMode);
     case 'admission':
       return [CHAMELEON_RULES, ADMISSION_STYLE].join('\n\n');
     case 'discharge':
@@ -441,13 +463,19 @@ export async function generateNote(
   noteType: NoteType,
   validated: ParseResult,
   continuity: ContinuityContext | null = null,
+  soapMode: SoapMode = 'general',
 ): Promise<string> {
   assertExtractIsSafe(noteType, validated);
 
   const skills = NOTE_SKILL_MAP[noteType];
   const skillContent = await loadSkills([...skills]);
 
-  const prefix = buildPromptPrefix(noteType, continuity);
+  // soapMode is consulted only for noteType === 'soap'. Other note types
+  // pass through buildPromptPrefix's default and the mode is silently
+  // ignored — keeping the signature uniform across note types lets the
+  // UI hand the same `mode` to generateNote regardless of the type the
+  // user is actually generating.
+  const prefix = buildPromptPrefix(noteType, continuity, soapMode);
   const systemWithPrefix = `${skillContent}\n\n---\n\n${prefix}`;
 
   const raw = await runEmitTurn(noteType, validated.fields, systemWithPrefix);
