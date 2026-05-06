@@ -62,8 +62,10 @@ export function Settings() {
     | { kind: 'idle' }
     | { kind: 'busy' }
     | { kind: 'ok'; text: string }
-    | { kind: 'err'; text: string };
+    | { kind: 'err'; text: string }
+    | { kind: 'wrongPass'; rejectedPass: string };
   const [passSaveState, setPassSaveState] = useState<PassSaveState>({ kind: 'idle' });
+  const [overwriting, setOverwriting] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -155,13 +157,12 @@ export function Settings() {
       return;
     }
     if (status === 'wrong-passphrase') {
-      // Bail without keeping the bad passphrase active.
+      // Bail without keeping the bad passphrase active. Surface the recovery
+      // path inline (overwrite cloud canary + everything with this passphrase)
+      // so the user has a way out without navigating to the restore section.
       clearPassphrase();
       setPassphraseActive(false);
-      setPassSaveState({
-        kind: 'err',
-        text: 'הסיסמה שגויה (לא הסיסמה ששמרה את הגיבויים בענן).',
-      });
+      setPassSaveState({ kind: 'wrongPass', rejectedPass: p });
       return;
     }
     if (status === 'absent') {
@@ -342,6 +343,89 @@ export function Settings() {
           >
             {passSaveState.text}
           </span>
+        )}
+        {passSaveState.kind === 'wrongPass' && (
+          <div
+            role="alert"
+            style={{
+              color: '#b91c1c',
+              fontSize: 13,
+              fontWeight: 600,
+              flexBasis: '100%',
+              marginTop: 6,
+              lineHeight: 1.5,
+            }}
+          >
+            הסיסמה שגויה — היא לא תואמת את הסיסמה ששמרה את הגיבוי בענן.
+            <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                disabled={overwriting}
+                onClick={async () => {
+                  if (
+                    !window.confirm(
+                      'פעולה זו תחליף את הגיבוי הקיים בענן בכל המטופלים וההערות שיש לך עכשיו במכשיר, מוצפנים מחדש עם הסיסמה הזו. הגיבוי הקיים יהיה בלתי שחזיר. להמשיך?',
+                    )
+                  ) {
+                    return;
+                  }
+                  pushBreadcrumb('savePass.overwrite.click');
+                  setOverwriting(true);
+                  const username = getCurrentUser()?.username ?? null;
+                  const rejected =
+                    passSaveState.kind === 'wrongPass'
+                      ? passSaveState.rejectedPass
+                      : '';
+                  try {
+                    const out = await pushAllToCloud(rejected, username);
+                    pushBreadcrumb('savePass.overwrite.done', {
+                      patients: out.pushedPatients,
+                      notes: out.pushedNotes,
+                      canary: out.pushedCanary,
+                      failed: out.failed.length,
+                    });
+                    // Activate locally now that the cloud agrees with this passphrase.
+                    setPassphrase(rejected);
+                    setPassphraseActive(true);
+                    // Cache the unlock blob if the login password is in memory.
+                    const loginPwd = getLastLoginPasswordOrNull();
+                    if (loginPwd) {
+                      try {
+                        await cacheUnlockBlob(rejected, loginPwd);
+                      } catch (e) {
+                        console.warn('cacheUnlockBlob failed', e);
+                      }
+                    }
+                    setPass('');
+                    setPassSaveState({
+                      kind: 'ok',
+                      text: `✓ הגיבוי הוחלף — ${out.pushedPatients} מטופלים, ${out.pushedNotes} הערות`,
+                    });
+                  } catch (e) {
+                    pushBreadcrumb('savePass.overwrite.err', (e as Error).message);
+                    setPassSaveState({
+                      kind: 'err',
+                      text: `החלפה נכשלה: ${(e as Error).message}`,
+                    });
+                  } finally {
+                    setOverwriting(false);
+                  }
+                }}
+              >
+                {overwriting ? 'מחליף...' : 'התחל מחדש (יחליף בענן)'}
+              </button>
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => {
+                  setPassSaveState({ kind: 'idle' });
+                  setPass('');
+                }}
+              >
+                ביטול
+              </button>
+            </div>
+          </div>
         )}
         {passSaveState.kind === 'busy' && (
           <span
