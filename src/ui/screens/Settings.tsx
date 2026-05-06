@@ -252,6 +252,13 @@ export function Settings() {
                 canary: out.pushedCanary,
                 failed: out.failed.length,
               });
+              // Cloud is now under the current login password — clear any
+              // stale "wrong passphrase" alert from a prior restore attempt
+              // (which would have been against the v1.34 ciphertext). Without
+              // this, the user sees a persistent red alert even after a
+              // successful push.
+              setRestoreResult(null);
+              setRestoreErr('');
               alert(
                 `נשלחו לענן: ${out.pushedPatients} מטופלים, ${out.pushedNotes} הערות${out.failed.length > 0 ? ` (${out.failed.length} נכשלו)` : ''}.`,
               );
@@ -368,6 +375,10 @@ export function Settings() {
                   }
                   try {
                     const out = await pushAllToCloud(loginPwd, username);
+                    // Drop the stale wrongPassphrase result so the red alert
+                    // disappears — cloud is now consistent with the login.
+                    setRestoreResult(null);
+                    setRestoreErr('');
                     alert(
                       `גיבוי הוחלף: ${out.pushedPatients} מטופלים, ${out.pushedNotes} הערות.`,
                     );
