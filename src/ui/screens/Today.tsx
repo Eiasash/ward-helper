@@ -176,6 +176,12 @@ export function Today() {
    * tz from RosterPatient (which may be null — roster rows don't always
    * carry a teudatZehut). Without tz, no continuity is seeded; the user
    * still gets the standard SOAP capture flow.
+   *
+   * Phase D+E follow-up (chore-roster-single-skip-extract, v1.38.x):
+   * Stash the full RosterPatient as `rosterSeed` so Review.tsx can merge
+   * it with extract output via mergeRosterIdentity. Frees the doctor
+   * from photographing the patient card — identity comes from the
+   * roster row, extract only fills clinical content.
    */
   function startSoapForRosterPatient(rp: RosterPatient) {
     if (rp.tz) {
@@ -185,6 +191,7 @@ export function Today() {
     }
     sessionStorage.setItem('continuityNoteType', 'soap');
     sessionStorage.setItem('noteType', 'soap');
+    sessionStorage.setItem('rosterSeed', JSON.stringify(rp));
     nav('/capture');
   }
 
