@@ -101,7 +101,14 @@ let dbPromise: Promise<IDBPDatabase> | null = null;
 // v4 adds Note.safetyFlags (optional SafetyFlags from src/safety). Same
 // shape contract as sentToEmrAt — no migration, no index, just a
 // version bump so future safety-flag queries have a place to land.
-const DB_VERSION = 4;
+//
+// v5 (Phase D, v1.38.0): adds a `roster` object store for the daily
+// department snapshot — separate from `patients` because roster rows
+// are ephemeral (24h TTL via ageOutRoster on boot) and are NOT cloud-
+// backed. Schema invariants live in src/storage/roster.ts. No indexes
+// — daily roster is bounded at <50 rows, full scan is cheaper than
+// a B-tree lookup on a dataset that small.
+const DB_VERSION = 5;
 
 export function getDb(): Promise<IDBPDatabase> {
   if (!dbPromise) {
@@ -140,6 +147,13 @@ export function getDb(): Promise<IDBPDatabase> {
           // Schema unchanged — Note.safetyFlags is an optional non-indexed
           // field. Block kept intentionally so future v4 data migrations
           // (backfills, rule-version stamping) have a landing spot.
+        }
+        if (oldVersion < 5) {
+          // Phase D (v1.38.0): department roster store — daily snapshot,
+          // 24h TTL, no cloud backup, no indexes (bounded <50 rows).
+          if (!db.objectStoreNames.contains('roster')) {
+            db.createObjectStore('roster', { keyPath: 'id' });
+          }
         }
       },
     });
