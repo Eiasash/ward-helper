@@ -31,6 +31,7 @@
 
 import { getSupabase } from '@/storage/cloud';
 import { reencryptUnlockCache } from '@/crypto/unlock';
+import { resetCanaryArmed } from '@/notes/save';
 
 const AUTH_LS_KEY = 'ward-helper.auth.user';
 const UID_LS_KEY = 'ward-helper.auth.uid';
@@ -406,6 +407,12 @@ export function logout(): void {
   // And fresh device id, so any future cloud-backup writes don't accidentally
   // attach to the previous account's row.
   localStorage.setItem(DEV_LS_KEY, 'dev_' + Math.random().toString(36).slice(2, 12));
+  // Cross-user safety: the canary-armed flag is a JS module global and
+  // survives logout/login on the same tab. Without this reset, user B
+  // logging in after user A on the same device skips their first canary
+  // push, regressing into the pre-v1.36.0 state where wrong-password
+  // attempts silently bulk-skip on the next fresh-device restore.
+  resetCanaryArmed();
   notifyAuthChanged('logout');
 }
 

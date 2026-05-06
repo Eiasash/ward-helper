@@ -37,6 +37,32 @@ export function _resetCanaryStateForTests(): void {
   lastCanaryPushOutcome = null;
 }
 
+/** Test-only: force the armed flag without running saveBoth's full path. */
+export function _setCanaryArmedForTests(armed: boolean): void {
+  canaryArmedThisSession = armed;
+}
+
+/**
+ * Production helper called by auth.ts::logout. The canary-armed flag is
+ * a JS module global and survives logout/login on the same tab, so without
+ * this reset, user B logging in after user A on the same device would skip
+ * their first canary push — leaving B in the pre-Phase-B state where a
+ * fresh-device wrong-password attempt falls through to silent bulk-skip.
+ *
+ * Distinct from `_resetCanaryStateForTests` (test affordance) by name and
+ * intent: this is a contract used by production code and must not also
+ * clear `lastCanaryPushOutcome` (which is per-process and helpful for
+ * diagnostics that the user might inspect after their next save).
+ */
+export function resetCanaryArmed(): void {
+  canaryArmedThisSession = false;
+}
+
+/** Read-only getter — useful for diagnostics and the cross-user logout test. */
+export function isCanaryArmedThisSession(): boolean {
+  return canaryArmedThisSession;
+}
+
 /** For MobileDebugPanel diagnostic — surfaces the last push outcome. */
 export function getLastCanaryPushOutcome(): 'ok' | 'fail' | null {
   return lastCanaryPushOutcome;

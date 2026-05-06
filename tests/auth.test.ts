@@ -204,7 +204,12 @@ describe('auth — change events', () => {
 //                                                  successful restore arms it)
 // ─────────────────────────────────────────────────────────────────────────
 
-import { restoreFromCloud, _resetCanaryStateForTests } from '@/notes/save';
+import {
+  restoreFromCloud,
+  _resetCanaryStateForTests,
+  _setCanaryArmedForTests,
+  isCanaryArmedThisSession,
+} from '@/notes/save';
 import { resetDbForTests, type Patient, type Note } from '@/storage/indexed';
 import { deriveAesKey } from '@/crypto/pbkdf2';
 import { encryptForCloud, type CloudBlobRow } from '@/storage/cloud';
@@ -355,5 +360,30 @@ describe('restoreFromCloud — Phase B fresh-device cache-clear survival', () =>
     // No backfill: zero successful decrypts means we don't know our
     // passphrase is right, so we mustn't write a disagreeing canary.
     expect(pushCanaryMock).not.toHaveBeenCalled();
+  });
+
+  it('Case 5 — logout() resets the canary-armed flag (cross-user safety)', () => {
+    // The canary-armed flag is a JS module global, NOT a per-user value.
+    // Without an explicit reset on logout, user B logging in after user A
+    // on the same tab would skip their first canary push (gated by the
+    // still-true flag), leaving B in the pre-v1.36.0 state where a
+    // fresh-device wrong-password attempt silently bulk-skips. This test
+    // proves logout() invokes resetCanaryArmed via auth.ts.
+    _resetCanaryStateForTests();
+    expect(isCanaryArmedThisSession()).toBe(false);
+
+    // Simulate "user A's saveBoth pushed a canary during their session".
+    // Production path is saveBoth → armCanaryOnce → flag=true; we use the
+    // test affordance here for unit-test focus rather than running a
+    // full saveBoth with all its mocks.
+    _setCanaryArmedForTests(true);
+    expect(isCanaryArmedThisSession()).toBe(true);
+
+    // Production logout(). Must invoke resetCanaryArmed internally so that
+    // the next user's first save fires a fresh canary push.
+    setAuthSession('user-a');
+    logout();
+
+    expect(isCanaryArmedThisSession()).toBe(false);
   });
 });
