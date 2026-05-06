@@ -17,6 +17,7 @@ import {
 import { tryAutoUnlock } from '@/crypto/unlock';
 import { setPassphrase } from '@/ui/hooks/useSettings';
 import { useAuth } from '../hooks/useAuth';
+import { pushBreadcrumb } from './MobileDebugPanel';
 
 // Loose email format check — full RFC validation rejects valid edge cases
 // for marginal benefit. Server (auth_set_email RPC) does the same regex.
@@ -361,6 +362,7 @@ function GuestAccount() {
       return;
     }
     setBusy(true);
+    pushBreadcrumb('login.start', { username: u });
     const res = await authLogin(u, password);
     if (res.ok && res.user) {
       // CRITICAL ordering (see feedback_react_setauthsession_unmount_race):
@@ -369,7 +371,9 @@ function GuestAccount() {
       // next tick and unmounts this component. Stash + auto-unlock are
       // safe-before, the singleton setPassphrase mutation is also safe.
       stashLastLoginPassword(password);
+      pushBreadcrumb('login.stashed');
       const cachedPass = await tryAutoUnlock(password);
+      pushBreadcrumb('login.tryAutoUnlock', { hadCache: cachedPass !== null });
       if (cachedPass !== null) {
         setPassphrase(cachedPass);
       }
@@ -378,6 +382,7 @@ function GuestAccount() {
       setPassword('');
     } else {
       setBusy(false);
+      pushBreadcrumb('login.err', { error: res.error });
       setStatus({ tone: 'err', msg: errorMessage(res.error, res.message) });
     }
   }
