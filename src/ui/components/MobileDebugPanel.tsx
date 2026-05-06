@@ -73,14 +73,38 @@ function fmt(t: number): string {
   return `${hh}:${mm}:${ss}`;
 }
 
+const COLLAPSED_KEY = 'ward-helper.debugPanelCollapsed';
+
+function readCollapsed(): boolean {
+  try {
+    // Default to collapsed so the panel doesn't obstruct the view on first open.
+    // The user explicitly expands it when they want to read events.
+    return localStorage.getItem(COLLAPSED_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+function writeCollapsed(v: boolean): void {
+  try {
+    localStorage.setItem(COLLAPSED_KEY, v ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * Render the panel. No-op if neither activation path is set. Polls the
  * buffer every 500ms via a render counter — simpler than wiring an
  * event-bus and the cost is negligible (component only mounts when
  * debug flag is on).
+ *
+ * Collapsed by default (just the title pill) so the panel doesn't obstruct
+ * the page. Tap the title to expand. Preference persists in localStorage.
  */
 export function MobileDebugPanel() {
   const [, tick] = useState(0);
+  const [collapsed, setCollapsed] = useState<boolean>(() => readCollapsed());
   const enabled = isPanelEnabled();
 
   useEffect(() => {
@@ -91,6 +115,14 @@ export function MobileDebugPanel() {
 
   if (!enabled) return null;
 
+  function toggle() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      writeCollapsed(next);
+      return next;
+    });
+  }
+
   return (
     <div
       role="log"
@@ -100,15 +132,15 @@ export function MobileDebugPanel() {
         bottom: 4,
         left: 4,
         zIndex: 9999,
-        maxWidth: 'calc(100vw - 8px)',
-        maxHeight: '40vh',
-        overflowY: 'auto',
+        maxWidth: collapsed ? 'auto' : 'calc(100vw - 8px)',
+        maxHeight: collapsed ? 'auto' : '40vh',
+        overflowY: collapsed ? 'visible' : 'auto',
         background: 'rgba(15,23,42,0.92)',
         color: '#e2e8f0',
         fontFamily: 'monospace',
         fontSize: 10,
         lineHeight: 1.3,
-        padding: 6,
+        padding: collapsed ? '4px 8px' : 6,
         borderRadius: 6,
         border: '1px solid #334155',
         pointerEvents: 'auto',
@@ -116,17 +148,38 @@ export function MobileDebugPanel() {
         textAlign: 'left',
       }}
     >
-      <div style={{ fontWeight: 700, marginBottom: 4, color: '#fbbf24' }}>
-        🐞 debug ({buffer.length}/{BUFFER_SIZE})
-      </div>
-      {buffer.length === 0 && <div style={{ opacity: 0.6 }}>no events yet</div>}
-      {buffer.map((c, i) => (
-        <div key={i} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-          <span style={{ color: '#94a3b8' }}>{fmt(c.t)}</span>{' '}
-          <span style={{ color: '#7dd3fc' }}>{c.ev}</span>
-          {c.data && <span style={{ color: '#cbd5e1' }}> {c.data}</span>}
-        </div>
-      ))}
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? 'expand debug panel' : 'collapse debug panel'}
+        style={{
+          fontWeight: 700,
+          marginBottom: collapsed ? 0 : 4,
+          color: '#fbbf24',
+          background: 'transparent',
+          border: 'none',
+          padding: 0,
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+          fontSize: 'inherit',
+          minHeight: 0,
+        }}
+      >
+        🐞 debug ({buffer.length}/{BUFFER_SIZE}) {collapsed ? '▸ tap' : '▾'}
+      </button>
+      {!collapsed && (
+        <>
+          {buffer.length === 0 && <div style={{ opacity: 0.6 }}>no events yet</div>}
+          {buffer.map((c, i) => (
+            <div key={i} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+              <span style={{ color: '#94a3b8' }}>{fmt(c.t)}</span>{' '}
+              <span style={{ color: '#7dd3fc' }}>{c.ev}</span>
+              {c.data && <span style={{ color: '#cbd5e1' }}> {c.data}</span>}
+            </div>
+          ))}
+        </>
+      )}
     </div>
   );
 }
