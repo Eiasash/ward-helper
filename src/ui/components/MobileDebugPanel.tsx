@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { getCurrentUser, getLastLoginPasswordOrNull } from '@/auth/auth';
+import { verifyCanary } from '@/storage/cloud';
 
 /**
  * Mobile breadcrumb panel — fixed-position debug surface for diagnosing
@@ -123,6 +125,33 @@ export function MobileDebugPanel() {
     });
   }
 
+  // On-demand canary diagnostic. Emits breadcrumbs into this same panel so
+  // the user can see (a) whether a canary blob exists in the cloud for
+  // their account (verify=='absent' → no), (b) whether the cached login
+  // password decrypts it, (c) latency of the verify call. Past push
+  // outcomes live in the same buffer as `canary.push.ok`/`canary.push.fail`
+  // entries from the saveBoth + restore-backfill paths.
+  async function runCanaryDiagnostic() {
+    pushBreadcrumb('canary.diag.start');
+    const pwd = getLastLoginPasswordOrNull();
+    if (!pwd) {
+      pushBreadcrumb('canary.diag.no-pwd');
+      return;
+    }
+    const user = getCurrentUser();
+    const t0 = Date.now();
+    try {
+      const result = await verifyCanary(pwd, user?.username ?? null);
+      pushBreadcrumb('canary.verify', {
+        result,
+        ms: Date.now() - t0,
+        trigger: 'diag',
+      });
+    } catch (e) {
+      pushBreadcrumb('canary.diag.err', (e as Error).message ?? String(e));
+    }
+  }
+
   return (
     <div
       role="log"
@@ -168,6 +197,30 @@ export function MobileDebugPanel() {
       >
         🐞 debug ({buffer.length}/{BUFFER_SIZE}) {collapsed ? '▸ tap' : '▾'}
       </button>
+      {!collapsed && (
+        <>
+          <button
+            type="button"
+            onClick={runCanaryDiagnostic}
+            aria-label="run canary diagnostic"
+            style={{
+              marginLeft: 6,
+              marginBottom: 4,
+              color: '#a7f3d0',
+              background: 'transparent',
+              border: '1px solid #334155',
+              borderRadius: 4,
+              padding: '1px 6px',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              fontSize: 'inherit',
+              minHeight: 0,
+            }}
+          >
+            🔍 canary
+          </button>
+        </>
+      )}
       {!collapsed && (
         <>
           {buffer.length === 0 && <div style={{ opacity: 0.6 }}>no events yet</div>}

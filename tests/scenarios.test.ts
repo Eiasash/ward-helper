@@ -28,7 +28,10 @@ import 'fake-indexeddb/auto';
 // ─────────────────────────────────────────────────────────────────────────
 interface UpsertRow {
   user_id: string;
-  blob_type: 'patient' | 'note';
+  // 'canary' is added in v1.36.0 — saveBoth now pushes a canary blob on
+  // the first save of each JS session so restoreFromCloud can fail-fast
+  // on wrong-passphrase rather than silently skipping every row.
+  blob_type: 'patient' | 'note' | 'canary';
   blob_id: string;
   ciphertext: Uint8Array;
   iv: Uint8Array;
@@ -73,7 +76,7 @@ vi.mock('@/agent/costs', () => ({
   finalizeSessionFor: vi.fn(),
 }));
 
-import { saveBoth } from '@/notes/save';
+import { saveBoth, _resetCanaryStateForTests } from '@/notes/save';
 import {
   listPatients,
   listNotes,
@@ -220,6 +223,10 @@ const SCENARIOS: Scenario[] = [
 beforeEach(async () => {
   await resetDbForTests();
   engine.rows.length = 0;
+  // v1.36.0: clear the once-per-session canary flag so each test starts
+  // with a fresh "no canary armed yet" state and exercises the canary
+  // push path on its first saveBoth call.
+  _resetCanaryStateForTests();
 });
 
 describe('Fictional scenarios — full pipeline through Supabase test engine', () => {
@@ -244,10 +251,13 @@ describe('Fictional scenarios — full pipeline through Supabase test engine', (
       expect(notes[0]!.type).toBe(scenario.type);
       expect(notes[0]!.bodyHebrew).toBe(scenario.bodyHebrew);
 
-      // Two blobs hit the engine: one patient, one note. Both for our user.
-      expect(engine.rows).toHaveLength(2);
+      // Three blobs hit the engine: patient, note, and canary. The canary
+      // is the v1.36.0 addition — it's pushed once per JS session, and the
+      // beforeEach above resets the session flag so every iteration of
+      // this loop sees a fresh push.
+      expect(engine.rows).toHaveLength(3);
       const types = engine.rows.map((r) => r.blob_type).sort();
-      expect(types).toEqual(['note', 'patient']);
+      expect(types).toEqual(['canary', 'note', 'patient']);
       for (const row of engine.rows) {
         expect(row.user_id).toBe(TEST_USER_ID);
         expect(row.ciphertext.byteLength).toBeGreaterThan(0);
@@ -281,7 +291,7 @@ describe('Fictional scenarios — full pipeline through Supabase test engine', (
     expect(decrypted.bodyHebrew).toBe(scenario.bodyHebrew);
   }, 30_000);
 
-  it('runs all four scenarios sequentially and accumulates 8 blobs in the engine', async () => {
+  it('runs all four scenarios sequentially and accumulates 9 blobs (4 patients + 4 notes + 1 canary)', async () => {
     for (const scenario of SCENARIOS) {
       const result = await saveBoth(
         scenario.patient,
@@ -290,11 +300,16 @@ describe('Fictional scenarios — full pipeline through Supabase test engine', (
       );
       expect(result.cloudPushed).toBe(true);
     }
-    expect(engine.rows).toHaveLength(SCENARIOS.length * 2);
+    // 4 patients + 4 notes + 1 canary. The canary fires only on the FIRST
+    // saveBoth call of the session — subsequent calls short-circuit on
+    // canaryArmedThisSession=true. That's why this is 9 and not 12.
+    expect(engine.rows).toHaveLength(SCENARIOS.length * 2 + 1);
     const patientCount = engine.rows.filter((r) => r.blob_type === 'patient').length;
     const noteCount = engine.rows.filter((r) => r.blob_type === 'note').length;
+    const canaryCount = engine.rows.filter((r) => r.blob_type === 'canary').length;
     expect(patientCount).toBe(SCENARIOS.length);
     expect(noteCount).toBe(SCENARIOS.length);
+    expect(canaryCount).toBe(1);
 
     const allPatients = await listPatients();
     expect(allPatients).toHaveLength(SCENARIOS.length);
