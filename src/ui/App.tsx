@@ -9,6 +9,7 @@ import { Today } from './screens/Today';
 import { Consult } from './screens/Consult';
 import { HeaderStrip } from './components/HeaderStrip';
 import { PostLoginRestorePrompt } from './components/PostLoginRestorePrompt';
+import { MobileDebugPanel } from './components/MobileDebugPanel';
 
 // Lazy-loaded routes. Cold start usually lands on /today or /capture; the
 // three below are not on the hot path, so splitting them out trims the
@@ -78,6 +79,10 @@ export function App() {
          modal renders above any active route. Self-suppresses after the
          first dismissal/restore per (username, device). */}
       <PostLoginRestorePrompt />
+      {/* On-device debug breadcrumb panel — no-op unless ?debug=1 in URL or
+         the existing localStorage debug toggle is on. Surfaces silent click
+         failures on mobile where DevTools isn't reachable. */}
+      <MobileDebugPanel />
     </HashRouter>
   );
 }
