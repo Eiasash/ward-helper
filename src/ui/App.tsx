@@ -44,9 +44,39 @@ export function App() {
   // boot. The auth session is already persisted in localStorage so the user
   // appears logged in across reloads — but the cloud encryption key (login
   // password) was previously memory-only, which broke cloud backup until
-  // the user logged out + back in. This effect refills the stash so cloud
-  // ops keep working seamlessly across reloads.
+  // the user logged out + back in.
+  //
+  // v1.35.3: also request persistent storage on boot. Without this, Android
+  // Chrome may auto-evict site data under storage pressure or after PWA
+  // reinstall flows — which is exactly what the user hit on 2026-05-06,
+  // where 4 patients + 4 notes silently disappeared between sessions and
+  // every cloudPush returned `patients:0 notes:0`. navigator.storage.persist
+  // returns true if granted; PWAs installed to homescreen usually get it
+  // automatically. We don't gate on the result — the user can keep using
+  // the app even if Chrome refuses; we just log the outcome so future
+  // mobile diagnoses see whether the site is in 'best effort' or 'persistent'
+  // storage policy.
   useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.storage?.persist) {
+      navigator.storage
+        .persisted()
+        .then((alreadyPersistent) => {
+          if (alreadyPersistent) {
+            pushBreadcrumb('boot.storagePersist', { granted: true, alreadyHad: true });
+            return alreadyPersistent;
+          }
+          return navigator.storage.persist().then((granted) => {
+            pushBreadcrumb('boot.storagePersist', { granted, alreadyHad: false });
+            return granted;
+          });
+        })
+        .catch((e: unknown) => {
+          pushBreadcrumb('boot.storagePersist.err', (e as Error).message ?? 'unknown');
+        });
+    } else {
+      pushBreadcrumb('boot.storagePersist', { unsupported: true });
+    }
+
     if (getLastLoginPasswordOrNull() !== null) return; // already in memory
     loadPersistedLoginPassword().then((p) => {
       pushBreadcrumb('boot.loadPersistedPwd', { hadPersisted: p !== null });
