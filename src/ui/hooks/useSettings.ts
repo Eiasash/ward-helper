@@ -1,28 +1,31 @@
 import { useState, useEffect, useCallback } from 'react';
 import { hasApiKey, loadApiKey, saveApiKey, clearApiKey } from '@/crypto/keystore';
 
-// Passphrase lives in memory only, auto-clears after idle timeout.
+// Passphrase lives in memory only. Cleared on explicit `clearPassphrase()`
+// (logout, "נקה סיסמה" button) or on page reload — never time-based.
+//
+// History: until v1.34.2 there was a 15-minute idle-expiry that auto-cleared
+// the passphrase mid-session. That was protective when the passphrase was
+// the only secret. v1.34.0 added the cachedUnlockBlob (encrypted with the
+// login password), which makes the login itself the security gate — the
+// 15-min expiry just added a friction tax with no remaining defensive value
+// (a thief with the unlocked device can already exfiltrate everything from
+// IndexedDB plaintext, so re-prompting for the passphrase doesn't help).
+//
+// On page reload the in-memory copy is lost regardless — the next login
+// triggers tryAutoUnlock which silently re-fills it from the cached blob.
 let passphraseMemory: string | null = null;
-let passphraseSetAt = 0;
-const IDLE_MS = 15 * 60 * 1000;
 
 export function setPassphrase(p: string): void {
   passphraseMemory = p;
-  passphraseSetAt = Date.now();
 }
 
 export function getPassphrase(): string | null {
-  if (!passphraseMemory) return null;
-  if (Date.now() - passphraseSetAt > IDLE_MS) {
-    passphraseMemory = null;
-    return null;
-  }
   return passphraseMemory;
 }
 
 export function clearPassphrase(): void {
   passphraseMemory = null;
-  passphraseSetAt = 0;
 }
 
 /**
