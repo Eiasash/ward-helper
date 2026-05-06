@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { listBlocks } from '@/camera/session';
 import { runExtractTurn } from '@/agent/loop';
 import { loadSkills } from '@/skills/loader';
+import { applyRosterSeedFromStorage } from '@/notes/rosterSeed';
 import type { ParseResult, ParseFields, Med } from '@/agent/tools';
 import { FieldRow } from '../components/FieldRow';
 import { resolveContinuity, type ContinuityContext } from '@/notes/continuity';
@@ -102,8 +103,17 @@ export function Review() {
           'Anthropic extract call',
         );
         if (cancelled) return;
+        // Phase D+E follow-up (chore-roster-single-skip-extract):
+        // when the doctor came here via Today.tsx's roster card,
+        // sessionStorage holds the RosterPatient identity. Merge it
+        // into extract output (roster wins on identity, extract wins
+        // on clinical) so the doctor doesn't have to re-photograph
+        // the patient card. Same merge function the batch driver uses
+        // — single source of truth for the roster→SOAP wiring.
+        // One-shot read + clear inside the helper.
+        const mergedFields = applyRosterSeedFromStorage(result.fields);
         setParsed(result);
-        setFields(result.fields);
+        setFields(mergedFields);
         setStatus('ready');
       } catch (e: unknown) {
         if (cancelled) return;
