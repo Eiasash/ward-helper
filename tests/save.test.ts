@@ -21,21 +21,21 @@ vi.mock('@/crypto/pbkdf2', async (orig) => {
 vi.mock('@/agent/costs', () => ({
   finalizeSessionFor: vi.fn(),
 }));
-vi.mock('@/ui/hooks/useSettings', () => ({
-  getPassphrase: vi.fn(() => null),
-}));
-// saveBoth now reads getCurrentUser to forward the app_users username to
-// pushBlob (cross-device sync wiring). Mock with a setter helper so each
-// test picks its own auth state.
+// v1.35.0: cloud encryption uses the user's login password (stashed in
+// memory by AccountSection on login) — no separate passphrase. The gate
+// for the cloud-push path is now `getLastLoginPasswordOrNull` from
+// @/auth/auth, not `getPassphrase` from @/ui/hooks/useSettings. Tests
+// mock the new gate. Each test sets the desired return value via the
+// helper below.
 vi.mock('@/auth/auth', () => ({
   getCurrentUser: vi.fn(() => null),
+  getLastLoginPasswordOrNull: vi.fn(() => null),
 }));
 
 import { saveBoth } from '@/notes/save';
 import { listPatients, listNotes, resetDbForTests } from '@/storage/indexed';
 import * as cloud from '@/storage/cloud';
 import * as costs from '@/agent/costs';
-import * as settings from '@/ui/hooks/useSettings';
 import * as auth from '@/auth/auth';
 
 beforeEach(async () => {
@@ -49,7 +49,7 @@ afterEach(() => {
 
 describe('saveBoth — local-only path (no passphrase)', () => {
   it('writes patient + note to IndexedDB and returns both ids', async () => {
-    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue(null);
+    (auth.getLastLoginPasswordOrNull as ReturnType<typeof vi.fn>).mockReturnValue(null);
     const result = await saveBoth(
       { name: 'דוד כהן', teudatZehut: '123456789', age: 80, room: '12A' },
       'admission',
@@ -74,20 +74,20 @@ describe('saveBoth — local-only path (no passphrase)', () => {
   });
 
   it('does NOT call cloud encrypt/push when no passphrase is set', async () => {
-    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue(null);
+    (auth.getLastLoginPasswordOrNull as ReturnType<typeof vi.fn>).mockReturnValue(null);
     await saveBoth({ name: 'X' }, 'consult', 'body');
     expect(cloud.encryptForCloud).not.toHaveBeenCalled();
     expect(cloud.pushBlob).not.toHaveBeenCalled();
   });
 
   it('finalizes the cost session against the new patientId', async () => {
-    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue(null);
+    (auth.getLastLoginPasswordOrNull as ReturnType<typeof vi.fn>).mockReturnValue(null);
     const result = await saveBoth({ name: 'Y' }, 'discharge', 'body');
     expect(costs.finalizeSessionFor).toHaveBeenCalledWith(result.patientId);
   });
 
   it('handles missing optional fields without crashing', async () => {
-    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue(null);
+    (auth.getLastLoginPasswordOrNull as ReturnType<typeof vi.fn>).mockReturnValue(null);
     const result = await saveBoth({}, 'case', '');
     const [p] = await listPatients();
     expect(p).toBeDefined();
@@ -98,7 +98,7 @@ describe('saveBoth — local-only path (no passphrase)', () => {
   });
 
   it('dedupes by ת.ז. — second save for the same teudatZehut reuses the patientId', async () => {
-    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue(null);
+    (auth.getLastLoginPasswordOrNull as ReturnType<typeof vi.fn>).mockReturnValue(null);
     const r1 = await saveBoth(
       { name: 'דוד כהן', teudatZehut: '123456789', room: '12A' },
       'admission',
@@ -116,7 +116,7 @@ describe('saveBoth — local-only path (no passphrase)', () => {
   });
 
   it('preserves existing fields when a follow-up save has sparse extract', async () => {
-    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue(null);
+    (auth.getLastLoginPasswordOrNull as ReturnType<typeof vi.fn>).mockReturnValue(null);
     const r1 = await saveBoth(
       { name: 'מרים גולן', teudatZehut: '987654321', room: '5A' },
       'admission',
@@ -135,7 +135,7 @@ describe('saveBoth — local-only path (no passphrase)', () => {
   });
 
   it('normalizes whitespace in teudatZehut on write so the index resolves consistently', async () => {
-    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue(null);
+    (auth.getLastLoginPasswordOrNull as ReturnType<typeof vi.fn>).mockReturnValue(null);
     const r1 = await saveBoth(
       { name: 'A', teudatZehut: '  111111111  ' },
       'admission',
@@ -155,7 +155,7 @@ describe('saveBoth — local-only path (no passphrase)', () => {
 
 describe('saveBoth — cloud-push path (passphrase set)', () => {
   it('encrypts patient + note and pushes both blobs when passphrase present', async () => {
-    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue('correct horse battery staple');
+    (auth.getLastLoginPasswordOrNull as ReturnType<typeof vi.fn>).mockReturnValue('correct horse battery staple');
     const result = await saveBoth({ name: 'Z' }, 'admission', 'body');
     expect(result.cloudPushed).toBe(true);
     expect(cloud.encryptForCloud).toHaveBeenCalledTimes(2);
@@ -166,7 +166,7 @@ describe('saveBoth — cloud-push path (passphrase set)', () => {
   });
 
   it('still saves locally AND reports the failure reason when cloud push throws', async () => {
-    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue('pass');
+    (auth.getLastLoginPasswordOrNull as ReturnType<typeof vi.fn>).mockReturnValue('pass');
     (cloud.pushBlob as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error('PGRST205: table does not exist'),
     );
@@ -177,15 +177,15 @@ describe('saveBoth — cloud-push path (passphrase set)', () => {
     expect(patients).toHaveLength(1); // local persist still happened
   });
 
-  it('reports "no-passphrase" (not a real error) when passphrase missing', async () => {
-    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue(null);
+  it('reports "no-login" (not a real error) when login password is not stashed', async () => {
+    (auth.getLastLoginPasswordOrNull as ReturnType<typeof vi.fn>).mockReturnValue(null);
     const result = await saveBoth({ name: 'Q' }, 'soap', 'body');
     expect(result.cloudPushed).toBe(false);
-    expect(result.cloudSkippedReason).toBe('no-passphrase');
+    expect(result.cloudSkippedReason).toBe('no-login');
   });
 
   it('derives the AES key only once even though it encrypts two blobs', async () => {
-    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue('k');
+    (auth.getLastLoginPasswordOrNull as ReturnType<typeof vi.fn>).mockReturnValue('k');
     const derive = (await import('@/crypto/pbkdf2')).deriveAesKey as unknown as ReturnType<typeof vi.fn>;
     (derive as ReturnType<typeof vi.fn>).mockClear?.();
     await saveBoth({ name: 'once' }, 'admission', 'body');
@@ -197,7 +197,7 @@ describe('saveBoth — cloud-push path (passphrase set)', () => {
   });
 
   it('forwards the authed username to BOTH pushBlob calls (cross-device wiring)', async () => {
-    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue('k');
+    (auth.getLastLoginPasswordOrNull as ReturnType<typeof vi.fn>).mockReturnValue('k');
     (auth.getCurrentUser as ReturnType<typeof vi.fn>).mockReturnValue({
       username: 'eias',
       displayName: 'Eias',
@@ -212,7 +212,7 @@ describe('saveBoth — cloud-push path (passphrase set)', () => {
   });
 
   it('passes null to pushBlob when guest (no app_users session)', async () => {
-    (settings.getPassphrase as ReturnType<typeof vi.fn>).mockReturnValue('k');
+    (auth.getLastLoginPasswordOrNull as ReturnType<typeof vi.fn>).mockReturnValue('k');
     (auth.getCurrentUser as ReturnType<typeof vi.fn>).mockReturnValue(null);
     await saveBoth({ name: 'guest' }, 'soap', 'body');
     const calls = (cloud.pushBlob as ReturnType<typeof vi.fn>).mock.calls;

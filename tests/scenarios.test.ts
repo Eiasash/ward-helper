@@ -59,9 +59,13 @@ vi.mock('@supabase/supabase-js', () => ({
   })),
 }));
 
-// Settings hook — return a fixed passphrase so the cloud-push branch fires.
-vi.mock('@/ui/hooks/useSettings', () => ({
-  getPassphrase: vi.fn(() => 'fictional-test-passphrase-2026'),
+// v1.35.0: cloud-push gate is now `getLastLoginPasswordOrNull` from
+// @/auth/auth (was `getPassphrase` from @/ui/hooks/useSettings). Mock the
+// new gate to return a fixed pseudo-login-password so the cloud-push
+// branch fires for the scenarios under test.
+vi.mock('@/auth/auth', () => ({
+  getCurrentUser: vi.fn(() => null),
+  getLastLoginPasswordOrNull: vi.fn(() => 'fictional-test-login-pwd-2026'),
 }));
 
 // Costs module — saveBoth calls finalizeSessionFor; safe no-op stub.
@@ -266,7 +270,7 @@ describe('Fictional scenarios — full pipeline through Supabase test engine', (
     expect(noteRow).toBeDefined();
 
     const key = await deriveAesKey(
-      'fictional-test-passphrase-2026',
+      'fictional-test-login-pwd-2026',
       noteRow!.salt as unknown as Uint8Array<ArrayBuffer>,
     );
     const decrypted = await decryptFromCloud<{ bodyHebrew: string }>(
