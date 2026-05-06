@@ -30,6 +30,7 @@
  */
 
 import { getSupabase } from '@/storage/cloud';
+import { reencryptUnlockCache } from '@/crypto/unlock';
 
 const AUTH_LS_KEY = 'ward-helper.auth.user';
 const UID_LS_KEY = 'ward-helper.auth.uid';
@@ -189,6 +190,24 @@ export async function authChangePassword(
     p_old_password: oldPwd,
     p_new_password: newPwd,
   });
+}
+
+/**
+ * Change the user's login password AND re-encrypt the cached unlock blob with
+ * the new password — so the user's auto-unlock keeps working after the change.
+ * Without the re-encrypt step, the user would silently lose their auto-unlock
+ * and have to retype the backup passphrase on next login.
+ */
+export async function changePasswordWithReencrypt(
+  username: string,
+  oldPwd: string,
+  newPwd: string,
+): Promise<RpcResult> {
+  const result = await authChangePassword(username, oldPwd, newPwd);
+  if (result.ok) {
+    await reencryptUnlockCache(oldPwd, newPwd);
+  }
+  return result;
 }
 
 // ───────── Password recovery (Tier 2, 2026-05-02) ─────────
