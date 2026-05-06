@@ -49,23 +49,37 @@ export interface ManualRow {
 
 // ─── OCR importer ──────────────────────────────────────────────────
 
+// Field names match the RosterPatient interface camelCase exactly. The
+// pre-fixup version used `id` for the patient's clinical identifier,
+// which collided with the importer's UUID `id` field — a refactor to
+// `Object.assign(row, parsedJson)` would have silently clobbered the
+// UUID. Fixed by renaming `id` → `tz` (the right clinical name) and
+// switching `los_days`/`dx_short` to camelCase to remove the
+// snake↔camel translation step.
 const OCR_SYSTEM_PROMPT = `אתה מחלץ רשימת חולים מצילום מסך AZMA. החזר JSON תקני בלבד עם
-מערך patients. כל חולה: id (החזר null אם לא מוצג), name (שם מלא
-בעברית כפי שמופיע), age (מספר או null), sex ('M'|'F'|null),
-room (מספר חדר או null), bed (אות מיטה או null), los_days
-(מספר ימי אשפוז או null), dx_short (אבחנה ראשית קצרה או null).
-דלג על שורות כותרת. במקרה של ספק לגבי שם — החזר null. אל
-תמציא מידע. JSON only, no markdown fences.`;
+מערך patients. כל חולה:
+- tz (תעודת זהות, מספר 9 ספרות בלבד או null אם לא מוצג —
+  זה השדה הקליני המזהה, לא להמציא ולא לחתוך)
+- name (שם מלא בעברית כפי שמופיע)
+- age (מספר או null)
+- sex ('M'|'F'|null)
+- room (מספר חדר או null — שים לב: הספרה הראשונה היא הקומה,
+  אל תחתוך אפסים מובילים)
+- bed (אות או מספר מיטה או null)
+- losDays (ימי אשפוז כמספר או null)
+- dxShort (אבחנה ראשית קצרה או null)
+דלג על שורות כותרת. במקרה של ספק לגבי שם או tz — החזר null.
+אל תמציא מידע. JSON only, no markdown fences.`;
 
 interface OcrPatientRaw {
-  id?: string | null;
+  tz?: string | null;
   name?: string | null;
   age?: number | null;
   sex?: 'M' | 'F' | null;
   room?: string | null;
   bed?: string | null;
-  los_days?: number | null;
-  dx_short?: string | null;
+  losDays?: number | null;
+  dxShort?: string | null;
 }
 
 /** Strict 9-digit ת.ז. check — matches the safety guard in orchestrate.ts. */
@@ -117,15 +131,15 @@ export async function importViaOcr(file: File): Promise<RosterPatient[]> {
     if (!name) continue;
     out.push({
       id: crypto.randomUUID(),
-      tz: normalizeTz(raw.id),
+      tz: normalizeTz(raw.tz),
       name,
       age: typeof raw.age === 'number' && raw.age > 0 ? raw.age : null,
       sex: raw.sex === 'M' || raw.sex === 'F' ? raw.sex : null,
       room: typeof raw.room === 'string' && raw.room.trim() ? raw.room.trim() : null,
       bed: typeof raw.bed === 'string' && raw.bed.trim() ? raw.bed.trim() : null,
-      losDays: typeof raw.los_days === 'number' && raw.los_days >= 0 ? raw.los_days : null,
+      losDays: typeof raw.losDays === 'number' && raw.losDays >= 0 ? raw.losDays : null,
       dxShort:
-        typeof raw.dx_short === 'string' && raw.dx_short.trim() ? raw.dx_short.trim() : null,
+        typeof raw.dxShort === 'string' && raw.dxShort.trim() ? raw.dxShort.trim() : null,
       sourceMode: 'ocr',
       importedAt: now,
     });
@@ -186,7 +200,28 @@ function parsePipeFormat(lines: string[]): RosterPatient[] {
   return out;
 }
 
-const HEADER_TOKENS: Record<string, keyof RosterPatient | 'sex'> = {
+/**
+ * AZMA TSV header detection.
+ *
+ * Columns we map to RosterPatient fields are listed first. The set
+ * after `// --- AZMA spec §4 documented columns ---` is the canonical
+ * 21-column on-screen grid per the `azma-ui` skill manifest — those
+ * columns aren't carrying RosterPatient data, but their PRESENCE in a
+ * paste tells us "this is an AZMA grid, fire the detector". They map
+ * to `_skip` so detectHeaderColumns returns a non-empty map (so
+ * parseAzmaTsv doesn't bail out) while keeping the data parser
+ * indifferent to them.
+ *
+ * NOTE — TENTATIVE: the mapped column tokens (שם / ת.ז. / מיטה /
+ * ימי אשפוז) are educated guesses for how an AZMA clipboard export
+ * renders identity columns. The on-screen 21-col grid notably does
+ * NOT include these. Real-paste calibration with an actual AZMA
+ * clipboard sample is pending — replace this comment when confirmed.
+ */
+type HeaderField = keyof RosterPatient | 'sex' | '_skip';
+
+const HEADER_TOKENS: Record<string, HeaderField> = {
+  // Identity / clinical fields → mapped to RosterPatient
   שם: 'name',
   'שם מטופל': 'name',
   'שם המטופל': 'name',
@@ -201,7 +236,6 @@ const HEADER_TOKENS: Record<string, keyof RosterPatient | 'sex'> = {
   'ת.ז.': 'tz',
   'תעודת זהות': 'tz',
   tz: 'tz',
-  id: 'tz',
   מין: 'sex',
   sex: 'sex',
   'ימי אשפוז': 'losDays',
@@ -209,11 +243,28 @@ const HEADER_TOKENS: Record<string, keyof RosterPatient | 'sex'> = {
   אבחנה: 'dxShort',
   'אבחנה ראשית': 'dxShort',
   dx: 'dxShort',
+
+  // --- AZMA spec §4 documented columns (presence triggers detector,
+  // not mapped to RosterPatient — clipboard payload, not roster data).
+  מחלקה: '_skip',
+  'חיידק עמיד': '_skip',
+  צד: '_skip',
+  מ: '_skip',
+  דם: '_skip',
+  מספר: '_skip',
+  בדיקות: '_skip',
+  יעוץ: '_skip',
+  'רפואי-קבלה': '_skip',
+  'רפואי-ביקור': '_skip',
+  'רפואי-סיכום': '_skip',
+  רקע: '_skip',
+  'תנועה אחרונה': '_skip',
+  'case manager': '_skip',
 };
 
-function detectHeaderColumns(headerLine: string): Map<number, keyof RosterPatient | 'sex'> {
+function detectHeaderColumns(headerLine: string): Map<number, HeaderField> {
   const cells = headerLine.split('\t').map((c) => c.trim().toLowerCase());
-  const map = new Map<number, keyof RosterPatient | 'sex'>();
+  const map = new Map<number, HeaderField>();
   for (let i = 0; i < cells.length; i++) {
     const cell = cells[i] ?? '';
     const field = HEADER_TOKENS[cell];
@@ -259,6 +310,11 @@ function parseAzmaTsv(lines: string[]): RosterPatient[] {
           break;
         case 'dxShort':
           row.dxShort = value;
+          break;
+        case '_skip':
+        default:
+          // AZMA-spec column we recognized to fire the detector but
+          // don't carry into RosterPatient. No-op.
           break;
       }
     }
