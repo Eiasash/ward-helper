@@ -6,7 +6,7 @@ import {
   type Note,
   type NoteType,
 } from '@/storage/indexed';
-import { encryptForCloud, pushBlob } from '@/storage/cloud';
+import { encryptForCloud, pushBlob, pushCanary } from '@/storage/cloud';
 import { deriveAesKey } from '@/crypto/pbkdf2';
 import {
   pushApiKeyToCloud,
@@ -15,9 +15,87 @@ import {
 } from '@/crypto/keystore';
 import { finalizeSessionFor } from '@/agent/costs';
 import { markSyncedNow, notifyNotesChanged } from '@/ui/hooks/glanceableEvents';
+// ESM cycle with @/auth/auth — auth.ts imports resetCanaryArmed from this
+// module. Both directions resolve to runtime function refs only, NEVER
+// invoked at module-eval time, so live-binding semantics keep the cycle
+// safe. If you add a top-level call to either side, the cycle becomes
+// init-order sensitive and the binding may be in TDZ — relocate it.
 import { getCurrentUser, getLastLoginPasswordOrNull } from '@/auth/auth';
+import { pushBreadcrumb } from '@/ui/components/MobileDebugPanel';
 import type { ParseFields } from '@/agent/tools';
 import type { SafetyFlags } from '@/safety/types';
+
+// Canary instrumentation (v1.36.0): push the known-plaintext canary blob
+// opportunistically from saveBoth so all users — not just those who hit
+// Settings → "Backup all to cloud" — get the fail-fast wrong-password UX
+// in restoreFromCloud. Gated to once per JS session because pushBlob is
+// upsert-safe but the round-trip cost on every save is wasteful. Failure
+// in the canary push is non-fatal: the primary patient+note push has
+// already succeeded by the time we get here, so the worst case is
+// degraded wrong-password UX, not data loss.
+let canaryArmedThisSession = false;
+let lastCanaryPushOutcome: 'ok' | 'fail' | null = null;
+
+/** Test-only: simulate a fresh JS session without process restart. */
+export function _resetCanaryStateForTests(): void {
+  canaryArmedThisSession = false;
+  lastCanaryPushOutcome = null;
+}
+
+/** Test-only: force the armed flag without running saveBoth's full path. */
+export function _setCanaryArmedForTests(armed: boolean): void {
+  canaryArmedThisSession = armed;
+}
+
+/**
+ * Production helper called by auth.ts::logout. The canary-armed flag is
+ * a JS module global and survives logout/login on the same tab, so without
+ * this reset, user B logging in after user A on the same device would skip
+ * their first canary push — leaving B in the pre-Phase-B state where a
+ * fresh-device wrong-password attempt falls through to silent bulk-skip.
+ *
+ * Distinct from `_resetCanaryStateForTests` (test affordance) by name and
+ * intent: this is a contract used by production code and must not also
+ * clear `lastCanaryPushOutcome` (which is per-process and helpful for
+ * diagnostics that the user might inspect after their next save).
+ */
+export function resetCanaryArmed(): void {
+  canaryArmedThisSession = false;
+}
+
+/** Read-only getter — useful for diagnostics and the cross-user logout test. */
+export function isCanaryArmedThisSession(): boolean {
+  return canaryArmedThisSession;
+}
+
+/** For MobileDebugPanel diagnostic — surfaces the last push outcome. */
+export function getLastCanaryPushOutcome(): 'ok' | 'fail' | null {
+  return lastCanaryPushOutcome;
+}
+
+async function armCanaryOnce(
+  key: CryptoKey,
+  salt: Uint8Array<ArrayBuffer>,
+  username: string | null,
+  trigger: 'save' | 'login-restore',
+): Promise<void> {
+  if (canaryArmedThisSession) return;
+  const t0 = Date.now();
+  pushBreadcrumb('canary.push.start', { username, trigger });
+  try {
+    await pushCanary(key, salt, username);
+    canaryArmedThisSession = true;
+    lastCanaryPushOutcome = 'ok';
+    pushBreadcrumb('canary.push.ok', { ms: Date.now() - t0 });
+    if (trigger === 'login-restore') {
+      pushBreadcrumb('canary.backfill', { trigger: 'login-restore' });
+    }
+  } catch (err) {
+    lastCanaryPushOutcome = 'fail';
+    pushBreadcrumb('canary.push.fail', { error: String(err) });
+    // Swallow — caller's primary work already succeeded.
+  }
+}
 
 export interface SaveResult {
   patientId: string;
@@ -113,6 +191,12 @@ export async function saveBoth(
       // Don't fail the save just because the api-key sync hiccuped.
       // The api-key push is a convenience; the note push is the contract.
     }
+    // Canary push — once per JS session, reuses key+salt from the save
+    // derivation above. Pre-v1.36.0 the canary was Settings-only, so
+    // organic-flow users saw bulk-skip rather than the helpful
+    // wrong-password warning on a fresh-device restore. armCanaryOnce
+    // never throws; failure is recorded in the breadcrumb stream only.
+    await armCanaryOnce(key, salt, username, 'save');
     // Header-strip "last sync" relies on this — marker for the glanceable
     // header so the rounding doctor knows the cloud backup is current.
     markSyncedNow();
@@ -203,7 +287,12 @@ export async function restoreFromCloud(passphrase: string): Promise<RestoreResul
   const user = getCurrentUser();
   // Canary fail-fast: probe a single tiny blob with the passphrase before
   // pulling N rows. Wrong passphrase exits in one decrypt rather than N.
+  const verifyT0 = Date.now();
   const canaryStatus = await verifyCanary(passphrase, user?.username ?? null);
+  pushBreadcrumb('canary.verify', {
+    result: canaryStatus,
+    ms: Date.now() - verifyT0,
+  });
   if (canaryStatus === 'wrong-passphrase') {
     return {
       scanned: 0,
@@ -277,6 +366,28 @@ export async function restoreFromCloud(passphrase: string): Promise<RestoreResul
         reason: (e as Error).message ?? 'decrypt failed',
       });
     }
+  }
+
+  // Eager canary backfill: when the cloud has data but no canary blob
+  // (pre-v1.36.0 accounts) AND we successfully decrypted ≥1 row, push a
+  // canary now. The ≥1 decrypt is the proof that `passphrase` is the
+  // correct one — without it we'd risk writing a canary that disagrees
+  // with the user's existing data. Future fresh-device restores will
+  // then get the fast-fail wrong-password UX.
+  if (
+    canaryStatus === 'absent' &&
+    result.restoredPatients + result.restoredNotes > 0
+  ) {
+    const backfillSalt = crypto.getRandomValues(
+      new Uint8Array(16),
+    ) as Uint8Array<ArrayBuffer>;
+    const backfillKey = await deriveAesKey(passphrase, backfillSalt);
+    await armCanaryOnce(
+      backfillKey,
+      backfillSalt,
+      user?.username ?? null,
+      'login-restore',
+    );
   }
 
   return result;

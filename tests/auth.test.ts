@@ -1,4 +1,53 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+// Phase B: tests below at "restoreFromCloud — Phase B" exercise the canary
+// wiring in src/notes/save.ts. We mock both cloud and canary modules:
+//
+//   - @/storage/cloud  → control pushBlob (asserts the backfill canary push)
+//   - @/storage/canary → control verifyCanary directly. Mocking only cloud
+//     doesn't propagate through the cloud↔canary import cycle (canary.ts's
+//     import of pullByUsername binds to the original module, not the mock —
+//     same hazard called out in tests/canary.test.ts:21-26). The
+//     transitive call from restoreFromCloud→verifyCanary→pullByUsername
+//     would otherwise hit real Supabase. Mocking verifyCanary at its
+//     own module is the simplest way to make the test deterministic.
+const {
+  pushBlobMock,
+  pullByUsernameMock,
+  pullAllBlobsMock,
+  verifyCanaryMock,
+  pushCanaryMock,
+} = vi.hoisted(() => ({
+  pushBlobMock: vi.fn(),
+  pullByUsernameMock: vi.fn(),
+  pullAllBlobsMock: vi.fn(),
+  verifyCanaryMock: vi.fn(),
+  pushCanaryMock: vi.fn(),
+}));
+
+vi.mock('@/storage/cloud', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/storage/cloud')>();
+  return {
+    ...actual,
+    pushBlob: pushBlobMock,
+    pullByUsername: pullByUsernameMock,
+    pullAllBlobs: pullAllBlobsMock,
+  };
+});
+
+// Both verifyCanary and pushCanary mocked at the canary module level —
+// the cloud↔canary cycle means canary.ts's internal pushBlob binding
+// stays unmocked even when @/storage/cloud is mocked, so we'd never
+// see the backfill push otherwise.
+vi.mock('@/storage/canary', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/storage/canary')>();
+  return {
+    ...actual,
+    verifyCanary: verifyCanaryMock,
+    pushCanary: pushCanaryMock,
+  };
+});
+
 import {
   getCurrentUser,
   isLoggedIn,
@@ -137,5 +186,204 @@ describe('auth — change events', () => {
     logout();
     expect(handler).toHaveBeenCalledTimes(2);
     unsub();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Phase B — fresh-device cache-clear survival regression tests
+//
+// These are the four cases the v1.36.0 spec calls out:
+//   1. fresh + correct password                  → restores, no backfill
+//   2. fresh + wrong password                    → wrongPassphrase fast-fail
+//   3. pre-existing + no canary + correct        → restores AND backfills canary
+//   4. pre-existing + no canary + wrong          → no fail-fast, all rows skipped
+//                                                  (documents the known
+//                                                  limitation that pre-Phase-B
+//                                                  data lacks the fail-fast
+//                                                  affordance until first
+//                                                  successful restore arms it)
+// ─────────────────────────────────────────────────────────────────────────
+
+import {
+  restoreFromCloud,
+  _resetCanaryStateForTests,
+  _setCanaryArmedForTests,
+  isCanaryArmedThisSession,
+} from '@/notes/save';
+import { resetDbForTests, type Patient, type Note } from '@/storage/indexed';
+import { deriveAesKey } from '@/crypto/pbkdf2';
+import { encryptForCloud, type CloudBlobRow } from '@/storage/cloud';
+import { CANARY_BLOB_ID } from '@/storage/canary';
+
+const RIGHT_PASS = 'correct-horse-battery-staple';
+const WRONG_PASS = 'incorrect-mule-lithium-ion';
+
+const TEST_PATIENT: Patient = {
+  id: 'p-test-1',
+  name: 'Test Patient',
+  teudatZehut: '123456789',
+  dob: '1940-01-01',
+  room: '601',
+  tags: [],
+  createdAt: 1700000000000,
+  updatedAt: 1700000000000,
+};
+
+const TEST_NOTE: Note = {
+  id: 'n-test-1',
+  patientId: 'p-test-1',
+  type: 'admission',
+  bodyHebrew: 'שלום עולם',
+  structuredData: {},
+  createdAt: 1700000000000,
+  updatedAt: 1700000000000,
+};
+
+function bytesToB64(b: Uint8Array<ArrayBuffer>): string {
+  return btoa(String.fromCharCode(...b));
+}
+
+async function makeRow(
+  blob_type: 'canary' | 'patient' | 'note',
+  blob_id: string,
+  payload: unknown,
+  pass: string,
+): Promise<CloudBlobRow> {
+  const salt = crypto.getRandomValues(new Uint8Array(16)) as Uint8Array<ArrayBuffer>;
+  const key = await deriveAesKey(pass, salt);
+  const sealed = await encryptForCloud(payload, key, salt);
+  return {
+    blob_type,
+    blob_id,
+    ciphertext: bytesToB64(sealed.ciphertext),
+    iv: bytesToB64(sealed.iv),
+    salt: bytesToB64(sealed.salt),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+describe('restoreFromCloud — Phase B fresh-device cache-clear survival', () => {
+  beforeEach(async () => {
+    pushBlobMock.mockReset();
+    pushBlobMock.mockResolvedValue(undefined);
+    pullByUsernameMock.mockReset();
+    pullAllBlobsMock.mockReset();
+    verifyCanaryMock.mockReset();
+    pushCanaryMock.mockReset();
+    pushCanaryMock.mockResolvedValue(undefined);
+    await resetDbForTests();
+    _resetCanaryStateForTests();
+    localStorage.clear();
+    // Authed path so restoreFromCloud uses pullByUsername (the cross-device
+    // route) — the spec scenario is "log in on new device".
+    setAuthSession('test-user');
+  });
+
+  it('Case 1 — fresh device + correct password: restores without backfill', async () => {
+    const rows = [
+      await makeRow('canary', CANARY_BLOB_ID, {
+        v: 1,
+        marker: 'ward-helper-canary',
+        createdAt: 1,
+      }, RIGHT_PASS),
+      await makeRow('patient', TEST_PATIENT.id, TEST_PATIENT, RIGHT_PASS),
+      await makeRow('note', TEST_NOTE.id, TEST_NOTE, RIGHT_PASS),
+    ];
+    verifyCanaryMock.mockResolvedValue('ok');
+    pullByUsernameMock.mockResolvedValue(rows);
+
+    const result = await restoreFromCloud(RIGHT_PASS);
+
+    expect(result.wrongPassphrase).toBe(false);
+    expect(result.restoredPatients).toBe(1);
+    expect(result.restoredNotes).toBe(1);
+    expect(result.skipped).toEqual([]);
+    // Canary already in cloud → no backfill push.
+    expect(pushCanaryMock).not.toHaveBeenCalled();
+  });
+
+  it('Case 2 — fresh device + wrong password: wrongPassphrase fast-fail', async () => {
+    verifyCanaryMock.mockResolvedValue('wrong-passphrase');
+    // No bulk-pull rows needed — restoreFromCloud short-circuits.
+
+    const result = await restoreFromCloud(WRONG_PASS);
+
+    expect(result.wrongPassphrase).toBe(true);
+    expect(result.scanned).toBe(0);
+    expect(result.restoredPatients).toBe(0);
+    expect(result.restoredNotes).toBe(0);
+    expect(pushCanaryMock).not.toHaveBeenCalled();
+    expect(pullByUsernameMock).not.toHaveBeenCalled();
+  });
+
+  it('Case 3 — pre-existing data, no canary, correct password: restores AND backfills canary', async () => {
+    const rows = [
+      // No canary blob in this batch — simulates pre-Phase-B account.
+      await makeRow('patient', TEST_PATIENT.id, TEST_PATIENT, RIGHT_PASS),
+      await makeRow('note', TEST_NOTE.id, TEST_NOTE, RIGHT_PASS),
+    ];
+    verifyCanaryMock.mockResolvedValue('absent');
+    pullByUsernameMock.mockResolvedValue(rows);
+
+    const result = await restoreFromCloud(RIGHT_PASS);
+
+    expect(result.wrongPassphrase).toBe(false);
+    expect(result.restoredPatients).toBe(1);
+    expect(result.restoredNotes).toBe(1);
+    // Eager backfill fired exactly one canary push.
+    expect(pushCanaryMock).toHaveBeenCalledTimes(1);
+    const [, , username] = pushCanaryMock.mock.calls[0]!;
+    expect(username).toBe('test-user');
+  });
+
+  it('Case 4 — pre-existing data, no canary, wrong password: no fail-fast, all rows skipped (known limitation)', async () => {
+    const rows = [
+      // Again no canary — pre-Phase-B account.
+      await makeRow('patient', TEST_PATIENT.id, TEST_PATIENT, RIGHT_PASS),
+      await makeRow('note', TEST_NOTE.id, TEST_NOTE, RIGHT_PASS),
+    ];
+    verifyCanaryMock.mockResolvedValue('absent');
+    pullByUsernameMock.mockResolvedValue(rows);
+
+    const result = await restoreFromCloud(WRONG_PASS);
+
+    // Known limitation: with no canary, verifyCanary returns 'absent', the
+    // function falls through to bulk pull, every row's AES-GCM decrypt
+    // fails, all rows land in `skipped`. UI surfaces "N skipped" rather
+    // than the helpful "wrong passphrase" — the trade-off is acceptable
+    // because every successful restore arms the canary going forward, so
+    // this state is observable at most once per account.
+    expect(result.wrongPassphrase).toBe(false);
+    expect(result.restoredPatients).toBe(0);
+    expect(result.restoredNotes).toBe(0);
+    expect(result.skipped.length).toBe(2);
+    // No backfill: zero successful decrypts means we don't know our
+    // passphrase is right, so we mustn't write a disagreeing canary.
+    expect(pushCanaryMock).not.toHaveBeenCalled();
+  });
+
+  it('Case 5 — logout() resets the canary-armed flag (cross-user safety)', () => {
+    // The canary-armed flag is a JS module global, NOT a per-user value.
+    // Without an explicit reset on logout, user B logging in after user A
+    // on the same tab would skip their first canary push (gated by the
+    // still-true flag), leaving B in the pre-v1.36.0 state where a
+    // fresh-device wrong-password attempt silently bulk-skips. This test
+    // proves logout() invokes resetCanaryArmed via auth.ts.
+    _resetCanaryStateForTests();
+    expect(isCanaryArmedThisSession()).toBe(false);
+
+    // Simulate "user A's saveBoth pushed a canary during their session".
+    // Production path is saveBoth → armCanaryOnce → flag=true; we use the
+    // test affordance here for unit-test focus rather than running a
+    // full saveBoth with all its mocks.
+    _setCanaryArmedForTests(true);
+    expect(isCanaryArmedThisSession()).toBe(true);
+
+    // Production logout(). Must invoke resetCanaryArmed internally so that
+    // the next user's first save fires a fresh canary push.
+    setAuthSession('user-a');
+    logout();
+
+    expect(isCanaryArmedThisSession()).toBe(false);
   });
 });
