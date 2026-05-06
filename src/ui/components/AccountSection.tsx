@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   authLogin,
   authRegister,
+  authSetApiKey,
   changePasswordWithReencrypt,
   authRequestPasswordReset,
   authSetEmail,
@@ -14,6 +16,13 @@ import {
   normalizeUsername,
   type AuthUser,
 } from '@/auth/auth';
+import {
+  activeAiPath,
+  getLocalApiKey,
+  setLocalApiKey,
+  clearLocalApiKey,
+  validateApiKey,
+} from '@/ai/dispatch';
 import { useAuth } from '../hooks/useAuth';
 import { pushBreadcrumb } from './MobileDebugPanel';
 
@@ -121,10 +130,208 @@ function AuthedAccount({ user }: { user: AuthUser }) {
       )}
       {showChangePwd && <ChangePasswordForm username={user.username} onDone={() => setShowChangePwd(false)} />}
       {showEmailForm && <SetEmailForm username={user.username} onDone={() => setShowEmailForm(false)} />}
+      <ApiKeyField username={user.username} />
       <div className="account-note">
         חשבון אחד פותח את ארבע האפליקציות (Mishpacha, Pnimit, Geri, ward-helper).
         סנכרון הערות בין מכשירים — בקרוב.
       </div>
+    </div>
+  );
+}
+
+/**
+ * Personal Anthropic API key — visible only when logged in (rendered from
+ * AuthedAccount). Stores in localStorage `wardhelper_apikey` AND mirrors
+ * to the server via auth_set_api_key so the next device login picks the
+ * key up automatically.
+ *
+ * Save flow: validate (cheap /v1/models GET) → persist locally → push to
+ * server. A failed validation aborts before any persistence; a failed
+ * server-mirror keeps the local copy (server sync is best-effort, the
+ * BYOK path works against localStorage immediately).
+ *
+ * The status badge ("AI: shared proxy" / "AI: your key") reflects the
+ * routing that callClaude will take on the next request — useful
+ * confirmation after save / clear without forcing a page reload.
+ */
+function ApiKeyField({ username }: { username: string }) {
+  const [draft, setDraft] = useState('');
+  const [hasKey, setHasKey] = useState<boolean>(() => !!getLocalApiKey());
+  const [busy, setBusy] = useState(false);
+  const [pwd, setPwd] = useState('');
+  const [showPwdPrompt, setShowPwdPrompt] = useState<null | 'save' | 'clear'>(null);
+  const [status, setStatus] = useState<{ tone: 'ok' | 'err'; msg: string } | null>(null);
+  const [path, setPath] = useState<'direct' | 'proxy'>(activeAiPath());
+
+  // Re-evaluate the path whenever hasKey toggles. activeAiPath is sync, so
+  // this is just a state-mirror — no async work.
+  useEffect(() => {
+    setPath(activeAiPath());
+  }, [hasKey]);
+
+  async function onSaveStart() {
+    setStatus(null);
+    const trimmed = draft.trim();
+    if (!trimmed.startsWith('sk-ant-')) {
+      setStatus({ tone: 'err', msg: 'מפתח לא תקין — צריך להתחיל ב-sk-ant-' });
+      return;
+    }
+    // Validate BEFORE asking for password — pointless to prompt for a
+    // re-auth if the key itself is bad.
+    setBusy(true);
+    setStatus({ tone: 'ok', msg: 'בודק מול Anthropic...' });
+    const v = await validateApiKey(trimmed);
+    setBusy(false);
+    if (!v.ok) {
+      const status = 'status' in v && v.status ? ` (HTTP ${v.status})` : '';
+      setStatus({ tone: 'err', msg: `המפתח נדחה${status}: ${v.message}` });
+      return;
+    }
+    setStatus({ tone: 'ok', msg: '✓ המפתח תקין. הזן סיסמה כדי לשמור גם בשרת.' });
+    setShowPwdPrompt('save');
+  }
+
+  async function onSaveCommit() {
+    if (!pwd) {
+      setStatus({ tone: 'err', msg: 'נדרשת הסיסמה הנוכחית כדי לשמור בשרת' });
+      return;
+    }
+    const trimmed = draft.trim();
+    setBusy(true);
+    // Local first — BYOK is active on the next call regardless of server outcome.
+    setLocalApiKey(trimmed);
+    setHasKey(true);
+    setDraft('');
+    pushBreadcrumb('apikey.local.saved');
+    const res = await authSetApiKey(username, pwd, trimmed);
+    setBusy(false);
+    setPwd('');
+    setShowPwdPrompt(null);
+    if (res.ok) {
+      setStatus({ tone: 'ok', msg: 'מפתח נשמר מקומית ובשרת ✓' });
+      pushBreadcrumb('apikey.server.saved');
+    } else {
+      setStatus({
+        tone: 'err',
+        msg: `נשמר מקומית אך השרת דחה (${res.error ?? 'unknown'}). המכשיר הזה יעבוד; להתחברות במכשיר אחר צריך לשמור שוב.`,
+      });
+      pushBreadcrumb('apikey.server.err', res.error ?? 'unknown');
+    }
+  }
+
+  async function onClearStart() {
+    setStatus(null);
+    setShowPwdPrompt('clear');
+  }
+
+  async function onClearCommit() {
+    if (!pwd) {
+      setStatus({ tone: 'err', msg: 'נדרשת הסיסמה הנוכחית' });
+      return;
+    }
+    setBusy(true);
+    clearLocalApiKey();
+    setHasKey(false);
+    pushBreadcrumb('apikey.local.cleared');
+    const res = await authSetApiKey(username, pwd, '');
+    setBusy(false);
+    setPwd('');
+    setShowPwdPrompt(null);
+    if (res.ok) {
+      setStatus({ tone: 'ok', msg: 'המפתח נמחק מקומית ומהשרת.' });
+    } else {
+      setStatus({
+        tone: 'err',
+        msg: `נמחק מקומית אך השרת דחה (${res.error ?? 'unknown'}). מומלץ להחליף סיסמה אם אתה חושד בדליפה.`,
+      });
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 16, padding: 12, border: '1px solid #e5e7eb', borderRadius: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <strong style={{ fontSize: 14 }}>מפתח Anthropic אישי</strong>
+        <span
+          style={{
+            fontSize: 12,
+            padding: '2px 8px',
+            borderRadius: 12,
+            background: path === 'direct' ? '#22c55e22' : '#f59e0b22',
+            color: path === 'direct' ? '#15803d' : '#92400e',
+            border: `1px solid ${path === 'direct' ? '#22c55e66' : '#f59e0b66'}`,
+          }}
+        >
+          {path === 'direct' ? 'AI: your key' : 'AI: shared proxy'}
+        </span>
+      </div>
+      <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 8, lineHeight: 1.5 }}>
+        מפתח אישי עוקף את מגבלת 10 השניות של ה-proxy ומאפשר רישומי קבלה/שחרור ארוכים. ללא מפתח — כל הקריאות עוברות ב-Toranot proxy (זה התנהגות ברירת המחדל).
+      </div>
+      {hasKey ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+          <span style={{ flex: 1 }}>✓ מפתח שמור (sk-ant-•••)</span>
+          <button type="button" className="ghost" onClick={onClearStart} disabled={busy}>
+            מחק
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            type="password"
+            placeholder="sk-ant-..."
+            dir="ltr"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            disabled={busy}
+            autoComplete="off"
+            style={{ flex: 1 }}
+          />
+          <button type="button" className="primary" onClick={onSaveStart} disabled={busy || !draft.trim()}>
+            {busy ? '...' : 'שמור'}
+          </button>
+        </div>
+      )}
+      {showPwdPrompt && (
+        <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+          <input
+            type="password"
+            placeholder="הסיסמה הנוכחית"
+            autoComplete="current-password"
+            value={pwd}
+            onChange={(e) => setPwd(e.target.value)}
+            disabled={busy}
+            style={{ flex: 1 }}
+          />
+          <button
+            type="button"
+            className="primary"
+            onClick={showPwdPrompt === 'save' ? onSaveCommit : onClearCommit}
+            disabled={busy || !pwd}
+          >
+            אשר
+          </button>
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => {
+              setShowPwdPrompt(null);
+              setPwd('');
+              // Don't clear the localStorage — onSaveCommit already wrote it.
+              // For 'clear' cancel: localStorage was cleared optimistically too;
+              // the user will see "no key" until they re-enter. Acceptable —
+              // they'd have re-entered anyway if they cancelled out of clear.
+            }}
+            disabled={busy}
+          >
+            ביטול
+          </button>
+        </div>
+      )}
+      {status && (
+        <div className={`account-status ${status.tone}`} style={{ marginTop: 8 }}>
+          {status.msg}
+        </div>
+      )}
     </div>
   );
 }
@@ -291,6 +498,7 @@ function setEmailErrorMessage(code: string | undefined, fallback: string | undef
 }
 
 function GuestAccount() {
+  const navigate = useNavigate();
   const [tab, setTab] = useState<'login' | 'register'>('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -456,6 +664,25 @@ function GuestAccount() {
         התחבר כדי לסנכרן הערות בין מכשירים בעתיד. <strong>אין חובה</strong> —
         אפשר להמשיך כאורח כרגיל.
       </div>
+      <button
+        type="button"
+        onClick={() => navigate('/')}
+        style={{
+          display: 'block',
+          width: '100%',
+          padding: '12px 16px',
+          marginBottom: 12,
+          fontSize: 15,
+          fontWeight: 600,
+          background: '#10b981',
+          color: 'white',
+          border: 'none',
+          borderRadius: 8,
+          cursor: 'pointer',
+        }}
+      >
+        ← המשך בלי חשבון
+      </button>
       <div className="account-tabs" role="tablist">
         <button
           type="button"
