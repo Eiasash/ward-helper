@@ -346,4 +346,64 @@ describe('Settings screen', () => {
       screen.getByText('🟡 Toranot proxy — פסק זמן 10 שניות'),
     ).toBeInTheDocument();
   });
+
+  // v1.36.1 — mask-on-render API-key input. The actual stored key is NEVER
+  // bound to the input's `value` attribute; only the user's draft (while
+  // typing) or a fixed-width bullet placeholder (when a key is stored at
+  // rest). Defensive against accidental future changes to useApiKey that
+  // might surface the real key into Settings state.
+  it('API-key input shows bullet placeholder when a key is stored, never the real key', async () => {
+    vi.mocked(useApiKey).mockReturnValue({
+      present: true,
+      save: vi.fn(async () => {}),
+      peek: vi.fn(async () => 'sk-ant-real-secret-1234567890'),
+      clear: vi.fn(async () => {}),
+    });
+    vi.mocked(activePath).mockResolvedValue('direct');
+    renderAt('/settings', <Settings />);
+    await flushEffects();
+
+    const input = document.getElementById('settings-api-key') as HTMLInputElement;
+    expect(input).not.toBeNull();
+    expect(input.value).toBe('•'.repeat(20));
+    // Belt-and-suspenders: even if the bullet count ever changes, never
+    // expose any portion of the real key in the DOM.
+    expect(input.value).not.toContain('sk-ant');
+    expect(input.value).not.toContain('secret');
+  });
+
+  it('API-key input is empty when no key stored', async () => {
+    vi.mocked(useApiKey).mockReturnValue({
+      present: false,
+      save: vi.fn(async () => {}),
+      peek: vi.fn(async () => null),
+      clear: vi.fn(async () => {}),
+    });
+    vi.mocked(activePath).mockResolvedValue('proxy');
+    renderAt('/settings', <Settings />);
+    await flushEffects();
+
+    const input = document.getElementById('settings-api-key') as HTMLInputElement;
+    expect(input).not.toBeNull();
+    expect(input.value).toBe('');
+  });
+
+  it('API-key input clears bullet placeholder when user starts typing', async () => {
+    vi.mocked(useApiKey).mockReturnValue({
+      present: true,
+      save: vi.fn(async () => {}),
+      peek: vi.fn(async () => 'sk-ant-real-secret'),
+      clear: vi.fn(async () => {}),
+    });
+    vi.mocked(activePath).mockResolvedValue('direct');
+    renderAt('/settings', <Settings />);
+    await flushEffects();
+
+    const input = document.getElementById('settings-api-key') as HTMLInputElement;
+    expect(input.value).toBe('•'.repeat(20));
+
+    fireEvent.change(input, { target: { value: 'sk-ant-typed-by-user' } });
+    expect(input.value).toBe('sk-ant-typed-by-user');
+    expect(input.value).not.toContain('•');
+  });
 });

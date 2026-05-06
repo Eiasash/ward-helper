@@ -26,7 +26,15 @@ import { pushBreadcrumb } from '../components/MobileDebugPanel';
 
 export function Settings() {
   const { present, save, clear } = useApiKey();
-  const [key, setKey] = useState('');
+  // Mask-on-render API-key input. The actual stored key is NEVER bound to
+  // the input's `value` attribute — only the user's draft (while typing) or
+  // a fixed-width bullet placeholder (when a key is stored at rest). This
+  // is defensive: even if a future change to `useApiKey` started returning
+  // the stored key, the input would still not expose it via DevTools'
+  // value-attribute rendering. The bullet count (20) is a placeholder, not
+  // the real key length — leaking length is a side channel we avoid.
+  const [keyDraft, setKeyDraft] = useState('');
+  const [keyMask, setKeyMask] = useState('');
   const [msg, setMsg] = useState('');
   const [bidiAuditOn, setBidiAuditOn] = useBidiAudit();
   const [debugOn, setDebugOn] = useDebugPanel();
@@ -93,18 +101,30 @@ export function Settings() {
     };
   }, [present]);
 
+  // Sync the bullet placeholder to the present-flag. When a key is stored,
+  // the input shows '••••...' (20 chars) so the user can see "yes there
+  // is a key here" without exposing the value. When not stored, the
+  // placeholder is empty and the input shows the real placeholder text.
+  useEffect(() => {
+    if (present === null) return; // still loading
+    setKeyMask(present ? '•'.repeat(20) : '');
+  }, [present]);
+
   async function onSaveKey() {
-    if (!key.startsWith('sk-ant-')) {
+    if (!keyDraft.startsWith('sk-ant-')) {
       setMsg('מפתח לא תקין');
       return;
     }
-    await save(key);
-    setKey('');
+    await save(keyDraft);
+    setKeyDraft('');
+    setKeyMask('•'.repeat(20));
     setMsg('מפתח נשמר ✓');
   }
 
   async function onClearKey() {
     await clear();
+    setKeyDraft('');
+    setKeyMask('');
     setMsg('מפתח נמחק');
   }
 
@@ -188,8 +208,13 @@ export function Settings() {
         type="password"
         dir="ltr"
         placeholder="sk-ant-..."
-        value={key}
-        onChange={(e) => setKey(e.target.value)}
+        value={keyDraft || keyMask}
+        onChange={(e) => {
+          setKeyDraft(e.target.value);
+          // First keystroke clears the bullet placeholder so the user sees
+          // their typed input, not bullets-then-typed.
+          setKeyMask('');
+        }}
         autoComplete="off"
         style={{ marginBottom: 8 }}
       />
