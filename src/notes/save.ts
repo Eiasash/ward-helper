@@ -13,10 +13,9 @@ import {
   applyApiKeyFromCloud,
   API_KEY_BLOB_ID,
 } from '@/crypto/keystore';
-import { getPassphrase } from '@/ui/hooks/useSettings';
 import { finalizeSessionFor } from '@/agent/costs';
 import { markSyncedNow, notifyNotesChanged } from '@/ui/hooks/glanceableEvents';
-import { getCurrentUser } from '@/auth/auth';
+import { getCurrentUser, getLastLoginPasswordOrNull } from '@/auth/auth';
 import type { ParseFields } from '@/agent/tools';
 import type { SafetyFlags } from '@/safety/types';
 
@@ -74,13 +73,17 @@ export async function saveBoth(
   // that the ID is known. Safe no-op if no session was open.
   finalizeSessionFor(patientId);
 
-  const pass = getPassphrase();
+  // v1.35.0: login password IS the cloud encryption key. Saved-in-memory by
+  // AccountSection on successful login (stashLastLoginPassword). Guests and
+  // logged-out users have null here → cloud push is silently skipped, same
+  // posture as the old "no passphrase set" case but with no UI to forget.
+  const pass = getLastLoginPasswordOrNull();
   if (!pass) {
     return {
       patientId,
       noteId,
       cloudPushed: false,
-      cloudSkippedReason: 'no-passphrase',
+      cloudSkippedReason: 'no-login',
     };
   }
 
