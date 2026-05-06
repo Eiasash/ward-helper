@@ -108,6 +108,27 @@ describe('importViaPaste — AZMA TSV grid format', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.name).toBe('לוי דוד');
   });
+
+  // AZMA spec §4 columns (חיידק עמיד / צד / מ / etc.) trigger the
+  // detector even though they don't carry RosterPatient data — so a
+  // real AZMA clipboard paste with documented columns + a שם column
+  // still parses, instead of dropping to "פורמט לא מזוהה".
+  it('AZMA spec §4 columns fire the detector + שם column drives row extraction', () => {
+    const lines = [
+      'מחלקה\tחיידק עמיד\tצד\tחדר\tשם\tגיל\tאבחנה',
+      'גריאטריה\t\t\t12\tרוזנברג מרים\t87\tHip fracture',
+      'גריאטריה\tCRE\t\t14\tלוי דוד\t79\tCHF',
+    ];
+    const rows = importViaPaste(lines.join('\n'));
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      room: '12',
+      name: 'רוזנברג מרים',
+      age: 87,
+      dxShort: 'Hip fracture',
+    });
+    expect(rows[1]?.name).toBe('לוי דוד');
+  });
 });
 
 describe('importViaPaste — garbage input', () => {
@@ -206,24 +227,24 @@ describe('importViaOcr', () => {
           text: JSON.stringify({
             patients: [
               {
-                id: '123456789',
+                tz: '123456789',
                 name: 'רוזנברג מרים',
                 age: 87,
                 sex: 'F',
                 room: '12',
                 bed: 'A',
-                los_days: 5,
-                dx_short: 'Hip fracture',
+                losDays: 5,
+                dxShort: 'Hip fracture',
               },
               {
-                id: null,
+                tz: null,
                 name: 'לוי דוד',
                 age: 79,
                 sex: 'M',
                 room: '14',
                 bed: 'B',
-                los_days: null,
-                dx_short: 'CHF',
+                losDays: null,
+                dxShort: 'CHF',
               },
             ],
           }),
@@ -244,6 +265,37 @@ describe('importViaOcr', () => {
     expect(rows[1]?.tz).toBeNull();
   });
 
+  // Regression guard: id is a freshly-minted UUID, tz holds the clinical
+  // identifier from the model. Same-name collision would let a future
+  // refactor like Object.assign(row, parsedJson) silently overwrite the
+  // UUID. The fixup that renamed the OCR field id → tz prevents that;
+  // this test pins the contract.
+  it('id is a UUID and tz is the 9-digit clinical identifier — no field collision', async () => {
+    callAnthropicSpy.mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            patients: [
+              { tz: '123456789', name: 'רוזנברג מרים', age: 87 },
+            ],
+          }),
+        },
+      ],
+      usage: { input_tokens: 50, output_tokens: 50 },
+    });
+    const rows = await importViaOcr(fakeFile());
+    expect(rows).toHaveLength(1);
+    const row = rows[0]!;
+    // RFC 4122 v4 UUID — exactly what crypto.randomUUID() produces.
+    expect(row.id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+    expect(row.tz).toBe('123456789');
+    // And explicitly: id is NOT the clinical identifier.
+    expect(row.id).not.toBe('123456789');
+  });
+
   it('strips a leading ```json fence the model occasionally adds', async () => {
     callAnthropicSpy.mockResolvedValue({
       content: [
@@ -252,7 +304,7 @@ describe('importViaOcr', () => {
           text:
             '```json\n' +
             JSON.stringify({
-              patients: [{ id: null, name: 'מטופל', age: 80 }],
+              patients: [{ tz: null, name: 'מטופל', age: 80 }],
             }) +
             '\n```',
         },
@@ -295,8 +347,8 @@ describe('importViaOcr', () => {
           type: 'text',
           text: JSON.stringify({
             patients: [
-              { id: '123456789', name: '', age: 87 },
-              { id: null, name: 'מטופל', age: 80 },
+              { tz: '123456789', name: '', age: 87 },
+              { tz: null, name: 'מטופל', age: 80 },
             ],
           }),
         },
