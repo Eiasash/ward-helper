@@ -2,7 +2,7 @@ import { runEmitTurn } from '@/agent/loop';
 import { loadSkills } from '@/skills/loader';
 import { wrapForChameleon } from '@/i18n/bidi';
 import { NOTE_SKILL_MAP } from './templates';
-import { rehabAugmentationFor } from './rehabPrompts';
+import { rehabAugmentation } from './rehabPrompts';
 import type { SoapMode } from './soapMode';
 import type { ParseResult } from '@/agent/tools';
 import type { NoteType } from '@/storage/indexed';
@@ -283,7 +283,7 @@ export function buildSoapPromptPrefix(
   mode: SoapMode = 'general',
 ): string {
   const base = [CHAMELEON_RULES, SOAP_STYLE];
-  const augmentation = rehabAugmentationFor(mode);
+  const augmentation = rehabAugmentation(mode);
   const tail = augmentation ? [augmentation] : [];
 
   if (!continuity || (!continuity.admission && continuity.priorSoaps.length === 0)) {

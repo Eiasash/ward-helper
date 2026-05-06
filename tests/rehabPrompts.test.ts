@@ -1,33 +1,90 @@
 import { describe, it, expect } from 'vitest';
 
-import { rehabAugmentationFor } from '@/notes/rehabPrompts';
+import { rehabAugmentation, REHAB_AUGMENTATIONS } from '@/notes/rehabPrompts';
 import { buildSoapPromptPrefix } from '@/notes/orchestrate';
 
-describe('rehabAugmentationFor', () => {
+describe('rehabAugmentation', () => {
   it('returns empty string for general (no augmentation)', () => {
-    expect(rehabAugmentationFor('general')).toBe('');
+    expect(rehabAugmentation('general')).toBe('');
   });
 
-  it('returns a non-empty Hebrew/English block for each rehab-* mode', () => {
+  it('returns a non-empty block for each rehab-* mode', () => {
     for (const mode of [
       'rehab-FIRST',
       'rehab-STABLE',
       'rehab-COMPLEX',
       'rehab-HD-COMPLEX',
     ] as const) {
-      const aug = rehabAugmentationFor(mode);
-      expect(aug.length).toBeGreaterThan(0);
-      // Mode marker so the model can introspect which block applied.
-      expect(aug).toContain(`Mode: ${mode}`);
-      // Scaffold-notice is the explicit "this is a stub" marker the next
-      // engineer needs to remove when the SKILL.md content lands.
-      expect(aug).toContain('SKILL.md');
+      expect(rehabAugmentation(mode).length).toBeGreaterThan(0);
     }
   });
 
-  it('mentions HD-specific bedside hints in the HD-COMPLEX augmentation', () => {
-    const hd = rehabAugmentationFor('rehab-HD-COMPLEX');
-    expect(hd).toMatch(/fistula|HD\b/i);
+  it('exposes a stable REHAB_AUGMENTATIONS map keyed by SoapMode', () => {
+    expect(REHAB_AUGMENTATIONS).toHaveProperty('general', '');
+    expect(REHAB_AUGMENTATIONS).toHaveProperty('rehab-FIRST');
+    expect(REHAB_AUGMENTATIONS).toHaveProperty('rehab-STABLE');
+    expect(REHAB_AUGMENTATIONS).toHaveProperty('rehab-COMPLEX');
+    expect(REHAB_AUGMENTATIONS).toHaveProperty('rehab-HD-COMPLEX');
+  });
+});
+
+// ─── Marciano (HD-rehab-complex) acceptance — Phase C fixup 4 ───
+//
+// Spec: "open Marciano patient (HD-rehab-complex), generate SOAP, verify it
+// uses HD-COMPLEX template not generic." With the v4.1 SKILL.md content
+// ported, the HD-COMPLEX prompt now carries the drug-disease audit table,
+// HD weekday letters, and fistula-specific bedside items that 'general'
+// does not — so material divergence is real and assertable.
+describe('rehab-quickref v4.1 content invariants', () => {
+  it('HD-COMPLEX prompt contains the drug-disease audit table', () => {
+    const p = rehabAugmentation('rehab-HD-COMPLEX');
+    expect(p).toMatch(/Methotrexate/);
+    expect(p).toMatch(/Duloxetine/);
+    expect(p).toMatch(/Dipyrone/);
+    expect(p).toMatch(/Enoxaparin/);
+    expect(p).toMatch(/G6PD/);
+    expect(p).toMatch(/ב ד ש/); // HD weekday convention (Sun/Tue/Thu)
+  });
+
+  it('HD-COMPLEX is materially different from general (not just a marker block)', () => {
+    const general = rehabAugmentation('general');
+    const hd = rehabAugmentation('rehab-HD-COMPLEX');
+    expect(hd).not.toBe(general);
+    // Substantive divergence — well past the "tiny header" threshold the
+    // pre-port stub satisfied. v4.1 HD-COMPLEX is several KB of clinical
+    // directives.
+    expect(hd.length).toBeGreaterThan(2000);
+  });
+
+  it('FIRST-DAY prompt enforces the 6-element ortho capsule', () => {
+    const p = rehabAugmentation('rehab-FIRST');
+    expect(p).toMatch(/6 אלמנטים חובה/);
+    expect(p).toMatch(/Hemiarthroplasty/);
+    expect(p).toMatch(/CrCl/);
+  });
+
+  it('STABLE prompt offers both gym (Variant A) and bedside (Variant B) variants', () => {
+    const p = rehabAugmentation('rehab-STABLE');
+    expect(p).toMatch(/Variant A/);
+    expect(p).toMatch(/Variant B/);
+    expect(p).toMatch(/אולם פיזי/);
+  });
+
+  it('COMPLEX prompt distinguishes itself from HD-COMPLEX via O-section guidance', () => {
+    const c = rehabAugmentation('rehab-COMPLEX');
+    expect(c).toMatch(/הבדל מ-HD-COMPLEX/);
+  });
+
+  it('universal rules are inherited by every rehab-* mode', () => {
+    // Drug names UPPERCASE rule is a universal — appears in every rehab augmentation.
+    for (const mode of [
+      'rehab-FIRST',
+      'rehab-STABLE',
+      'rehab-COMPLEX',
+      'rehab-HD-COMPLEX',
+    ] as const) {
+      expect(rehabAugmentation(mode)).toMatch(/UPPERCASE/);
+    }
   });
 });
 
@@ -38,42 +95,16 @@ describe('buildSoapPromptPrefix wiring (Phase C plumbing)', () => {
     expect(a).toBe(b);
   });
 
-  it('appends the rehab-FIRST marker for rehab-FIRST mode', () => {
+  it('appends the rehab-FIRST 6-element ortho rule for rehab-FIRST mode', () => {
     const general = buildSoapPromptPrefix(null, 'general');
     const first = buildSoapPromptPrefix(null, 'rehab-FIRST');
     expect(first).not.toBe(general);
-    expect(first).toContain('Mode: rehab-FIRST');
+    expect(first).toMatch(/6 אלמנטים חובה/);
   });
 
-  it('appends the rehab-HD-COMPLEX marker for rehab-HD-COMPLEX mode', () => {
+  it('appends the HD-COMPLEX drug-disease table for rehab-HD-COMPLEX mode', () => {
     const hd = buildSoapPromptPrefix(null, 'rehab-HD-COMPLEX');
-    expect(hd).toContain('Mode: rehab-HD-COMPLEX');
-    expect(hd).toMatch(/fistula|HD\b/i);
+    expect(hd).toMatch(/Methotrexate/);
+    expect(hd).toMatch(/פיסטולה/);
   });
 });
-
-// Acceptance test from the Phase C spec:
-//   "open Marciano patient (HD-rehab-complex), generate SOAP, verify it
-//    uses HD-COMPLEX template not generic."
-//
-// This is intentionally `test.todo` and not a passing test. The wiring is
-// live (a HD-COMPLEX mode does append a marker block to SOAP_STYLE), but
-// the *materially differentiated* HD-COMPLEX prompt requires the
-// rehab-quickref SKILL.md content. Until that lands at
-// /mnt/skills/user/rehab-quickref/SKILL.md (or equivalent), the emitted
-// SOAP for a Marciano-class HD-rehab patient will be string-equivalent
-// to 'general' modulo a short directive header — which is *not* what the
-// spec asks the test to assert.
-//
-// When the SKILL.md lands:
-//   1. Replace REHAB_AUGMENTATIONS in src/notes/rehabPrompts.ts with the
-//      ported content
-//   2. Convert this test.todo to a real test that mocks generateNote
-//      against a Marciano-shaped fixture and asserts material divergence
-//      between modes (e.g., an HD-only directive that 'general' lacks)
-//   3. Update src/notes/rehabPrompts.ts header comment to drop the
-//      "STATUS — scaffolding" callout
-it.todo(
-  'Marciano (HD-rehab-complex) — emitted SOAP uses HD-COMPLEX template not generic ' +
-    '(blocked: requires rehab-quickref SKILL.md content port)',
-);
