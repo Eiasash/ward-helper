@@ -464,6 +464,7 @@ export async function generateNote(
   validated: ParseResult,
   continuity: ContinuityContext | null = null,
   soapMode: SoapMode = 'general',
+  abortSignal?: AbortSignal,
 ): Promise<string> {
   assertExtractIsSafe(noteType, validated);
 
@@ -478,6 +479,13 @@ export async function generateNote(
   const prefix = buildPromptPrefix(noteType, continuity, soapMode);
   const systemWithPrefix = `${skillContent}\n\n---\n\n${prefix}`;
 
-  const raw = await runEmitTurn(noteType, validated.fields, systemWithPrefix);
+  // abortSignal: Phase E batch driver passes its AbortController so a
+  // mid-batch cancel propagates through both extract + emit calls.
+  const raw = await runEmitTurn(
+    noteType,
+    validated.fields,
+    systemWithPrefix,
+    abortSignal,
+  );
   return wrapForChameleon(raw);
 }

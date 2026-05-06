@@ -46,6 +46,16 @@ const PROXY_TIMEOUT_MS = 30_000; // proxy itself bails at ~10s; give it room to 
 export interface CallOptions {
   /** Max additional attempts on transient failure (504/timeout/network). Default 0. */
   retryOnTransient?: number;
+  /**
+   * External AbortSignal — when fired, the in-flight fetch is canceled
+   * and any pending retry-backoff is short-circuited. Used by the batch
+   * SOAP runner so a "בטל" tap on patient 3 of 5 cancels the in-flight
+   * extract immediately rather than waiting up to 90s for it to finish.
+   * Distinct from the per-call internal AbortController used for the
+   * timeout — both signals are linked: either one firing aborts the
+   * underlying fetch.
+   */
+  signal?: AbortSignal;
 }
 
 const RETRY_BACKOFF_MS = 2_000;
@@ -115,11 +125,36 @@ export async function activePath(): Promise<RequestPath> {
   return key ? 'direct' : 'proxy';
 }
 
+/**
+ * Wire an external AbortSignal so its abort propagates to the per-call
+ * internal AbortController. Returns a teardown that detaches the listener
+ * so we don't leak event listeners when the call resolves normally.
+ *
+ * Idempotent on already-aborted external signals — fires the internal
+ * abort synchronously before the caller has a chance to start the fetch,
+ * so the fetch fails fast with AbortError instead of consuming network.
+ */
+function linkExternalAbort(
+  external: AbortSignal | undefined,
+  internal: AbortController,
+): () => void {
+  if (!external) return () => {};
+  if (external.aborted) {
+    internal.abort();
+    return () => {};
+  }
+  const onAbort = () => internal.abort();
+  external.addEventListener('abort', onAbort, { once: true });
+  return () => external.removeEventListener('abort', onAbort);
+}
+
 async function callDirectOnce(
   req: AnthropicRequest,
   apiKey: string,
+  externalSignal?: AbortSignal,
 ): Promise<AnthropicResponse> {
   const controller = new AbortController();
+  const detach = linkExternalAbort(externalSignal, controller);
   const timer = setTimeout(() => controller.abort(), DIRECT_TIMEOUT_MS);
   try {
     const res = await fetch(ANTHROPIC_URL, {
@@ -145,11 +180,16 @@ async function callDirectOnce(
     return (await res.json()) as AnthropicResponse;
   } finally {
     clearTimeout(timer);
+    detach();
   }
 }
 
-async function callProxyOnce(req: AnthropicRequest): Promise<AnthropicResponse> {
+async function callProxyOnce(
+  req: AnthropicRequest,
+  externalSignal?: AbortSignal,
+): Promise<AnthropicResponse> {
   const controller = new AbortController();
+  const detach = linkExternalAbort(externalSignal, controller);
   const timer = setTimeout(() => {
     // Log the timeout abort path explicitly. Browser-level cancels (user navigated
     // away mid-call, network interruption) won't reach this branch — they surface
@@ -187,6 +227,7 @@ async function callProxyOnce(req: AnthropicRequest): Promise<AnthropicResponse> 
     throw err;
   } finally {
     clearTimeout(timer);
+    detach();
   }
 }
 
@@ -200,18 +241,33 @@ export async function callAnthropic(
 ): Promise<AnthropicResponse> {
   const apiKey = await loadApiKey();
   const maxRetries = Math.max(0, opts.retryOnTransient ?? 0);
+  const externalSignal = opts.signal;
 
   const attempt = async (): Promise<AnthropicResponse> => {
-    if (apiKey) return callDirectOnce(req, apiKey);
-    return callProxyOnce(req);
+    if (apiKey) return callDirectOnce(req, apiKey, externalSignal);
+    return callProxyOnce(req, externalSignal);
   };
 
   let lastErr: unknown;
   for (let i = 0; i <= maxRetries; i++) {
+    // External abort short-circuits both the next attempt and the
+    // backoff between attempts. Without this check, an abort during
+    // the 2s/4s sleep would silently roll into another attempt.
+    if (externalSignal?.aborted) {
+      throw new DOMException('aborted', 'AbortError');
+    }
     try {
       return await attempt();
     } catch (e) {
       lastErr = e;
+      // AbortError on an externally-aborted call is a final result, not
+      // transient — don't retry, surface it to the caller.
+      if (
+        externalSignal?.aborted &&
+        (e as { name?: string })?.name === 'AbortError'
+      ) {
+        throw e;
+      }
       if (i >= maxRetries || !isTransient(e)) break;
       await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS * (i + 1)));
     }
