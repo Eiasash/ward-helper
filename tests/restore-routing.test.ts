@@ -37,6 +37,10 @@ vi.mock('@/storage/cloud', () => ({
   // pushBlob and friends — unused here but module re-exports them.
   pushBlob: vi.fn(),
   encryptForCloud: vi.fn(),
+  // Canary fail-fast probe — the routing tests don't simulate a populated
+  // canary, so report 'absent' to let restoreFromCloud proceed to the
+  // routing logic under test.
+  verifyCanary: vi.fn(async () => 'absent' as const),
 }));
 
 vi.mock('@/auth/auth', () => ({

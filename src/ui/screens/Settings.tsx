@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   useApiKey,
   setPassphrase,
@@ -18,6 +18,16 @@ import {
   type SnippetMap,
 } from '@/notes/snippets';
 import { AccountSection } from '../components/AccountSection';
+import { pushCanary, verifyCanary } from '@/storage/cloud';
+import { cacheUnlockBlob } from '@/crypto/unlock';
+import { deriveAesKey } from '@/crypto/pbkdf2';
+import {
+  getCurrentUser,
+  getLastLoginPasswordOrNull,
+} from '@/auth/auth';
+import { pushAllToCloud } from '@/notes/manualPush';
+import { exportLocalBackup } from '@/notes/exportLocal';
+import { importLocalBackup } from '@/notes/importLocal';
 
 export function Settings() {
   const { present, save, clear } = useApiKey();
@@ -37,6 +47,13 @@ export function Settings() {
   // insertion order under JSON round-trip in some IDB implementations.
   const [snippetRows, setSnippetRows] = useState<{ key: string; val: string }[]>([]);
   const [snippetMsg, setSnippetMsg] = useState('');
+  // Reactive mirror of getPassphrase() — the module-level singleton in
+  // useSettings doesn't fire React updates, so we shadow it for render-time
+  // gating of the passphrase-only sections (manual push / export / import).
+  const [passphraseActive, setPassphraseActive] = useState<boolean>(
+    () => getPassphrase() !== null,
+  );
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadSnippets().then((m) => {
@@ -97,13 +114,57 @@ export function Settings() {
     setMsg('מפתח נשמר ✓');
   }
 
-  function onSavePass() {
+  async function onSavePass() {
     if (pass.length < 8) {
       setMsg('סיסמה קצרה מדי');
       return;
     }
-    setPassphrase(pass);
+    const p = pass;
+    setPassphrase(p);
+    const username = getCurrentUser()?.username ?? null;
+    let status: 'ok' | 'wrong-passphrase' | 'absent' | 'error' = 'error';
+    try {
+      status = await verifyCanary(p, username);
+    } catch (e) {
+      // Network/cloud unreachable — still let the user activate the passphrase
+      // locally so saves can be queued. Surface a soft warning.
+      console.warn('verifyCanary failed', e);
+      setPass('');
+      setPassphraseActive(true);
+      setMsg(`סיסמה בזיכרון ✓ (לא ניתן היה לאמת מול הענן: ${(e as Error).message})`);
+      return;
+    }
+    if (status === 'wrong-passphrase') {
+      // Bail without keeping the bad passphrase active.
+      clearPassphrase();
+      setPassphraseActive(false);
+      setMsg('הסיסמה שגויה (לא הסיסמה ששמרה את הגיבויים בענן).');
+      return;
+    }
+    if (status === 'absent') {
+      // First-time activation: push a canary so future verifications work.
+      try {
+        const canarySalt = crypto.getRandomValues(
+          new Uint8Array(16),
+        ) as Uint8Array<ArrayBuffer>;
+        const canaryKey = await deriveAesKey(p, canarySalt);
+        await pushCanary(canaryKey, canarySalt, username);
+      } catch (e) {
+        console.warn('pushCanary failed', e);
+      }
+    }
+    // Cache the unlock blob with the user's login password — so next login
+    // auto-unlocks without prompting.
+    const loginPwd = getLastLoginPasswordOrNull();
+    if (loginPwd) {
+      try {
+        await cacheUnlockBlob(p, loginPwd);
+      } catch (e) {
+        console.warn('cacheUnlockBlob failed', e);
+      }
+    }
     setPass('');
+    setPassphraseActive(true);
     setMsg('סיסמה בזיכרון ✓');
   }
 
@@ -199,7 +260,7 @@ export function Settings() {
       </div>
 
       <h2>סיסמת גיבוי (Supabase)</h2>
-      <p>{getPassphrase() ? '✓ פעילה (תפוג אחרי 15 דק׳)' : 'לא פעילה — הגיבוי לא ירוץ'}</p>
+      <p>{passphraseActive ? '✓ פעילה (תפוג אחרי 15 דק׳)' : 'לא פעילה — הגיבוי לא ירוץ'}</p>
       <label htmlFor="settings-passphrase" className="visually-hidden">סיסמת גיבוי</label>
       <input
         id="settings-passphrase"
@@ -212,8 +273,98 @@ export function Settings() {
       />
       <div style={{ display: 'flex', gap: 8 }}>
         <button onClick={onSavePass}>הפעל סיסמה</button>
-        <button className="ghost" onClick={clearPassphrase}>נקה סיסמה</button>
+        <button
+          className="ghost"
+          onClick={() => {
+            clearPassphrase();
+            setPassphraseActive(false);
+          }}
+        >
+          נקה סיסמה
+        </button>
       </div>
+
+      {passphraseActive && (
+        <section className="cloud-actions" dir="rtl">
+          <h3>גיבויים ידניים</h3>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const out = await pushAllToCloud(
+                  getPassphrase() ?? '',
+                  getCurrentUser()?.username ?? null,
+                );
+                alert(
+                  `נשלחו לענן: ${out.pushedPatients} מטופלים, ${out.pushedNotes} הערות${out.failed.length > 0 ? ` (${out.failed.length} נכשלו)` : ''}.`,
+                );
+              } catch (e) {
+                alert((e as Error).message);
+              }
+            }}
+          >
+            גיבוי לענן עכשיו
+          </button>
+
+          <button
+            type="button"
+            onClick={async () => {
+              const wantPlain = !window.confirm(
+                'להצפין עם סיסמת הכניסה (מומלץ)?\n\nאישור = הצפן (מאובטח). ביטול = טקסט גלוי (לחירום בלבד).',
+              );
+              const loginPwd = getLastLoginPasswordOrNull();
+              if (!wantPlain && !loginPwd) {
+                alert(
+                  'אי-אפשר להצפין: לא נשמרה סיסמת כניסה במהלך ההתחברות. נסה להתנתק ולהתחבר מחדש לפני ייצוא מוצפן.',
+                );
+                return;
+              }
+              try {
+                const blob = await exportLocalBackup({
+                  encryptWithLoginPassword: !wantPlain,
+                  loginPassword: !wantPlain ? loginPwd! : undefined,
+                });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `ward-helper-backup-${new Date().toISOString().slice(0, 10)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+              } catch (e) {
+                alert((e as Error).message);
+              }
+            }}
+          >
+            ייצא גיבוי מקומי
+          </button>
+
+          <input
+            type="file"
+            accept="application/json"
+            ref={importInputRef}
+            style={{ display: 'none' }}
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              try {
+                const out = await importLocalBackup(f, {
+                  loginPassword: getLastLoginPasswordOrNull() ?? '',
+                });
+                alert(
+                  `יובאו ${out.imported.patients} מטופלים ו-${out.imported.notes} הערות.`,
+                );
+              } catch (err) {
+                alert((err as Error).message);
+              } finally {
+                e.target.value = '';
+              }
+            }}
+          />
+          <button type="button" onClick={() => importInputRef.current?.click()}>
+            ייבא גיבוי מקומי
+          </button>
+        </section>
+      )}
 
       <h2>שחזור מהענן</h2>
       <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 8 }}>
@@ -238,20 +389,50 @@ export function Settings() {
             lineHeight: 1.5,
           }}
         >
-          <strong>שוחזר ✓</strong>
-          {' '}
-          <span style={{ fontSize: 11, opacity: 0.7 }}>
-            ({restoreResult.source === 'username' ? 'חשבון מחובר' : 'מכשיר זה'})
-          </span>
-          <br />
-          נסרקו: {restoreResult.scanned}
-          {' · '}שוחזרו מטופלים: {restoreResult.restoredPatients}
-          {' · '}הערות: {restoreResult.restoredNotes}
-          {restoreResult.skipped.length > 0 && (
+          {restoreResult.wrongPassphrase ? (
+            <p className="restore-error" style={{ margin: 0 }}>
+              הסיסמה שגויה (לא הסיסמה ששמרה את הגיבויים בענן).{' '}
+              <button
+                type="button"
+                onClick={async () => {
+                  const ok = window.confirm(
+                    'פעולה זו תחליף את הגיבוי בענן בכל המטופלים וההערות שיש לך עכשיו במכשיר. להמשיך?',
+                  );
+                  if (!ok) return;
+                  try {
+                    const out = await pushAllToCloud(
+                      getPassphrase() ?? '',
+                      getCurrentUser()?.username ?? null,
+                    );
+                    alert(
+                      `גיבוי הוחלף: ${out.pushedPatients} מטופלים, ${out.pushedNotes} הערות.`,
+                    );
+                  } catch (e) {
+                    alert((e as Error).message);
+                  }
+                }}
+              >
+                התחל מחדש (יחליף בענן)
+              </button>
+            </p>
+          ) : (
             <>
+              <strong>שוחזר ✓</strong>
+              {' '}
+              <span style={{ fontSize: 11, opacity: 0.7 }}>
+                ({restoreResult.source === 'username' ? 'חשבון מחובר' : 'מכשיר זה'})
+              </span>
               <br />
-              דילוג: {restoreResult.skipped.length} רשומות (סיסמה שגויה /
-              פורמט לא תואם). ראה console.
+              נסרקו: {restoreResult.scanned}
+              {' · '}שוחזרו מטופלים: {restoreResult.restoredPatients}
+              {' · '}הערות: {restoreResult.restoredNotes}
+              {restoreResult.skipped.length > 0 && (
+                <>
+                  <br />
+                  דילוג: {restoreResult.skipped.length} רשומות (פורמט לא נתמך).
+                  ראה console.
+                </>
+              )}
             </>
           )}
         </div>
