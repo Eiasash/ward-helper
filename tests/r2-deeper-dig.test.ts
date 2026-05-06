@@ -137,6 +137,30 @@ describe('CSP regression (R2)', () => {
     expect(connectSrc).toContain('https://api.anthropic.com');
   });
 
+  it('connect-src token set equals exactly the documented whitelist (no widening, no narrowing)', () => {
+    // Strict R3 follow-up to the toContain assertion above: any drift in either
+    // direction (new domain added OR a documented domain removed) trips CI.
+    const m = indexHtml.match(/Content-Security-Policy"\s+content="([^"]+)"/);
+    const csp = m?.[1] ?? '';
+    const connectSrc = csp.split(';').map((s) => s.trim()).find((s) => s.startsWith('connect-src'));
+    expect(connectSrc).toBeDefined();
+
+    const tokens = (connectSrc ?? '')
+      .replace(/^connect-src\s+/, '')
+      .split(/\s+/)
+      .filter((t) => t.length > 0)
+      .sort();
+
+    const expected = [
+      "'self'",
+      'https://*.supabase.co',
+      'https://api.anthropic.com',
+      'https://toranot.netlify.app',
+    ].sort();
+
+    expect(tokens).toEqual(expected);
+  });
+
   it('connect-src does NOT include any analytics / 3rd-party telemetry domain', () => {
     const m = indexHtml.match(/Content-Security-Policy"\s+content="([^"]+)"/);
     const csp = m?.[1] ?? '';
