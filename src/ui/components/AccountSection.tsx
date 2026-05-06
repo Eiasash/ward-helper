@@ -14,8 +14,6 @@ import {
   normalizeUsername,
   type AuthUser,
 } from '@/auth/auth';
-import { tryAutoUnlock } from '@/crypto/unlock';
-import { setPassphrase } from '@/ui/hooks/useSettings';
 import { useAuth } from '../hooks/useAuth';
 import { pushBreadcrumb } from './MobileDebugPanel';
 
@@ -366,17 +364,14 @@ function GuestAccount() {
     const res = await authLogin(u, password);
     if (res.ok && res.user) {
       // CRITICAL ordering (see feedback_react_setauthsession_unmount_race):
-      // any await that needs `password` must happen BEFORE setAuthSession,
-      // because that call swaps <GuestAccount> → <AuthedAccount> on the
-      // next tick and unmounts this component. Stash + auto-unlock are
-      // safe-before, the singleton setPassphrase mutation is also safe.
+      // stash the login password BEFORE setAuthSession, because that call
+      // swaps <GuestAccount> → <AuthedAccount> on the next tick and
+      // unmounts this component. The login password is the cloud key in
+      // v1.35.0+ (saveBoth + manual cloud-push read it via
+      // getLastLoginPasswordOrNull). Stashing is a sync module-level
+      // mutation, safe before setAuthSession.
       stashLastLoginPassword(password);
       pushBreadcrumb('login.stashed');
-      const cachedPass = await tryAutoUnlock(password);
-      pushBreadcrumb('login.tryAutoUnlock', { hadCache: cachedPass !== null });
-      if (cachedPass !== null) {
-        setPassphrase(cachedPass);
-      }
       setBusy(false);
       setAuthSession(res.user.username, res.user.display_name, 'login');
       setPassword('');
