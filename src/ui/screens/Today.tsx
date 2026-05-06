@@ -18,6 +18,7 @@ import {
   type RosterPatient,
 } from '@/storage/roster';
 import { RosterImportModal } from '../components/RosterImportModal';
+import { BatchFlow } from '../components/BatchFlow';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SOAP_INTERVAL_MS = 18 * 60 * 60 * 1000;
@@ -72,6 +73,14 @@ export function Today() {
   const [roster, setRoster_] = useState<RosterPatient[]>([]);
   const [rosterModalOpen, setRosterModalOpen] = useState(false);
   const [featuresOn] = useState<boolean>(() => isSoapModeUiEnabled());
+
+  // Phase E multi-select. `selectedIds` is the per-card checkbox state.
+  // `batchPatients` is non-null while the batch flow is active —
+  // captures the snapshot of selected RosterPatients at the moment the
+  // doctor tapped "צור SOAP לכולם", so subsequent roster mutations
+  // don't change which patients are in the active batch.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [batchPatients, setBatchPatients] = useState<RosterPatient[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -184,6 +193,36 @@ export function Today() {
     setRosterModalOpen(false);
     // Tick advances → useEffect re-loads from IDB → roster state refreshes.
     setTick((t) => t + 1);
+    // Snap selection back to empty — IDs from the prior roster are
+    // stale anyway after setRoster's clear-then-insert.
+    setSelectedIds(new Set());
+  }
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  function startBatch() {
+    const picked = roster.filter((rp) => selectedIds.has(rp.id));
+    if (picked.length === 0) return;
+    setBatchPatients(picked);
+  }
+
+  function onBatchClose() {
+    setBatchPatients(null);
+    setSelectedIds(new Set());
+    // The batch may have saved notes — bump tick so today's-notes
+    // section refreshes when we land back on the roster view.
+    setTick((t) => t + 1);
   }
 
   async function markAsSent(noteId: string) {
@@ -196,6 +235,15 @@ export function Today() {
 
   const formatTime = (t: number) =>
     new Date(t).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+
+  // Phase E batch flow takes over the whole "היום" surface while active.
+  // Conditional render rather than a route — keeps the bottom-nav
+  // visible (intentional MVP UX; if user navigates away the async
+  // runBatchSoap keeps running in the background and saves notes,
+  // they just lose the progress UI).
+  if (batchPatients) {
+    return <BatchFlow patients={batchPatients} onClose={onBatchClose} />;
+  }
 
   return (
     <section>
@@ -321,48 +369,99 @@ export function Today() {
       {featuresOn && roster.length > 0 && (
         <div className="today-section">
           <h2>רשימת מחלקה ({roster.length})</h2>
-          {roster.map((rp) => (
-            <div
-              key={rp.id}
-              className="today-card"
-              data-roster-source={rp.sourceMode}
-              style={{
-                borderInlineStart: '4px solid var(--warn, #d97706)',
-                paddingInlineStart: 12,
-              }}
-            >
-              <div className="today-card-head">
-                <strong dir="auto">{rp.name}</strong>
-                <small>
-                  חדר {rp.room ?? '—'}
-                  {rp.bed ? `-${rp.bed}` : ''}
-                  {' · '}
-                  גיל {rp.age ?? '—'}
-                  {rp.losDays != null ? ` · יום ${rp.losDays}` : ''}
-                </small>
-              </div>
-              {rp.dxShort && (
-                <div
-                  className="today-meta"
-                  dir="auto"
-                  style={{
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                  title={rp.dxShort}
-                >
-                  {rp.dxShort}
-                </div>
-              )}
-              <button
-                className="ghost today-soap-action"
-                onClick={() => startSoapForRosterPatient(rp)}
+          {roster.map((rp) => {
+            const checked = selectedIds.has(rp.id);
+            return (
+              <div
+                key={rp.id}
+                className="today-card"
+                data-roster-source={rp.sourceMode}
+                style={{
+                  borderInlineStart: '4px solid var(--warn, #d97706)',
+                  paddingInlineStart: 12,
+                  display: 'grid',
+                  gridTemplateColumns: 'auto 1fr',
+                  gap: 10,
+                  alignItems: 'start',
+                }}
               >
-                + SOAP
-              </button>
-            </div>
-          ))}
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleSelected(rp.id)}
+                  aria-label={`בחר את ${rp.name} ל-SOAP קבוצתי`}
+                  style={{ width: 20, height: 20, marginTop: 4 }}
+                />
+                <div>
+                  <div className="today-card-head">
+                    <strong dir="auto">{rp.name}</strong>
+                    <small>
+                      חדר {rp.room ?? '—'}
+                      {rp.bed ? `-${rp.bed}` : ''}
+                      {' · '}
+                      גיל {rp.age ?? '—'}
+                      {rp.losDays != null ? ` · יום ${rp.losDays}` : ''}
+                    </small>
+                  </div>
+                  {rp.dxShort && (
+                    <div
+                      className="today-meta"
+                      dir="auto"
+                      style={{
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={rp.dxShort}
+                    >
+                      {rp.dxShort}
+                    </div>
+                  )}
+                  <button
+                    className="ghost today-soap-action"
+                    onClick={() => startSoapForRosterPatient(rp)}
+                  >
+                    + SOAP
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/*
+        Phase E sticky batch bar. Appears only when ≥1 roster patient is
+        selected. position:sticky pins to the bottom of the scroll
+        viewport; combined with the bottom-nav offset (56px) this sits
+        just above the main nav bar without overlapping it.
+      */}
+      {featuresOn && selectedIds.size > 0 && (
+        <div
+          role="toolbar"
+          aria-label="פעולות בחירת קבוצה"
+          style={{
+            position: 'sticky',
+            bottom: 56,
+            insetInlineStart: 0,
+            insetInlineEnd: 0,
+            background: 'var(--card)',
+            borderTop: '1px solid var(--border)',
+            padding: '10px 12px',
+            display: 'flex',
+            gap: 8,
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            zIndex: 10,
+            marginTop: 16,
+          }}
+        >
+          <button type="button" onClick={startBatch} style={{ flex: 1 }}>
+            צור SOAP לכולם ({selectedIds.size})
+          </button>
+          <button type="button" className="ghost" onClick={clearSelection}>
+            בטל בחירה
+          </button>
         </div>
       )}
 
