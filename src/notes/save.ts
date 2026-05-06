@@ -15,6 +15,11 @@ import {
 } from '@/crypto/keystore';
 import { finalizeSessionFor } from '@/agent/costs';
 import { markSyncedNow, notifyNotesChanged } from '@/ui/hooks/glanceableEvents';
+// ESM cycle with @/auth/auth — auth.ts imports resetCanaryArmed from this
+// module. Both directions resolve to runtime function refs only, NEVER
+// invoked at module-eval time, so live-binding semantics keep the cycle
+// safe. If you add a top-level call to either side, the cycle becomes
+// init-order sensitive and the binding may be in TDZ — relocate it.
 import { getCurrentUser, getLastLoginPasswordOrNull } from '@/auth/auth';
 import { pushBreadcrumb } from '@/ui/components/MobileDebugPanel';
 import type { ParseFields } from '@/agent/tools';

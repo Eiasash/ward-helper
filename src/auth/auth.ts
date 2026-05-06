@@ -31,6 +31,10 @@
 
 import { getSupabase } from '@/storage/cloud';
 import { reencryptUnlockCache } from '@/crypto/unlock';
+// ESM cycle with @/notes/save — save.ts imports getCurrentUser +
+// getLastLoginPasswordOrNull from this module. Both directions are runtime
+// function refs only, NEVER invoked at module-eval time. Adding a top-level
+// call to either side will trigger TDZ on the cycle binding — relocate it.
 import { resetCanaryArmed } from '@/notes/save';
 
 const AUTH_LS_KEY = 'ward-helper.auth.user';

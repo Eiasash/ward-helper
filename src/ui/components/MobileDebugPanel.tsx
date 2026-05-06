@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getCurrentUser, getLastLoginPasswordOrNull } from '@/auth/auth';
 import { verifyCanary } from '@/storage/cloud';
+import { isCanaryArmedThisSession } from '@/notes/save';
 
 /**
  * Mobile breadcrumb panel — fixed-position debug surface for diagnosing
@@ -217,7 +218,7 @@ export function MobileDebugPanel() {
               minHeight: 0,
             }}
           >
-            🔍 canary
+            🔍 canary [{isCanaryArmedThisSession() ? 'armed' : 'disarmed'}]
           </button>
         </>
       )}
