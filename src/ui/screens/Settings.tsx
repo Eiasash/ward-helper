@@ -362,22 +362,35 @@ export function Settings() {
                 type="button"
                 disabled={overwriting}
                 onClick={async () => {
+                  // BUG FIX (v1.34.4): use the value currently typed in the
+                  // input field, NOT the snapshot from the failed attempt.
+                  // The previous version captured `passSaveState.rejectedPass`
+                  // — so if the user adjusted their typing AFTER seeing the
+                  // wrong-passphrase error, the overwrite still landed under
+                  // the OLD typed string and the next activate attempt with
+                  // the new typing failed. The user reasonably expects "the
+                  // overwrite uses what's in the input right now".
+                  const current = pass;
+                  if (current.length < 8) {
+                    pushBreadcrumb('savePass.overwrite.tooShort', { len: current.length });
+                    setPassSaveState({
+                      kind: 'err',
+                      text: 'הסיסמה ששדה הקלט קצרה מדי (לפחות 8 תווים)',
+                    });
+                    return;
+                  }
                   if (
                     !window.confirm(
-                      'פעולה זו תחליף את הגיבוי הקיים בענן בכל המטופלים וההערות שיש לך עכשיו במכשיר, מוצפנים מחדש עם הסיסמה הזו. הגיבוי הקיים יהיה בלתי שחזיר. להמשיך?',
+                      `פעולה זו תחליף את הגיבוי בענן בסיסמה שכרגע בשדה הקלט (${current.length} תווים). כל המטופלים וההערות שיש לך במכשיר יוצפנו מחדש איתה. הגיבוי הקודם יהיה בלתי שחזיר. להמשיך?`,
                     )
                   ) {
                     return;
                   }
-                  pushBreadcrumb('savePass.overwrite.click');
+                  pushBreadcrumb('savePass.overwrite.click', { len: current.length });
                   setOverwriting(true);
                   const username = getCurrentUser()?.username ?? null;
-                  const rejected =
-                    passSaveState.kind === 'wrongPass'
-                      ? passSaveState.rejectedPass
-                      : '';
                   try {
-                    const out = await pushAllToCloud(rejected, username);
+                    const out = await pushAllToCloud(current, username);
                     pushBreadcrumb('savePass.overwrite.done', {
                       patients: out.pushedPatients,
                       notes: out.pushedNotes,
@@ -385,13 +398,13 @@ export function Settings() {
                       failed: out.failed.length,
                     });
                     // Activate locally now that the cloud agrees with this passphrase.
-                    setPassphrase(rejected);
+                    setPassphrase(current);
                     setPassphraseActive(true);
                     // Cache the unlock blob if the login password is in memory.
                     const loginPwd = getLastLoginPasswordOrNull();
                     if (loginPwd) {
                       try {
-                        await cacheUnlockBlob(rejected, loginPwd);
+                        await cacheUnlockBlob(current, loginPwd);
                       } catch (e) {
                         console.warn('cacheUnlockBlob failed', e);
                       }
