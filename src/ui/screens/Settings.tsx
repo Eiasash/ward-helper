@@ -292,7 +292,7 @@ export function Settings() {
       </div>
 
       <h2>סיסמת גיבוי (Supabase)</h2>
-      <p>{passphraseActive ? '✓ פעילה (תפוג אחרי 15 דק׳)' : 'לא פעילה — הגיבוי לא ירוץ'}</p>
+      <p>{passphraseActive ? '✓ פעילה (עד התנתקות או רענון)' : 'לא פעילה — הגיבוי לא ירוץ'}</p>
       <label htmlFor="settings-passphrase" className="visually-hidden">סיסמת גיבוי</label>
       <input
         id="settings-passphrase"
