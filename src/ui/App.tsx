@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { HashRouter, Routes, Route, NavLink } from 'react-router-dom';
 import { loadPersistedLoginPassword, getLastLoginPasswordOrNull } from '@/auth/auth';
+import { ageOutRoster } from '@/storage/roster';
 import { pushBreadcrumb } from './components/MobileDebugPanel';
 import { Capture } from './screens/Capture';
 import { Review } from './screens/Review';
@@ -76,6 +77,19 @@ export function App() {
     } else {
       pushBreadcrumb('boot.storagePersist', { unsupported: true });
     }
+
+    // Phase D: drop roster rows older than 24h on every boot. Cheap
+    // (<50 rows, full scan) and runs in the background — failure is
+    // non-fatal (worst case the roster section shows yesterday's rows
+    // until a new import replaces them). Logged so a stuck roster
+    // can be diagnosed from the breadcrumb stream.
+    void ageOutRoster()
+      .then((dropped) => {
+        if (dropped > 0) pushBreadcrumb('boot.roster.ageOut', { dropped });
+      })
+      .catch((e: unknown) => {
+        pushBreadcrumb('boot.roster.ageOut.err', (e as Error).message ?? 'unknown');
+      });
 
     if (getLastLoginPasswordOrNull() !== null) return; // already in memory
     loadPersistedLoginPassword().then((p) => {
