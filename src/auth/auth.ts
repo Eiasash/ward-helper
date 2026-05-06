@@ -36,6 +36,20 @@ const AUTH_LS_KEY = 'ward-helper.auth.user';
 const UID_LS_KEY = 'ward-helper.auth.uid';
 const DEV_LS_KEY = 'ward-helper.auth.devid';
 
+// Session-only stash of the user's login password — never persisted, never
+// logged. Used by Settings.tsx's "הפעל סיסמה" handler to derive the
+// cachedUnlockBlob key without prompting the user a second time.
+let _lastLoginPassword: string | null = null;
+export function stashLastLoginPassword(p: string): void {
+  _lastLoginPassword = p;
+}
+export function getLastLoginPasswordOrNull(): string | null {
+  return _lastLoginPassword;
+}
+export function clearLastLoginPassword(): void {
+  _lastLoginPassword = null;
+}
+
 /** Username pattern — same as the other 3 PWAs to keep accounts portable. */
 const USERNAME_RE = /^[a-z0-9][a-z0-9_-]{2,31}$/;
 
