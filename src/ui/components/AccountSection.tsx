@@ -8,9 +8,7 @@ import {
   setAuthSession,
   logout,
   stashLastLoginPassword,
-  clearLastLoginPassword,
   persistLoginPassword,
-  clearPersistedLoginPassword,
   validateUsername,
   validatePassword,
   normalizeUsername,
@@ -94,13 +92,12 @@ function AuthedAccount({ user }: { user: AuthUser }) {
           type="button"
           className="ghost"
           onClick={() => {
-            // Drop the in-memory + IDB-persisted login password stash on
-            // logout. Without the persisted clear, a logout-then-different-
-            // user-login on the same device would inherit the prior user's
-            // cloud key. Fire-and-forget; logout() proceeds in parallel.
-            clearLastLoginPassword();
-            void clearPersistedLoginPassword();
-            logout();
+            // v1.36.1: logout() now handles in-memory + IDB-persisted login
+            // password clears + canary reset internally, so future logout
+            // entry points get the full cleanup for free. Fire-and-forget
+            // is fine — logout's sync portions complete before it returns
+            // its Promise; the IDB clear continues in the background.
+            void logout();
           }}
         >
           🚪 התנתק

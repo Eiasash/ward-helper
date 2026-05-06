@@ -58,7 +58,12 @@ import {
   validatePassword,
   normalizeUsername,
   subscribeAuthChanges,
+  stashLastLoginPassword,
+  persistLoginPassword,
+  getLastLoginPasswordOrNull,
 } from '@/auth/auth';
+import 'fake-indexeddb/auto';
+import { getSettings } from '@/storage/indexed';
 
 beforeEach(() => {
   localStorage.clear();
@@ -380,10 +385,45 @@ describe('restoreFromCloud — Phase B fresh-device cache-clear survival', () =>
     expect(isCanaryArmedThisSession()).toBe(true);
 
     // Production logout(). Must invoke resetCanaryArmed internally so that
-    // the next user's first save fires a fresh canary push.
+    // the next user's first save fires a fresh canary push. logout() is
+    // async (v1.36.1) but the resetCanaryArmed call runs synchronously
+    // before any await, so the assertion holds without awaiting.
     setAuthSession('user-a');
-    logout();
+    void logout();
 
     expect(isCanaryArmedThisSession()).toBe(false);
+  });
+
+  it('Case 6 — logout() clears in-memory + IDB-persisted login password (defensive cleanup)', async () => {
+    // Pre-v1.36.1: AccountSection.tsx hand-orchestrated three calls
+    // (clearLastLoginPassword + clearPersistedLoginPassword + logout).
+    // Any future logout entry point that forgot the two clear*() calls
+    // would leak user A's password into B's session on the same device.
+    // This test proves logout() now handles the cleanup itself.
+
+    // Stash + persist a password the way authLogin's success path would.
+    stashLastLoginPassword('test-pass-9bc1f2a3');
+    await persistLoginPassword('test-pass-9bc1f2a3');
+    expect(getLastLoginPasswordOrNull()).toBe('test-pass-9bc1f2a3');
+
+    // Verify the IDB row is actually populated before logout.
+    const before = await getSettings();
+    expect(before?.loginPwdXor).toBeTruthy();
+    expect(before!.loginPwdXor!.length).toBeGreaterThan(0);
+
+    // Production logout — must clear BOTH the in-memory stash and the IDB
+    // row. Awaited because the IDB clear is the async portion.
+    setAuthSession('user-a');
+    await logout();
+
+    // Memory layer cleared.
+    expect(getLastLoginPasswordOrNull()).toBeNull();
+
+    // IDB layer cleared.
+    const after = await getSettings();
+    // clearPersistedLoginPassword sets loginPwdXor to null on the existing
+    // settings row (rather than deleting the row), so the row may still
+    // exist but with a null/empty loginPwdXor field.
+    expect(after?.loginPwdXor ?? null).toBeNull();
   });
 });

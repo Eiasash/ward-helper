@@ -400,24 +400,53 @@ export function setAuthSession(
 }
 
 /**
- * Clear the auth profile and regenerate fresh guest IDs. The old guest uid
- * is dropped so no data is silently shared between accounts on the same
- * device.
+ * Clear the auth profile, password stashes, canary state, and regenerate
+ * fresh guest IDs. The old guest uid is dropped so no data is silently
+ * shared between accounts on the same device.
+ *
+ * v1.36.1: clearLastLoginPassword + clearPersistedLoginPassword + resetCanaryArmed
+ * are all called from INSIDE logout (was previously: caller-orchestrated in
+ * AccountSection.tsx). Defensive: any future logout entry point (auto-logout,
+ * switch-user, session-expiry) inherits the full cleanup automatically — no
+ * one can forget a step. Same shape as the resetCanaryArmed wire-in from #69.
+ *
+ * Async because clearPersistedLoginPassword is async (writes to IDB). Sync
+ * callers that don't await still get all the synchronous portions
+ * (in-memory clear, localStorage clear, canary reset, notification) before
+ * the function returns its Promise — only the IDB clear continues in the
+ * background. Awaiting callers (e.g. tests) get full completion.
  */
-export function logout(): void {
-  localStorage.removeItem(AUTH_LS_KEY);
-  // Fresh random uid; do NOT reuse a prior guest uid.
-  localStorage.setItem(UID_LS_KEY, 'u' + Math.random().toString(36).slice(2, 10));
-  // And fresh device id, so any future cloud-backup writes don't accidentally
-  // attach to the previous account's row.
-  localStorage.setItem(DEV_LS_KEY, 'dev_' + Math.random().toString(36).slice(2, 12));
+export async function logout(): Promise<void> {
+  // All synchronous cleanup happens FIRST so callers that don't await still
+  // see the full sync state transition (memory cleared, localStorage rotated,
+  // canary reset, listeners notified) in the same tick. Pre-v1.36.1, the IDB
+  // clear was a fire-and-forget `void clearPersistedLoginPassword()` in
+  // AccountSection, so the notification fired before the IDB clear completed
+  // anyway — preserving that ordering keeps existing listeners well-behaved.
+  clearLastLoginPassword();
   // Cross-user safety: the canary-armed flag is a JS module global and
   // survives logout/login on the same tab. Without this reset, user B
   // logging in after user A on the same device skips their first canary
   // push, regressing into the pre-v1.36.0 state where wrong-password
   // attempts silently bulk-skip on the next fresh-device restore.
   resetCanaryArmed();
+  localStorage.removeItem(AUTH_LS_KEY);
+  // Fresh random uid; do NOT reuse a prior guest uid.
+  localStorage.setItem(UID_LS_KEY, 'u' + Math.random().toString(36).slice(2, 10));
+  // And fresh device id, so any future cloud-backup writes don't accidentally
+  // attach to the previous account's row.
+  localStorage.setItem(DEV_LS_KEY, 'dev_' + Math.random().toString(36).slice(2, 12));
   notifyAuthChanged('logout');
+  // IDB clear is the only async step. Awaiting callers (e.g. tests asserting
+  // post-logout IDB state) get full completion; fire-and-forget callers just
+  // get the IDB clear queued — that matches the pre-v1.36.1 production
+  // semantics from AccountSection.
+  try {
+    await clearPersistedLoginPassword();
+  } catch {
+    // Best-effort — IDB clear failure is non-fatal. Next login overwrites
+    // the stash anyway.
+  }
 }
 
 // ───────────────────── change events ─────────────────────
