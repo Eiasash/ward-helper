@@ -36,10 +36,16 @@ const AUTH_LS_KEY = 'ward-helper.auth.user';
 const UID_LS_KEY = 'ward-helper.auth.uid';
 const DEV_LS_KEY = 'ward-helper.auth.devid';
 
-// Session-only stash of the user's login password — never persisted, never
-// logged. Used by Settings.tsx's "הפעל סיסמה" handler to derive the
-// cachedUnlockBlob key without prompting the user a second time.
+// In-memory + IDB-persisted stash of the user's login password. v1.35.0+ uses
+// it as the cloud encryption key — without persistence, every page reload
+// broke cloud backup until logout/login. Persistence uses XOR with the
+// deviceSecret (same posture as apiKeyXor): protects against casual IDB
+// inspection / backup-tool sweeps; a determined attacker with same-profile
+// devtools recovers it. The trade-off is acceptable because PHI is already
+// in IDB plaintext — adding the login password doesn't widen the attack
+// surface beyond what's already there.
 let _lastLoginPassword: string | null = null;
+
 export function stashLastLoginPassword(p: string): void {
   _lastLoginPassword = p;
 }
@@ -48,6 +54,65 @@ export function getLastLoginPasswordOrNull(): string | null {
 }
 export function clearLastLoginPassword(): void {
   _lastLoginPassword = null;
+}
+
+/**
+ * Write the login password to IDB (XOR-obfuscated). Called after a successful
+ * authLogin so the next page reload can resume cloud backup without forcing
+ * the user to re-authenticate.
+ */
+export async function persistLoginPassword(p: string): Promise<void> {
+  // Lazy-loaded IDB + xor — keeps the auth.ts entry-chunk weight down for
+  // guests who never trigger any of this.
+  const [{ getSettings, setSettings }, { xorEncrypt, generateDeviceSecret }] =
+    await Promise.all([
+      import('@/storage/indexed'),
+      import('@/crypto/xor'),
+    ]);
+  const existing = await getSettings();
+  const deviceSecret = existing?.deviceSecret ?? generateDeviceSecret();
+  const loginPwdXor = xorEncrypt(p, deviceSecret);
+  await setSettings({
+    apiKeyXor: existing?.apiKeyXor ?? new Uint8Array(0),
+    deviceSecret,
+    lastPassphraseAuthAt: existing?.lastPassphraseAuthAt ?? null,
+    prefs: existing?.prefs ?? {},
+    cachedUnlockBlob: existing?.cachedUnlockBlob ?? null,
+    loginPwdXor,
+  });
+}
+
+/**
+ * Read the persisted login password from IDB and stash it in memory. Called
+ * at app boot for the auth-session-resume path. Returns the password (also
+ * stashed) or null if none persisted / read failed.
+ */
+export async function loadPersistedLoginPassword(): Promise<string | null> {
+  try {
+    const [{ getSettings }, { xorDecrypt }] = await Promise.all([
+      import('@/storage/indexed'),
+      import('@/crypto/xor'),
+    ]);
+    const s = await getSettings();
+    if (!s?.loginPwdXor || s.loginPwdXor.length === 0) return null;
+    const p = xorDecrypt(s.loginPwdXor, s.deviceSecret);
+    _lastLoginPassword = p;
+    return p;
+  } catch {
+    return null;
+  }
+}
+
+/** Wipe the persisted copy. Called on logout. */
+export async function clearPersistedLoginPassword(): Promise<void> {
+  try {
+    const { getSettings, setSettings } = await import('@/storage/indexed');
+    const s = await getSettings();
+    if (!s) return;
+    await setSettings({ ...s, loginPwdXor: null });
+  } catch {
+    // Worst case: stale persisted password. Next login overwrites it.
+  }
 }
 
 /** Username pattern — same as the other 3 PWAs to keep accounts portable. */

@@ -57,11 +57,20 @@ export interface Settings {
   prefs: Record<string, unknown>;
   /**
    * Backup passphrase encrypted with PBKDF2(loginPassword)-derived AES key.
-   * Set after first successful passphrase entry; auto-unlocks on subsequent
-   * logins so the user types only their login password. null/undefined
-   * means "no cache, prompt for passphrase".
+   * v1.34.x history; unused as of v1.35.0 but kept on the type for forward/
+   * backward compat — see useSettings.ts.
    */
   cachedUnlockBlob?: CachedUnlockBlob | null;
+  /**
+   * v1.35.2: login password XOR-obfuscated with deviceSecret, persisted in
+   * IDB so cloud-backup keeps working across page reloads. Threat model
+   * matches apiKeyXor — protects against casual IDB inspection / backup
+   * sweeps but a determined attacker with same-profile devtools recovers
+   * it. Necessary because v1.35.0 made the login password the cloud key,
+   * and prior to v1.35.2 it lived in JS memory only — every reload broke
+   * cloud backup until the user logged out + back in.
+   */
+  loginPwdXor?: Uint8Array<ArrayBuffer> | null;
 }
 
 let dbPromise: Promise<IDBPDatabase> | null = null;
