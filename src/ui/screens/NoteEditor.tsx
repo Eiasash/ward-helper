@@ -20,6 +20,14 @@ import { regenerateSection, replaceSectionInBody } from '@/notes/regenerate';
 import { loadSkills } from '@/skills/loader';
 import { NOTE_SKILL_MAP } from '@/notes/templates';
 import { colorForNoteType } from '@/notes/noteTypeColors';
+import {
+  decideSoapMode,
+  isSoapModeUiEnabled,
+  loadModeChoice,
+  saveModeChoice,
+  SOAP_MODE_LABEL,
+  type SoapModeChoice,
+} from '@/notes/soapMode';
 
 type Status = 'gen' | 'ready' | 'error';
 
@@ -62,6 +70,17 @@ export function NoteEditor() {
   // implicit re-mount that used to cost them a real emit each time.
   const [regenTick, setRegenTick] = useState(0);
 
+  // Phase C: SOAP-mode dropdown state. `modeChoice` is the dropdown value
+  // ('auto' | 'general' | 'rehab-FIRST' | …); the *effective* mode (with
+  // 'auto' resolved against room + continuity) is derived inside the
+  // generate effect. `tz` mirrors the validated teudatZehut so the
+  // per-patient localStorage key is stable across rerenders. Both are
+  // initialized to UI-safe defaults; the effect populates them as it
+  // reads sessionStorage.
+  const [modeChoice, setModeChoice] = useState<SoapModeChoice>('auto');
+  const [tz, setTz] = useState<string | null>(null);
+  const [modeUiEnabled] = useState<boolean>(() => isSoapModeUiEnabled());
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -78,12 +97,46 @@ export function NoteEditor() {
         );
         setNoteType(nt);
 
-        // Use the cached body if the user already generated this exact draft
-        // in this session and navigated away + back. Regenerating on every
-        // mount cost one full emit ($0.02-0.10) per accidental back-button
-        // tap. The cache key is (noteType + validated hash) to invalidate
-        // when either changes.
-        const cacheKey = `${nt}:${hashFields(validated)}`;
+        // Phase C: hydrate the dropdown for THIS patient on first arrival.
+        // Reading inside the effect (vs lazy useState init) avoids a stale
+        // value when the user navigates away + back to a different patient
+        // — the effect re-runs, the load picks up the right tz.
+        const validatedTz = validated.teudatZehut ?? null;
+        setTz(validatedTz);
+        // loadModeChoice is async (Phase C fixup 1: tz is hashed before
+        // hitting localStorage). The await blocks the effect briefly —
+        // SHA-256 of a 9-digit string is sub-ms even on phones, so the
+        // perceptible cost is zero.
+        const persistedChoice = await loadModeChoice(validatedTz);
+        if (cancelled) return;
+        // Only set state if the persisted value differs from current —
+        // setting to the same value would re-trigger the effect (modeChoice
+        // is a dep) and produce a regen loop.
+        if (persistedChoice !== modeChoice) {
+          setModeChoice(persistedChoice);
+          // The setState above will re-run this effect; bail now and let
+          // the next pass do the actual generate with the correct mode.
+          return;
+        }
+
+        const continuityTz = sessionStorage.getItem('continuityTeudatZehut');
+        const continuity = continuityTz ? await resolveContinuity(continuityTz) : null;
+
+        // Resolve the effective mode now that we have continuity + room
+        // hint. 'general' is the default fall-through when the SOAP-mode
+        // feature flag is off OR the resolver finds no rehab signal.
+        const effectiveMode = decideSoapMode({
+          roomHint: validated.room ?? null,
+          manualOverride: persistedChoice,
+          continuity,
+        });
+
+        // Cache key incorporates the effective mode so a dropdown change
+        // invalidates the cached body and forces a real re-emit. The
+        // alternative — keying only on noteType+fields — would silently
+        // serve a stale 'general' body when the user switches to a
+        // 'rehab-*' mode.
+        const cacheKey = `${nt}:${hashFields(validated)}:${effectiveMode}`;
         const cachedBody = sessionStorage.getItem('body');
         const cachedKey = sessionStorage.getItem('bodyKey');
         // regenTick > 0 means the user clicked "Regenerate" — always
@@ -97,12 +150,11 @@ export function NoteEditor() {
 
         setStatus('gen');
 
-        const continuityTz = sessionStorage.getItem('continuityTeudatZehut');
-        const continuity = continuityTz ? await resolveContinuity(continuityTz) : null;
         const text = await generateNote(
           nt,
           { fields: validated, confidence },
           continuity,
+          effectiveMode,
         );
         if (cancelled) return;
         setBody(text);
@@ -118,7 +170,10 @@ export function NoteEditor() {
     return () => {
       cancelled = true;
     };
-  }, [regenTick]);
+    // modeChoice is a dep so that changing the dropdown re-runs the
+    // generate effect (and the cacheKey now embeds the effective mode,
+    // so it actually re-emits rather than serving stale).
+  }, [regenTick, modeChoice]);
 
   useEffect(() => {
     if (body) sessionStorage.setItem('body', body);
@@ -149,6 +204,21 @@ export function NoteEditor() {
     () => (bidiAuditOn ? auditChameleonRules(body) : []),
     [body, bidiAuditOn],
   );
+
+  /**
+   * Phase C: dropdown change handler. Persists the choice per-patient
+   * (key = SHA-256(teudatZehut) truncated — Phase C fixup 1, no PII in
+   * localStorage). Async because saveModeChoice hashes the key.
+   * Awaits the storage write before flipping state so the persisted
+   * value is durable by the time the gen effect re-fires.
+   */
+  async function onModeChoiceChange(next: SoapModeChoice) {
+    if (next === modeChoice) return;
+    await saveModeChoice(tz, next);
+    sessionStorage.removeItem('body');
+    sessionStorage.removeItem('bodyKey');
+    setModeChoice(next);
+  }
 
   async function onCopy() {
     // Last-chance sanitize at the clipboard boundary — even if the draft
@@ -336,6 +406,45 @@ export function NoteEditor() {
         </span>
         <span>טיוטת {NOTE_LABEL[noteType]}</span>
       </h1>
+
+      {noteType === 'soap' && modeUiEnabled && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 10,
+            fontSize: 13,
+          }}
+        >
+          <label htmlFor="soap-mode-select" style={{ color: 'var(--muted)' }}>
+            מצב SOAP:
+          </label>
+          <select
+            id="soap-mode-select"
+            value={modeChoice}
+            onChange={(e) => onModeChoiceChange(e.target.value as SoapModeChoice)}
+            style={{
+              padding: '6px 8px',
+              borderRadius: 6,
+              border: '1px solid var(--border-strong)',
+              background: 'var(--card)',
+              color: 'var(--fg)',
+              minHeight: 32,
+              fontSize: 13,
+            }}
+          >
+            <option value="auto">{SOAP_MODE_LABEL.auto}</option>
+            <option value="general">{SOAP_MODE_LABEL.general}</option>
+            <option value="rehab-FIRST">{SOAP_MODE_LABEL['rehab-FIRST']}</option>
+            <option value="rehab-STABLE">{SOAP_MODE_LABEL['rehab-STABLE']}</option>
+            <option value="rehab-COMPLEX">{SOAP_MODE_LABEL['rehab-COMPLEX']}</option>
+            <option value="rehab-HD-COMPLEX">
+              {SOAP_MODE_LABEL['rehab-HD-COMPLEX']}
+            </option>
+          </select>
+        </div>
+      )}
 
       {issues.length > 0 && (
         <div
