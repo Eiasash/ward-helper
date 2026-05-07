@@ -1,9 +1,10 @@
-import { useMemo, useState, type ChangeEvent } from 'react';
+import { useMemo, useRef, useState, type ChangeEvent } from 'react';
 import {
   importViaOcr,
   importViaPaste,
   importViaManual,
   type ManualRow,
+  type OcrStage,
 } from '@/notes/rosterImport';
 import type { RosterPatient } from '@/storage/roster';
 
@@ -56,6 +57,14 @@ export function RosterImportModal({ isOpen, onClose, onCommit }: RosterImportMod
   const [pasteText, setPasteText] = useState('');
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrError, setOcrError] = useState('');
+  // v1.39.1: progress stage for the OCR pipeline. Drives the visible
+  // Hebrew progress text so a 30-90s extract on mobile feels different
+  // from "frozen". Reset to null whenever the OCR call finishes.
+  const [ocrStage, setOcrStage] = useState<OcrStage | null>(null);
+  // AbortController for the in-flight OCR call. Kept in a ref so the
+  // 90s setTimeout closure can fire abort() without re-rendering, and
+  // the cancel button can do the same.
+  const ocrAbortRef = useRef<AbortController | null>(null);
   const [manualRows, setManualRows] = useState<ManualRow[]>([{ ...EMPTY_MANUAL_ROW }]);
 
   // Live row count for paste — gives the doctor a "yes, the parser saw
@@ -79,12 +88,24 @@ export function RosterImportModal({ isOpen, onClose, onCommit }: RosterImportMod
     setPasteText('');
     setOcrError('');
     setOcrBusy(false);
+    setOcrStage(null);
     setManualRows([{ ...EMPTY_MANUAL_ROW }]);
   }
 
   function close() {
+    // Abort any in-flight OCR before tearing down state — prevents the
+    // promise resolving against a stale modal and re-firing setRows on
+    // an unmounted component.
+    ocrAbortRef.current?.abort();
+    ocrAbortRef.current = null;
     reset();
     onClose();
+  }
+
+  function cancelOcr() {
+    ocrAbortRef.current?.abort();
+    // setOcrBusy(false) and setOcrError happen in the catch branch when
+    // the abort propagates back as AbortError.
   }
 
   function commit() {
@@ -104,19 +125,70 @@ export function RosterImportModal({ isOpen, onClose, onCommit }: RosterImportMod
   async function onOcrPick(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // v1.39.1: 90-second hard ceiling. Without this, a stalled mobile
+    // upload can leave the modal hanging until the user kills the tab.
+    // Note importViaOcr also retries on transient — at 30s proxy timeout
+    // + 1 retry that's already 60s; 90s is a single ceiling that covers
+    // the pathological "second attempt also stalled" case.
+    const ctrl = new AbortController();
+    ocrAbortRef.current = ctrl;
+    const timeoutId = window.setTimeout(() => {
+      ctrl.abort();
+    }, 90_000);
+
     setOcrBusy(true);
     setOcrError('');
+    setOcrStage('reading');
     try {
-      const parsed = await importViaOcr(file);
+      const parsed = await importViaOcr(file, {
+        onProgress: setOcrStage,
+        signal: ctrl.signal,
+      });
       setRows(parsed);
       setPhase('preview');
     } catch (err) {
-      setOcrError((err as Error).message ?? 'OCR נכשל');
+      const e = err as Error;
+      const isAbort = ctrl.signal.aborted || e.name === 'AbortError';
+      // Distinguish user cancel from the 90s ceiling: if abort fired
+      // but the timer was still scheduled when the user clicked
+      // "Cancel" first, just say "בוטל"; if the timeoutId already
+      // fired (ceiling), surface the clear "try again / set personal
+      // key" guidance.
+      if (isAbort) {
+        // The clearTimeout below short-circuits the ceiling fire; if
+        // ctrl was aborted from cancelOcr, the timer was still pending.
+        // Best-effort: read the message-or-fallback. The Hebrew strings
+        // here are the ones doctors will see, so pick carefully.
+        setOcrError(
+          e.message && /timeout|abort/i.test(e.message)
+            ? 'הניתוח לקח יותר מדי זמן. נסה תמונה ברורה יותר או הגדר מפתח API אישי בהגדרות.'
+            : 'הייבוא בוטל.',
+        );
+      } else {
+        setOcrError(e.message ?? 'OCR נכשל');
+      }
     } finally {
+      window.clearTimeout(timeoutId);
+      ocrAbortRef.current = null;
       setOcrBusy(false);
+      setOcrStage(null);
       e.target.value = '';
     }
   }
+
+  /** Hebrew progress text per stage. Returned outside JSX to keep render readable. */
+  const ocrProgressText = (() => {
+    switch (ocrStage) {
+      case 'reading': return 'קורא תמונה…';
+      case 'compressing': return 'מעבד תמונה…';
+      case 'uploading': return 'שולח לניתוח…';
+      case 'analyzing': return 'מנתח רשימה…';
+      case 'parsing': return 'מפרק תוצאות…';
+      case 'done': return 'הסתיים';
+      default: return '';
+    }
+  })();
 
   // ─── Tab 3: manual ───────────────────────────────────────────────
   function updateManualRow(i: number, patch: Partial<ManualRow>) {
@@ -312,13 +384,38 @@ export function RosterImportModal({ isOpen, onClose, onCommit }: RosterImportMod
                     />
                   </label>
                   {ocrBusy && (
-                    <p style={{ marginTop: 12, fontSize: 13 }}>מנתח את התמונה…</p>
+                    <div style={{ marginTop: 12 }}>
+                      <p
+                        role="status"
+                        aria-live="polite"
+                        style={{ fontSize: 13, marginBottom: 8 }}
+                      >
+                        {ocrProgressText || 'מעבד…'}
+                      </p>
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={cancelOcr}
+                        style={{ minHeight: 32, padding: '4px 10px', fontSize: 13 }}
+                      >
+                        בטל
+                      </button>
+                    </div>
                   )}
                   {ocrError && (
                     <div
                       role="alert"
-                      className="pill pill-warn"
-                      style={{ marginTop: 12, padding: '8px 10px', display: 'block' }}
+                      style={{
+                        marginTop: 12,
+                        padding: '10px 12px',
+                        display: 'block',
+                        background: 'var(--err-soft, rgba(220,38,38,0.15))',
+                        color: 'var(--err, #dc2626)',
+                        border: '1px solid var(--err, #dc2626)',
+                        borderRadius: 8,
+                        fontSize: 13,
+                        lineHeight: 1.5,
+                      }}
                     >
                       {ocrError}
                     </div>

@@ -27,6 +27,8 @@
 import { callClaude } from '@/ai/dispatch';
 import { type AnthropicContentBlock } from '@/agent/client';
 import { stripMarkdownFence } from '@/agent/loop';
+import { compressImage, estimateDataUrlBytes } from '@/camera/compress';
+import { pushBreadcrumb } from '@/ui/components/MobileDebugPanel';
 import type { RosterPatient } from '@/storage/roster';
 
 // ─── Types ─────────────────────────────────────────────────────────
@@ -86,9 +88,90 @@ interface OcrPatientRaw {
 /** Strict 9-digit ת.ז. check — matches the safety guard in orchestrate.ts. */
 const ISRAELI_TZ_RE = /^\d{9}$/;
 
-/** Extract roster from a phone snap of AZMA's department grid. */
-export async function importViaOcr(file: File): Promise<RosterPatient[]> {
-  const dataUrl = await readAsDataUrl(file);
+/** Stage callback for the import pipeline. UI consumers render progress. */
+export type OcrStage =
+  | 'reading'
+  | 'compressing'
+  | 'uploading'
+  | 'analyzing'
+  | 'parsing'
+  | 'done';
+
+/**
+ * Optional knobs for importViaOcr. The defaults match the original
+ * call site (`importViaOcr(file)` still works) — `onProgress` and
+ * `signal` are pure additions that the modal uses for the v1.39.1
+ * stuck-on-mobile fix.
+ */
+export interface OcrOptions {
+  onProgress?: (stage: OcrStage) => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * Extract roster from a phone snap of AZMA's department grid.
+ *
+ * v1.39.1 pipeline (mobile-Chrome stuck-on-upload fix):
+ *   1. reading      — File → data URL (~10MB phone JPEG → ~13MB base64)
+ *   2. compressing  — downscale via compressImage(census mode):
+ *                     longest-edge 1600px + JPEG q=0.85, EXIF auto-applied
+ *                     by the browser image decoder. Typical 13MB → ~600KB.
+ *                     If decode fails (corrupt image, unusual format),
+ *                     we log + use the raw data URL — model may still
+ *                     handle it; better than blocking the doctor entirely.
+ *   3. uploading    — POST to proxy or direct API per dispatch.ts
+ *                     3-state routing. AbortSignal is plumbed end-to-end
+ *                     so a 90s timeout in the modal cancels the in-flight
+ *                     fetch instead of leaving it hanging.
+ *   4. analyzing    — model inference (server-side; client just waits)
+ *   5. parsing      — JSON.parse + structured field validation
+ *   6. done
+ *
+ * Every stage transition logs to pushBreadcrumb so a debug-panel dump
+ * shows exactly where a real "stuck" report stalled.
+ */
+export async function importViaOcr(
+  file: File,
+  opts: OcrOptions = {},
+): Promise<RosterPatient[]> {
+  const { onProgress, signal } = opts;
+  const t0 = Date.now();
+
+  onProgress?.('reading');
+  pushBreadcrumb('roster.ocr.read', {
+    name: file.name,
+    bytes: file.size,
+    type: file.type,
+  });
+  const rawDataUrl = await readAsDataUrl(file);
+
+  onProgress?.('compressing');
+  // EXIF orientation is auto-applied by the <img> decoder used inside
+  // compressImage on Chrome 81+ / mobile Chrome on Android — no extra
+  // canvas rotation needed. census mode is the calibrated path for
+  // dense AZMA grids per the comment in src/camera/compress.ts.
+  let dataUrl = rawDataUrl;
+  try {
+    dataUrl = await compressImage(rawDataUrl, 'census');
+    pushBreadcrumb('roster.ocr.compressed', {
+      from: estimateDataUrlBytes(rawDataUrl),
+      to: estimateDataUrlBytes(dataUrl),
+      ms: Date.now() - t0,
+    });
+  } catch (err) {
+    // Decode failed (corrupt image / unsupported format). Don't block
+    // the doctor — fall through with the raw data URL. The model may
+    // still handle it, and any fetch-level failure surfaces below.
+    pushBreadcrumb('roster.ocr.compressFailed', {
+      err: (err as Error).message ?? String(err),
+      bytes: estimateDataUrlBytes(rawDataUrl),
+    });
+  }
+
+  if (signal?.aborted) {
+    throw new DOMException('aborted', 'AbortError');
+  }
+
   const imageBlock = dataUrlToImageBlock(dataUrl);
 
   const content: AnthropicContentBlock[] = [
@@ -99,17 +182,31 @@ export async function importViaOcr(file: File): Promise<RosterPatient[]> {
     },
   ];
 
+  onProgress?.('uploading');
+  pushBreadcrumb('roster.ocr.uploadStart', {
+    bytes: estimateDataUrlBytes(dataUrl),
+  });
+  onProgress?.('analyzing');
+
   const res = await callClaude(
     {
       messages: [{ role: 'user', content }],
       max_tokens: 4000,
       system: OCR_SYSTEM_PROMPT,
     },
-    { retryOnTransient: 1 },
+    { retryOnTransient: 1, signal },
   );
 
+  pushBreadcrumb('roster.ocr.uploadDone', {
+    ms: Date.now() - t0,
+    in_tokens: res.usage?.input_tokens,
+    out_tokens: res.usage?.output_tokens,
+  });
+
+  onProgress?.('parsing');
   const text = res.content.map((b) => b.text).join('\n').trim();
   if (!text) {
+    pushBreadcrumb('roster.ocr.empty', { ms: Date.now() - t0 });
     throw new Error('פלט ריק מהמודל. נסה שוב או בחר תמונה אחרת.');
   }
 
@@ -117,6 +214,10 @@ export async function importViaOcr(file: File): Promise<RosterPatient[]> {
   try {
     parsed = JSON.parse(stripMarkdownFence(text)) as { patients?: unknown };
   } catch {
+    pushBreadcrumb('roster.ocr.parseFail', {
+      preview: text.slice(0, 120),
+      ms: Date.now() - t0,
+    });
     throw new Error('המודל החזיר פלט שאינו JSON תקני. נסה שוב.');
   }
 
@@ -145,6 +246,11 @@ export async function importViaOcr(file: File): Promise<RosterPatient[]> {
       importedAt: now,
     });
   }
+  onProgress?.('done');
+  pushBreadcrumb('roster.ocr.done', {
+    rows: out.length,
+    ms: Date.now() - t0,
+  });
   return out;
 }
 
