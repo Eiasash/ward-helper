@@ -387,7 +387,12 @@ function ChangePasswordForm({
       // doctor has something diagnosable. Pattern from feedback_auth_error_specificity.md
       // (PR #40 fixed this for login; this form was the missing sibling).
       let msg: string;
-      if (res.error === 'invalid_password') {
+      // v1.39.13: server returns 'invalid_credentials' from auth_change_password
+      // and 'invalid_password' from older RPCs — both mean "wrong current
+      // password." Map both to the same friendly Hebrew so the doctor doesn't
+      // have to decode 'invalid_credentials' when the form already says "old
+      // password" right above the error.
+      if (res.error === 'invalid_password' || res.error === 'invalid_credentials') {
         msg = 'סיסמה ישנה שגויה';
       } else if (res.error === 'weak_password') {
         msg = 'סיסמה חדשה חלשה — לפחות 6 תווים, לא רק ספרות.';
