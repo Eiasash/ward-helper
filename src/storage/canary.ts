@@ -66,10 +66,37 @@ export async function verifyCanaryFromRows(
   passphrase: string,
   rows: CloudBlobRow[],
 ): Promise<'ok' | 'wrong-passphrase' | 'absent'> {
-  const canary = rows.find(
+  // The (user_id, blob_type, blob_id) UNIQUE constraint means a single
+  // anon-auth identity should only ever have one canary row. In practice
+  // we observed up to 9 canary rows for a single username — anon auth can
+  // mint a fresh user_id when the device's auth token expires, IDB is
+  // cleared, or a new browser is used, and each fresh user_id slips past
+  // the unique constraint to insert a new canary. The user-facing identity
+  // (username) is the same; the rows accumulate.
+  //
+  // Real bug — 2026-05-07 user diag: 9 canary rows existed for username
+  // 'eiasashhab55555', and rows.find() (no ORDER BY in the pull RPC)
+  // returned a non-deterministic one. When find() picked an old canary
+  // encrypted under a no-longer-current password, verify returned
+  // 'wrong-passphrase' even when the user's CURRENT password was correct,
+  // triggering the orphan-canary guardrail and blocking cloud sync. On
+  // page reload it might pick a different canary and return 'ok'.
+  // Symptom was intermittent and impossible to reproduce in normal QA.
+  //
+  // Fix: pick the newest canary by updated_at. The most recent push under
+  // the most recent passphrase is the only one that matters for verify.
+  // Older canaries are encrypted under previous user_ids' keys and are
+  // dead weight regardless.
+  const canaries = rows.filter(
     (r) => r.blob_type === 'canary' && r.blob_id === CANARY_BLOB_ID,
   );
-  if (!canary) return 'absent';
+  if (canaries.length === 0) return 'absent';
+  const canary =
+    canaries.length === 1
+      ? canaries[0]!
+      : canaries.reduce((newest, r) =>
+          r.updated_at > newest.updated_at ? r : newest,
+        );
   try {
     const salt = base64ToBytes(canary.salt);
     const iv = base64ToBytes(canary.iv);
