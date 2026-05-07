@@ -507,28 +507,42 @@ export interface CensusResult {
 }
 
 const CENSUS_JSON_INSTRUCTIONS = `
-You are extracting the AZMA "ניהול מחלקה" department patient grid. Return EXACTLY ONE valid JSON object — no prose, no markdown fences, no preamble — matching this shape:
+You are extracting a patient list from ONE of these sources:
+  (a) AZMA "ניהול מחלקה" department patient grid screenshot, OR
+  (b) A printed paper handover sheet (דף מודפס של רשימת המחלקה / handover sheet — דף נייר).
+
+The photo may be rotated 90°/180° (paper photographed sideways is common). Mentally normalize orientation before extracting.
+
+Return EXACTLY ONE valid JSON object — no prose, no markdown fences, no preamble — matching this shape:
 
 {
   "rows": [
     {
-      "name": string,                       // patient full name from the row
+      "name": string,                       // patient full name (Hebrew). See NAME DISCIPLINE below.
       "teudatZehut": string | null,         // 9-digit Israeli ID; null if not visible/legible
-      "room": string,                       // e.g. "12", "12-A", "ICU-3"
-      "isolation": boolean,                 // diagnosis text rendered RED
-      "ventilation": boolean,               // column 2 "מ" flag set
-      "bloodBankColor": "green" | "purple" | "yellow" | null,
-      "unsignedAdmission": boolean,         // blue pen icon
-      "unsignedShiftSummary": boolean       // green circle icon
+      "room": string,                       // e.g. "12", "12-A", "ICU-3"; "" if no room column
+      "isolation": boolean,                 // (AZMA only) diagnosis text rendered RED — false on paper
+      "ventilation": boolean,               // (AZMA only) column 2 "מ" flag set — false on paper
+      "bloodBankColor": "green" | "purple" | "yellow" | null,  // (AZMA only) — null on paper
+      "unsignedAdmission": boolean,         // (AZMA only) blue pen icon — false on paper
+      "unsignedShiftSummary": boolean       // (AZMA only) green circle icon — false on paper
     }
   ]
 }
 
-Extract EVERY visible patient row in the grid. Do not skip rows. If a row is partially cut off at the edge of the image, include what you can read and set teudatZehut: null when the ID is not legible.
+When extracting from a paper sheet, set ALL AZMA flag fields to their "absent" value (false / null) — paper has no equivalent. Do NOT guess flags from non-AZMA inputs.
 
-DO NOT confuse the patient grid (one row per patient, fixed columns) with the application title bar, the visit-history side pane, or the doctor-name strip. The grid has consistent column structure — name + ID + room + colored flags repeat per row.
+NAME DISCIPLINE — critical, this is the most common failure mode:
+- A name is a PERSON (e.g. "יוסף סוקולסקי", "מרים סופרין").
+- NEVER put a column header or status phrase in the name field. Phrases like "סטטוס קליטה" / "תאריך קבלה" / "אבחנה" / "שם" are headers, not patients — they appear ONCE at the top of a column, not per row.
+- If a row clearly has an ID but the name cell is blank, smudged, or unreadable, return name: "" (empty string). Do NOT invent a name. Do NOT borrow from an adjacent column (diagnosis ≠ name).
+- Hebrew names are typically two words (first + last). A single technical word in the name slot is almost always a header bleed — emit "" instead.
 
-DO NOT invent rows. If a screenshot only shows 3 rows clearly (rest blurred), return only those 3 — better to under-report than to fabricate a 4th from blurred pixels.
+Extract EVERY visible patient row. If a row is partially cut off at the edge of the image, include what you can read and set teudatZehut: null when the ID is not legible.
+
+DO NOT confuse data rows with: the application title bar, visit-history side pane, doctor-name strip (AZMA), column header row, totals/summary row, signature block (paper).
+
+DO NOT invent rows. If a photo only shows 3 rows clearly (rest blurred), return only those 3 — better to under-report than to fabricate.
 
 Return ONLY the JSON.
 `.trim();
