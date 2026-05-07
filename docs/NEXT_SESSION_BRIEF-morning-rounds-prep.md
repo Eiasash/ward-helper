@@ -1,6 +1,6 @@
 # Next-session brief — Morning rounds prep feature
 
-**Status:** scoped, not yet started. Author: Eias + Claude on 2026-05-07 evening session (after shipping v1.39.3 → v1.39.14 across 12 PRs).
+**Status:** scoped, not yet started. Author: Eias + Claude on 2026-05-07 evening session (after shipping v1.39.3 → v1.39.15 across 14 ward-helper PRs + 3 sibling cross-ports).
 
 **Intent (verbatim from user):**
 
@@ -114,12 +114,19 @@ If patient X is `discharged: true`, gets re-admitted later (same person, same TZ
 
 ## Where today ended (context for starting cold)
 
-- **v1.39.14 live** as of 2026-05-07 evening (PR #102)
-- 12 PRs shipped today: v1.39.3 → v1.39.14
+- **v1.39.15 live** as of 2026-05-07 evening (PR #104)
+- 14 ward-helper PRs shipped today: v1.39.3 → v1.39.15 + 2 doc PRs (#101 runbook drift, #103 this brief)
+- 3 sibling cross-ports merged today: Geri PR #166 (v10.64.64), IM PR #99 (v10.4.18), FM PR #39 (v1.21.16) — all auth-error UX parity
 - All 8 medical PWAs continue to share `app_users` in Supabase project `krmlzwwelqvlfslwltol`
-- ward-helper has 900 passing tests + 1 skipped, entry chunk ~130 KB gzipped
+- ward-helper has 900 passing tests + 1 skipped, entry chunk ~130 KB gzipped (130.57 at v1.39.15)
 - The orphan-canary state for the user's current account is "had 86 cloud rows from a prior passphrase, marker preserved by v1.39.9, override UI shipped in v1.39.14 if they ever want to reclaim that path"
 - User can log in normally with `eiasashhab55555` / `zondama55` (reset 2026-05-07 evening) → can change password in-app via v1.39.13's friendly Hebrew error UX
+
+## Relevant prior-art shipped today (read before starting PR 1)
+
+**v1.39.15 — Census TZ→roster augmentation** (PR #104) — directly relevant to rounds-prep. When `runCensusExtractTurn` returns rows with empty names but valid TZs, the post-process step looks up `getPatientByTz(tz)` from IndexedDB and fills in the name from the existing record. This is the **validator-before-prompt** rule from memory `feedback_validator_before_prompt.md` applied successfully — deterministic, free, self-improving. **Rounds-prep should use the same pattern**: when carrying forward yesterday's SOAP, key the lookup on TZ (not on patient `id`, which can change across sessions). The new helper `getPatientByTz()` in `src/storage/indexed.ts:189` is your primitive.
+
+**v1.39.9 + v1.39.14 — Orphan-canary protection + override UI** — relevant if rounds-prep ever decides to push `daySnapshots` to cloud. The orphan-canary check is per-session-cached and would need to extend to handle the snapshot-push case too. For now (recommended local-only per design Q3) this is non-blocking.
 
 ## Suggested first-message-to-Claude in the new session
 
