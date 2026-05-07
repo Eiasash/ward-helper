@@ -1,4 +1,4 @@
-const VERSION = 'ward-v1.39.13';
+const VERSION = 'ward-v1.39.14';
 const SHELL = ['/ward-helper/', '/ward-helper/index.html', '/ward-helper/install-promo.js', '/ward-helper/install-promo-config.js'];
 
 self.addEventListener('install', (e) => {

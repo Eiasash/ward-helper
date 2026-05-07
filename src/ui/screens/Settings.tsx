@@ -18,6 +18,7 @@ import {
   getLastLoginPasswordOrNull,
 } from '@/auth/auth';
 import { pushAllToCloud } from '@/notes/manualPush';
+import { clearOrphanProtection } from '@/storage/canaryProtection';
 import { exportLocalBackup } from '@/notes/exportLocal';
 import { importLocalBackup } from '@/notes/importLocal';
 import { pushBreadcrumb } from '../components/MobileDebugPanel';
@@ -32,6 +33,11 @@ export function Settings() {
   const [restoreResult, setRestoreResult] = useState<RestoreResult | null>(null);
   const [restoreErr, setRestoreErr] = useState('');
   const [pushingNow, setPushingNow] = useState(false);
+  // v1.39.14: surface the v1.39.9 orphan-canary detection. When true, a
+  // warning panel + "overwrite anyway" button appears next to the push
+  // button. Clicking the override calls clearOrphanProtection() and
+  // re-runs the push so the doctor doesn't have to click twice.
+  const [canaryOrphanPending, setCanaryOrphanPending] = useState(false);
   // Snippet editor: rows are mutable until "Save". Loaded once on mount and
   // kept as an array of pairs for ordered rendering — Object would lose
   // insertion order under JSON round-trip in some IDB implementations.
@@ -166,6 +172,7 @@ export function Settings() {
                 notes: out.pushedNotes,
                 canary: out.pushedCanary,
                 failed: out.failed.length,
+                ...(out.canarySkippedOrphan ? { canarySkippedOrphan: true } : {}),
               });
               // Cloud is now under the current login password — clear any
               // stale "wrong passphrase" alert from a prior restore attempt
@@ -174,8 +181,19 @@ export function Settings() {
               // successful push.
               setRestoreResult(null);
               setRestoreErr('');
+              if (out.canarySkippedOrphan) {
+                // v1.39.14: orphan-canary protection fired. Patient + note
+                // pushes still proceeded (those don't share blob_ids with
+                // existing data), but the canary marker was preserved so
+                // pre-existing cloud rows from a prior passphrase stay
+                // recoverable. Surface this clearly so the user can decide
+                // whether to override.
+                setCanaryOrphanPending(true);
+              } else {
+                setCanaryOrphanPending(false);
+              }
               alert(
-                `נשלחו לענן: ${out.pushedPatients} מטופלים, ${out.pushedNotes} הערות${out.failed.length > 0 ? ` (${out.failed.length} נכשלו)` : ''}.`,
+                `נשלחו לענן: ${out.pushedPatients} מטופלים, ${out.pushedNotes} הערות${out.failed.length > 0 ? ` (${out.failed.length} נכשלו)` : ''}${out.canarySkippedOrphan ? ' — סימון canary נשמר על הסיסמה הקודמת (ראה אזהרה למטה)' : ''}.`,
               );
             } catch (e) {
               pushBreadcrumb('cloudPush.err', (e as Error).message);
@@ -246,6 +264,81 @@ export function Settings() {
           ייבא גיבוי מקומי
         </button>
       </div>
+
+      {canaryOrphanPending && (
+        <div
+          role="alert"
+          style={{
+            marginTop: 12,
+            padding: 12,
+            border: '1px solid var(--warn, #b45309)',
+            borderRadius: 8,
+            background: 'rgba(245, 158, 11, 0.08)',
+            fontSize: 13,
+          }}
+        >
+          <div style={{ fontWeight: 600, marginBottom: 6 }}>
+            ⚠ נתוני ענן ישנים נשמרו במצב לא נגיש
+          </div>
+          <div style={{ marginBottom: 8 }}>
+            הענן מכיל נתונים שהוצפנו בסיסמה אחרת מהסיסמה הנוכחית. סימון ה-canary
+            לא נדרס כדי להגן עליהם — אם תזכור את הסיסמה הקודמת ותתחבר מחדש איתה,
+            הנתונים הישנים עדיין נגישים. הנתונים החדשים שהעלית בכל זאת נשמרו בענן
+            תחת הסיסמה הנוכחית.
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              disabled={pushingNow}
+              onClick={async () => {
+                if (
+                  !window.confirm(
+                    'אישור — לדרוס את סימון ה-canary של הסיסמה הקודמת. אחרי הפעולה הזו, הנתונים הישנים בענן (אם קיימים) לא יהיו ניתנים לשחזור גם אם תזכור את הסיסמה הקודמת. להמשיך?',
+                  )
+                ) {
+                  return;
+                }
+                const username = getCurrentUser()?.username ?? null;
+                const loginPwd = getLastLoginPasswordOrNull();
+                if (!username || !loginPwd) {
+                  alert('התנתק והתחבר מחדש לפני הדריסה.');
+                  return;
+                }
+                clearOrphanProtection();
+                pushBreadcrumb('canary.orphan.override.click');
+                setPushingNow(true);
+                try {
+                  const out = await pushAllToCloud(loginPwd, username);
+                  pushBreadcrumb('cloudPush.done', {
+                    patients: out.pushedPatients,
+                    notes: out.pushedNotes,
+                    canary: out.pushedCanary,
+                    failed: out.failed.length,
+                    afterOverride: true,
+                  });
+                  setCanaryOrphanPending(false);
+                  alert(
+                    `נדרס סימון canary והנתונים הועלו תחת הסיסמה הנוכחית. ${out.pushedPatients} מטופלים, ${out.pushedNotes} הערות.`,
+                  );
+                } catch (e) {
+                  alert((e as Error).message);
+                } finally {
+                  setPushingNow(false);
+                }
+              }}
+            >
+              ⚠ דרוס בכל זאת
+            </button>
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => setCanaryOrphanPending(false)}
+            >
+              סגור
+            </button>
+          </div>
+        </div>
+      )}
 
       <h2>שחזור מהענן</h2>
       <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 8 }}>
