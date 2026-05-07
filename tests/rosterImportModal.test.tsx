@@ -31,7 +31,7 @@ describe('RosterImportModal — smoke', () => {
     fireEvent.change(textarea, {
       target: {
         value:
-          '123456789 | רוזנברג מרים | 87 | 12 | A | 5 | Hip\n' +
+          '123456782 | רוזנברג מרים | 87 | 12 | A | 5 | Hip\n' +
           '234567890 | לוי דוד | 79 | 14 | B | 3 | CHF',
       },
     });
@@ -45,7 +45,7 @@ describe('RosterImportModal — smoke', () => {
     );
     const textarea = screen.getByLabelText('טקסט להדבקה');
     fireEvent.change(textarea, {
-      target: { value: '123456789 | רוזנברג מרים | 87 | 12 | A | 5 | Hip' },
+      target: { value: '123456782 | רוזנברג מרים | 87 | 12 | A | 5 | Hip' },
     });
     fireEvent.click(screen.getByText('תצוגה מקדימה ←'));
     // Preview phase: header changes + ייבא button appears
@@ -55,7 +55,7 @@ describe('RosterImportModal — smoke', () => {
     const rows = onCommit.mock.calls[0]?.[0];
     expect(rows).toHaveLength(1);
     expect(rows[0].name).toBe('רוזנברג מרים');
-    expect(rows[0].tz).toBe('123456789');
+    expect(rows[0].tz).toBe('123456782');
   });
 
   it('manual tab adds and parses rows; submitting moves to preview', () => {
@@ -83,7 +83,7 @@ describe('RosterImportModal — smoke', () => {
     fireEvent.change(screen.getByLabelText('טקסט להדבקה'), {
       target: {
         value:
-          '123456789 | רוזנברג מרים | 87 | 12 | A | 5 | Hip\n' +
+          '123456782 | רוזנברג מרים | 87 | 12 | A | 5 | Hip\n' +
           '234567890 | לוי דוד | 79 | 14 | B | 3 | CHF',
       },
     });
@@ -110,7 +110,7 @@ describe('RosterImportModal — smoke', () => {
       <RosterImportModal isOpen={true} onClose={vi.fn()} onCommit={vi.fn()} />,
     );
     fireEvent.change(screen.getByLabelText('טקסט להדבקה'), {
-      target: { value: '123456789 | רוזנברג מרים | 87 | 12 | A | 5 | Hip' },
+      target: { value: '123456782 | רוזנברג מרים | 87 | 12 | A | 5 | Hip' },
     });
     fireEvent.click(screen.getByText('תצוגה מקדימה ←'));
     expect(screen.getByText(/אישור ייבוא/)).toBeInTheDocument();

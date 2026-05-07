@@ -4,6 +4,8 @@ import { listBlocks } from '@/camera/session';
 import { runExtractTurn } from '@/agent/loop';
 import { loadSkills } from '@/skills/loader';
 import { applyRosterSeedFromStorage } from '@/notes/rosterSeed';
+import { isValidIsraeliTzLuhn } from '@/notes/israeliTz';
+import { pushBreadcrumb } from '../components/MobileDebugPanel';
 import type { ParseResult, ParseFields, Med } from '@/agent/tools';
 import { FieldRow } from '../components/FieldRow';
 import { resolveContinuity, type ContinuityContext } from '@/notes/continuity';
@@ -80,6 +82,15 @@ export function Review() {
   // isRowConfirmed) but never connected until v1.21.3.
   const [criticalConfirmed, setCriticalConfirmed] = useState<Record<string, boolean>>({});
   const isSoap = sessionStorage.getItem('noteType') === 'soap';
+
+  // v1.39.3: skip-no-clinical state for the button-flip gate. When the
+  // SOAP would be a stub (Marciano case — no clinical content extracted),
+  // we replace the bare Proceed button with two explicit choices:
+  // "Retake photos" (primary) and an inline "Skip" with a required
+  // typed reason. Confirm-dialog modal-blindness was rejected explicitly
+  // in the v1.39.3 review.
+  const [skipExpanded, setSkipExpanded] = useState(false);
+  const [skipReason, setSkipReason] = useState('');
 
   // Elapsed-time counter while loading — gives user feedback that work is
   // happening, and surfaces hangs visibly.
@@ -281,8 +292,36 @@ export function Review() {
     ([k, v]) => k.startsWith('meds') && v === 'low',
   );
 
-  function onProceed() {
-    sessionStorage.setItem('validated', JSON.stringify(fields));
+  function onProceed(opts: { skipReason?: string } = {}) {
+    // v1.39.3: post-extract ת.ז. scrub. The model can return non-9-digit
+    // fragments ("666544") OR length-padded Luhn-invalid garbage
+    // ("666544000") that would land in the SOAP body and break Chameleon
+    // paste downstream. If the doctor entered/confirmed an invalid ת.ז.,
+    // we strip it from the persisted validated fields so emit + paste
+    // don't propagate broken data. The FieldRow shows what was extracted;
+    // this scrub is the last line of defense before /edit.
+    const tzCandidate = (fields.teudatZehut ?? '').trim();
+    const scrubbed: ParseFields =
+      tzCandidate && !isValidIsraeliTzLuhn(tzCandidate)
+        ? { ...fields, teudatZehut: undefined }
+        : fields;
+    if (tzCandidate && !isValidIsraeliTzLuhn(tzCandidate)) {
+      pushBreadcrumb('review.tz.scrubbed', {
+        len: tzCandidate.length,
+        // Don't log the actual tz — partial fingerprint is enough for
+        // diagnostics without leaking PHI to the breadcrumb stream.
+        firstDigit: tzCandidate[0],
+      });
+    }
+
+    if (opts.skipReason) {
+      pushBreadcrumb('review.skipNoClinical', {
+        reason: opts.skipReason.slice(0, 80),
+        noteType: 'soap',
+      });
+    }
+
+    sessionStorage.setItem('validated', JSON.stringify(scrubbed));
     sessionStorage.setItem(
       'validatedConfidence',
       JSON.stringify(parsed?.confidence ?? {}),
@@ -301,6 +340,23 @@ export function Review() {
       sessionStorage.removeItem('validatedSafety');
     }
     nav('/edit');
+  }
+
+  /**
+   * v1.39.3: clinical-content detector. SOAP note types need at least
+   * one of: chief complaint text, ≥1 med, ≥1 lab, ≥1 PMH item, or any
+   * vitals reading. Otherwise the emit produces a Marciano-style stub
+   * with "ממתין להשלמת נתונים" placeholders — a real-world failure
+   * mode confirmed in the 2026-05-07 audit.
+   */
+  function hasClinicalContent(f: ParseFields): boolean {
+    return Boolean(
+      f.chiefComplaint?.trim() ||
+        (f.meds?.length ?? 0) > 0 ||
+        (f.labs?.length ?? 0) > 0 ||
+        (f.pmh?.length ?? 0) > 0 ||
+        (f.vitals && Object.keys(f.vitals).length > 0),
+    );
   }
 
   return (
@@ -554,11 +610,71 @@ export function Review() {
         const blockedFields = (['name', 'teudatZehut', 'age'] as const).filter(
           (k) => criticalConfirmed[k] !== true,
         );
+
+        // v1.39.3: clinical-content gate for SOAP. When extract returns
+        // identity-only fields (no clinical content), the model produces
+        // a Marciano-style stub. Replace the bare Proceed button with
+        // two explicit choices instead of a dismissable confirm dialog
+        // (modal-blindness bait — doctors tap through under time pressure).
+        const showSoapClinicalGate =
+          isSoap && allCriticalReady && !hasClinicalContent(fields);
+
         return (
           <div style={{ marginTop: 16 }}>
-            <button onClick={onProceed} disabled={!allCriticalReady}>
-              צור טיוטת רשימה ←
-            </button>
+            {showSoapClinicalGate ? (
+              <div
+                role="region"
+                aria-label="אזהרת תוכן קליני חסר"
+                style={{
+                  background: 'var(--warn-soft, rgba(217,119,6,0.12))',
+                  border: '1px solid var(--warn, #d97706)',
+                  borderRadius: 8,
+                  padding: 12,
+                  marginBottom: 8,
+                }}
+              >
+                <p style={{ marginTop: 0, marginBottom: 10, fontSize: 14, lineHeight: 1.5 }}>
+                  ⚠ זוהו רק פרטי זהות בלי תוכן קליני (vitals, רשימת בעיות,
+                  מעבדה). יצירת SOAP תפיק שדות &quot;ממתין להשלמת נתונים&quot;.
+                </p>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <button onClick={() => nav('/capture')}>
+                    📷 צלם מחדש (מומלץ)
+                  </button>
+                  {!skipExpanded ? (
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => setSkipExpanded(true)}
+                    >
+                      המשך ללא תוכן קליני
+                    </button>
+                  ) : (
+                    <>
+                      <input
+                        dir="auto"
+                        value={skipReason}
+                        onChange={(e) => setSkipReason(e.target.value)}
+                        placeholder="סיבה (חובה — למשל: מטופל יציב, אין שינוי)"
+                        aria-label="סיבה לדילוג על תוכן קליני"
+                        style={{ flex: 1, minWidth: 220 }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => onProceed({ skipReason: skipReason.trim() })}
+                        disabled={skipReason.trim().length < 3}
+                      >
+                        אישור דילוג
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => onProceed()} disabled={!allCriticalReady}>
+                צור טיוטת רשימה ←
+              </button>
+            )}
             {!allCriticalReady && (
               <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 8 }}>
                 {blockedFields.length === 1 && blockedFields[0]

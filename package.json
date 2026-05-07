@@ -1,6 +1,6 @@
 {
   "name": "ward-helper",
-  "version": "1.39.1",
+  "version": "1.39.3",
   "private": true,
   "type": "module",
   "scripts": {

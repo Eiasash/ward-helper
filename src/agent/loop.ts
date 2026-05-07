@@ -3,6 +3,7 @@ import { type AnthropicContentBlock } from './client';
 import type { ParseResult, ParseFields } from './tools';
 import { addTurn } from './costs';
 import { recordExtract, recordEmit, recordError } from './debugLog';
+import { pushBreadcrumb } from '@/ui/components/MobileDebugPanel';
 import type { NoteType } from '@/storage/indexed';
 import type { CaptureBlock } from '@/camera/session';
 
@@ -346,13 +347,37 @@ export async function runExtractTurn(
       `failed to parse JSON from model: ${(e as Error).message}. First 200 chars: ${text.slice(0, 200)}`,
     );
   }
+
+  // v1.39.3 telemetry: count clinical field types extracted. When this
+  // is 0 (identity-only extract), the SOAP emit produces a Marciano-style
+  // stub with "ממתין להשלמת נתונים" placeholders. The /review clinical-
+  // content gate prevents that stub from shipping at the doctor's hand,
+  // but we want production telemetry to tell us WHY extract returned
+  // identity-only — photo quality? schema permissiveness? vision
+  // regression? After 5-10 instances we'll know which lever to pull.
+  const f = (parsed.fields ?? {}) as ParseFields;
+  const clinicalCount =
+    (f.chiefComplaint?.trim() ? 1 : 0) +
+    ((f.meds?.length ?? 0) > 0 ? 1 : 0) +
+    ((f.labs?.length ?? 0) > 0 ? 1 : 0) +
+    ((f.pmh?.length ?? 0) > 0 ? 1 : 0) +
+    ((f.allergies?.length ?? 0) > 0 ? 1 : 0) +
+    (f.vitals && Object.keys(f.vitals).length > 0 ? 1 : 0);
+  if (clinicalCount === 0) {
+    pushBreadcrumb('extract.lowClinical', {
+      imageCount,
+      hasName: Boolean(f.name?.trim()),
+      hasTz: Boolean(f.teudatZehut?.trim()),
+      hasAge: typeof f.age === 'number',
+      in_tokens: res.usage.input_tokens,
+      out_tokens: res.usage.output_tokens,
+      ms: Date.now() - started,
+      parseStrategy: strategy,
+    });
+  }
+
   return {
-    fields: (parsed.fields ?? {}) as ParseFields,
-    // Enforce the critical-3 scope on read. Models sometimes emit extra
-    // confidence keys despite the prompt (e.g. room, chiefComplaint — we
-    // observed this in production on v1.6.0). The UI trust boundary is the
-    // ParseResult, so strip unknown keys here instead of letting them leak
-    // into FieldRow and render pills where we don't want them.
+    fields: f,
     confidence: filterToCriticalThree(
       parsed.confidence as Record<string, unknown> | undefined,
     ),
