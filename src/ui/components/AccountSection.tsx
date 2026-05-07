@@ -373,17 +373,39 @@ function ChangePasswordForm({
       return;
     }
     setBusy(true);
+    pushBreadcrumb('changePassword.start', { username });
     const res = await changePasswordWithReencrypt(username, oldPwd, newPwd);
     setBusy(false);
     if (res.ok) {
       setStatus({ tone: 'ok', msg: 'הסיסמה עודכנה ✓' });
+      pushBreadcrumb('changePassword.ok');
       setOldPwd('');
       setNewPwd('');
       setTimeout(onDone, 1200);
     } else {
-      setStatus({
-        tone: 'err',
-        msg: res.error === 'invalid_password' ? 'סיסמה ישנה שגויה' : res.message || 'שגיאה',
+      // v1.39.12: never bare 'שגיאה' — always include error code so the
+      // doctor has something diagnosable. Pattern from feedback_auth_error_specificity.md
+      // (PR #40 fixed this for login; this form was the missing sibling).
+      let msg: string;
+      if (res.error === 'invalid_password') {
+        msg = 'סיסמה ישנה שגויה';
+      } else if (res.error === 'weak_password') {
+        msg = 'סיסמה חדשה חלשה — לפחות 6 תווים, לא רק ספרות.';
+      } else if (res.error === 'network') {
+        msg = `בעיית רשת. בדוק חיבור ונסה שוב.${res.message ? ` (${res.message})` : ''}`;
+      } else if (res.error && res.message) {
+        msg = `שגיאה (${res.error}): ${res.message}`;
+      } else if (res.error) {
+        msg = `שגיאה: ${res.error}`;
+      } else if (res.message) {
+        msg = `שגיאת שרת: ${res.message}`;
+      } else {
+        msg = 'שגיאה לא ידועה. נסה שוב או דווח על הבעיה.';
+      }
+      setStatus({ tone: 'err', msg });
+      pushBreadcrumb('changePassword.err', {
+        error: res.error ?? 'unknown',
+        ...(res.message ? { message: res.message } : {}),
       });
     }
   }
