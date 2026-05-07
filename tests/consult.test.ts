@@ -8,8 +8,12 @@ const { callAnthropicSpy } = vi.hoisted(() => ({
   callAnthropicSpy: vi.fn(),
 }));
 
-vi.mock('@/agent/client', () => ({
-  callAnthropic: callAnthropicSpy,
+// consult.ts now imports callClaude from @/ai/dispatch (the v1.39.0
+// single-chokepoint refactor). The legacy @/agent/client::callAnthropic
+// re-export is preserved, but mocking @/agent/client no longer
+// intercepts because consult.ts goes straight to dispatch.
+vi.mock('@/ai/dispatch', () => ({
+  callClaude: callAnthropicSpy,
 }));
 
 // Mock skill loader so emit doesn't try to fetch from disk.
