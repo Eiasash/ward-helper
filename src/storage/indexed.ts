@@ -211,6 +211,26 @@ export async function putPatient(p: Patient): Promise<void> {
  * encrypt the same shape they persisted locally — without a second IDB
  * read to reconstruct it.
  */
+/**
+ * Look up a patient by teudatZehut without writing. Returns the most-recently
+ * updated match, or null if none. Trims the input — without normalization
+ * the by-tz index miss-splits the same patient across two rows.
+ *
+ * Used by /census v1.39.15 augmentation: when extract returns a row with
+ * a TZ but empty name (the model is being conservative about Hebrew names
+ * on paper handover sheets), look up the existing patient and pre-fill
+ * the name from local state.
+ */
+export async function getPatientByTz(tz: string): Promise<Patient | null> {
+  const trimmed = tz.trim();
+  if (!trimmed) return null;
+  const db = await getDb();
+  const matches = (await db.getAllFromIndex('patients', 'by-tz', trimmed)) as Patient[];
+  if (matches.length === 0) return null;
+  matches.sort((a, b) => b.updatedAt - a.updatedAt);
+  return matches[0]!;
+}
+
 export async function upsertPatientByTz(p: Omit<Patient, 'id'>): Promise<Patient> {
   const tz = p.teudatZehut.trim();
   if (!tz) {
