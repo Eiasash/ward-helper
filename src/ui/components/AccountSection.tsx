@@ -278,11 +278,16 @@ function ApiKeyField({ username }: { username: string }) {
         // v1.39.10: wrapped in <form> so Chrome stops emitting the
         // "Password field is not contained in a form" DOM warning AND so
         // password managers can recognise the field shape correctly.
-        // Enter-to-submit also works now.
+        // v1.39.11: added hidden username field per Chrome's password-
+        // manager linkage requirement — without it, Chrome warns
+        // "Password forms should have (optionally hidden) username fields
+        // for accessibility" and password managers can't link credentials
+        // to the right account.
         <form
           style={{ display: 'flex', gap: 8 }}
           onSubmit={(e) => { e.preventDefault(); if (!busy && draft.trim()) onSaveStart(); }}
         >
+          <input type="text" name="username" autoComplete="username" value={username} readOnly hidden />
           <input
             type="password"
             placeholder="sk-ant-..."
@@ -308,6 +313,7 @@ function ApiKeyField({ username }: { username: string }) {
             else onClearCommit();
           }}
         >
+          <input type="text" name="username" autoComplete="username" value={username} readOnly hidden />
           <input
             type="password"
             placeholder="הסיסמה הנוכחית"
@@ -384,6 +390,8 @@ function ChangePasswordForm({
 
   return (
     <form className="account-form" onSubmit={onSubmit} style={{ marginTop: 10 }}>
+      {/* v1.39.11: hidden username field for password-manager linkage. */}
+      <input type="text" name="username" autoComplete="username" value={username} readOnly hidden />
       <input
         type="password"
         placeholder="סיסמה ישנה"
@@ -456,6 +464,8 @@ function SetEmailForm({
 
   return (
     <form className="account-form" onSubmit={onSubmit} style={{ marginTop: 10 }}>
+      {/* v1.39.11: hidden username field for password-manager linkage. */}
+      <input type="text" name="username" autoComplete="username" value={username} readOnly hidden />
       <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 4 }}>
         הוסף אימייל כדי שתוכל לאפס סיסמה דרך 'שכחת סיסמה?'. נדרשת הסיסמה הנוכחית.
       </div>
