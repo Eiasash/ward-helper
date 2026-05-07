@@ -15,6 +15,21 @@ vi.mock('@/ai/dispatch', async (orig) => {
   };
 });
 
+// v1.39.1: importViaOcr now compresses images via compressImage before
+// upload. happy-dom's Image() doesn't reliably fire onload/onerror on
+// the fake-byte payload these tests use, so an unmocked loadImage
+// hangs the test for 5s. Mock to identity — compression output isn't
+// what the OCR tests assert on.
+vi.mock('@/camera/compress', () => ({
+  compressImage: vi.fn(async (s: string) => s),
+  estimateDataUrlBytes: vi.fn(() => 0),
+}));
+
+// Breadcrumb sink — no-op in tests.
+vi.mock('@/ui/components/MobileDebugPanel', () => ({
+  pushBreadcrumb: vi.fn(),
+}));
+
 import {
   importViaPaste,
   importViaManual,
@@ -360,6 +375,61 @@ describe('importViaOcr', () => {
     const rows = await importViaOcr(fakeFile());
     expect(rows).toHaveLength(1);
     expect(rows[0]?.name).toBe('מטופל');
+  });
+
+  // v1.39.1 mobile-stuck fix tests:
+
+  it('fires onProgress through the canonical stage sequence on success', async () => {
+    callAnthropicSpy.mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            patients: [{ tz: '123456789', name: 'מטופל', age: 80 }],
+          }),
+        },
+      ],
+      usage: { input_tokens: 50, output_tokens: 50 },
+    });
+    const stages: string[] = [];
+    await importViaOcr(fakeFile(), { onProgress: (s) => stages.push(s) });
+    // Order matters — UI relies on this sequence to render Hebrew text.
+    expect(stages).toEqual([
+      'reading',
+      'compressing',
+      'uploading',
+      'analyzing',
+      'parsing',
+      'done',
+    ]);
+  });
+
+  it('aborts mid-pipeline when signal fires before extract', async () => {
+    // Resolve callAnthropic only when called — but we'll abort before it
+    // gets called by firing the signal during the compress phase.
+    callAnthropicSpy.mockImplementation(async () => ({
+      content: [{ type: 'text', text: '{"patients":[]}' }],
+      usage: { input_tokens: 1, output_tokens: 1 },
+    }));
+    const ctrl = new AbortController();
+    ctrl.abort();
+    await expect(
+      importViaOcr(fakeFile(), { signal: ctrl.signal }),
+    ).rejects.toThrow(/abort/i);
+    // callAnthropic should not have been reached.
+    expect(callAnthropicSpy).not.toHaveBeenCalled();
+  });
+
+  it('passes the abort signal through to callClaude options', async () => {
+    callAnthropicSpy.mockResolvedValue({
+      content: [{ type: 'text', text: '{"patients":[]}' }],
+      usage: { input_tokens: 1, output_tokens: 1 },
+    });
+    const ctrl = new AbortController();
+    await importViaOcr(fakeFile(), { signal: ctrl.signal });
+    // Second call arg is the CallOptions object — must include `signal`.
+    const opts = callAnthropicSpy.mock.calls[0]?.[1];
+    expect(opts?.signal).toBe(ctrl.signal);
   });
 });
 
