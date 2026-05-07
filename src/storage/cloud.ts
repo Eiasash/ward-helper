@@ -227,5 +227,5 @@ function hexToBase64(hex: string): string {
 //
 // Public API contract is preserved: callers still
 // `import { pushCanary, verifyCanary, CANARY_BLOB_ID } from '@/storage/cloud'`.
-export { pushCanary, verifyCanary, verifyCanaryFromRows, CANARY_BLOB_ID } from '@/storage/canary';
+export { pushCanary, verifyCanary, verifyCanaryFromRows, dedupeStaleCanaries, CANARY_BLOB_ID } from '@/storage/canary';
 

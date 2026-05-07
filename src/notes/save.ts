@@ -6,7 +6,7 @@ import {
   type Note,
   type NoteType,
 } from '@/storage/indexed';
-import { encryptForCloud, pushBlob, pushCanary } from '@/storage/cloud';
+import { encryptForCloud, pushBlob, pushCanary, dedupeStaleCanaries } from '@/storage/cloud';
 import { deriveAesKey } from '@/crypto/pbkdf2';
 import {
   pushApiKeyToCloud,
@@ -105,6 +105,23 @@ async function armCanaryOnce(
     pushBreadcrumb('canary.push.ok', { ms: Date.now() - t0 });
     if (trigger === 'login-restore') {
       pushBreadcrumb('canary.backfill', { trigger: 'login-restore' });
+    }
+    // v1.39.17: opportunistic dedupe — anon-auth user_ids drift across
+    // browsers / token refreshes / IDB clears, and the (user_id,
+    // blob_type, blob_id) UNIQUE constraint lets each new user_id INSERT
+    // a fresh canary instead of updating the existing one. v1.39.16's
+    // newest-canary read already makes accumulated rows harmless, but
+    // they're cruft. Best-effort sweep here keeps the table clean.
+    // Failures don't propagate — the canary push already succeeded.
+    if (username && username.trim()) {
+      try {
+        const removed = await dedupeStaleCanaries(username);
+        if (removed > 0) {
+          pushBreadcrumb('canary.dedupe.swept', { removed });
+        }
+      } catch (e) {
+        pushBreadcrumb('canary.dedupe.err', { error: String(e) });
+      }
     }
   } catch (err) {
     lastCanaryPushOutcome = 'fail';
