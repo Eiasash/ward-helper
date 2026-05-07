@@ -1,11 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Mock keystore so callAnthropic takes the proxy path consistently.
-// Direct-path tests pass an explicit key via the keystore mock.
-vi.mock('@/crypto/keystore', () => ({
-  loadApiKey: vi.fn(async () => null),
-}));
-
 import {
   callAnthropic,
   callProxy,
@@ -18,7 +12,23 @@ import {
   MODEL_DIRECT,
   activePath,
 } from '@/agent/client';
-import * as keystore from '@/crypto/keystore';
+
+// v1.39.0: dispatch picks direct vs proxy from localStorage 'wardhelper_apikey'
+// gated on getCurrentUser(). Drive via localStorage instead of mocking the
+// (now-localStorage-backed) keystore module.
+const VALID_USER = JSON.stringify({
+  username: 'eias',
+  displayName: null,
+  loggedInAt: 1_700_000_000_000,
+});
+function setLocalKey(key: string | null) {
+  if (key === null) localStorage.removeItem('wardhelper_apikey');
+  else localStorage.setItem('wardhelper_apikey', key);
+}
+function setLoggedIn(on: boolean) {
+  if (on) localStorage.setItem('ward-helper.auth.user', VALID_USER);
+  else localStorage.removeItem('ward-helper.auth.user');
+}
 
 function mockOk(text = '{}') {
   return vi.fn(async () => ({
@@ -40,12 +50,15 @@ function mockHttp(status: number, body = '') {
 
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
-  (keystore.loadApiKey as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+  setLocalKey(null);
+  setLoggedIn(false);
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
+  setLocalKey(null);
+  setLoggedIn(false);
 });
 
 describe('module surface', () => {
@@ -68,13 +81,21 @@ describe('module surface', () => {
 
 describe('activePath', () => {
   it("returns 'proxy' when no API key is stored", async () => {
-    (keystore.loadApiKey as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    setLocalKey(null);
+    setLoggedIn(true);
     expect(await activePath()).toBe('proxy');
   });
 
-  it("returns 'direct' when an API key is present", async () => {
-    (keystore.loadApiKey as ReturnType<typeof vi.fn>).mockResolvedValue('sk-ant-fake');
+  it("returns 'direct' when an API key is present (and user is logged in)", async () => {
+    setLocalKey('sk-ant-fake');
+    setLoggedIn(true);
     expect(await activePath()).toBe('direct');
+  });
+
+  it("returns 'proxy' when key is set but user is a guest (logged-in gate)", async () => {
+    setLocalKey('sk-ant-fake');
+    setLoggedIn(false);
+    expect(await activePath()).toBe('proxy');
   });
 });
 
@@ -124,7 +145,8 @@ describe('callAnthropic — proxy path (no API key)', () => {
 
 describe('callAnthropic — direct path (API key present)', () => {
   beforeEach(() => {
-    (keystore.loadApiKey as ReturnType<typeof vi.fn>).mockResolvedValue('sk-ant-test');
+    setLocalKey('sk-ant-test');
+    setLoggedIn(true);
   });
 
   it('POSTs to ANTHROPIC_URL with x-api-key + anthropic-version + browser-bypass headers', async () => {

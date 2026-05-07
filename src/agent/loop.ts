@@ -1,4 +1,5 @@
-import { callAnthropic, type AnthropicContentBlock } from './client';
+import { callClaude } from '@/ai/dispatch';
+import { type AnthropicContentBlock } from './client';
 import type { ParseResult, ParseFields } from './tools';
 import { addTurn } from './costs';
 import { recordExtract, recordEmit, recordError } from './debugLog';
@@ -286,7 +287,7 @@ export async function runExtractTurn(
   const started = Date.now();
   let res;
   try {
-    res = await callAnthropic(
+    res = await callClaude(
       {
         messages: [{ role: 'user', content }],
         // 8k headroom — adaptive thinking eats into max_tokens, and the visible
@@ -397,7 +398,7 @@ export async function runEmitTurn(
   const started = Date.now();
   let res;
   try {
-    res = await callAnthropic(
+    res = await callClaude(
       {
         messages: [{ role: 'user', content: [{ type: 'text', text: userText }] }],
         max_tokens: 16000,
@@ -512,7 +513,7 @@ export async function runCensusExtractTurn(
   const started = Date.now();
   let res;
   try {
-    res = await callAnthropic(
+    res = await callClaude(
       {
         messages: [{ role: 'user', content }],
         // 4096 tokens fits a 30-row grid with all flags. Direct path easily

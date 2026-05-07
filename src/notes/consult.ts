@@ -25,7 +25,7 @@
  * layer (via the existing Save flow).
  */
 
-import { callAnthropic } from '@/agent/client';
+import { callClaude } from '@/ai/dispatch';
 import { addTurn } from '@/agent/costs';
 import { recordEmit, recordError } from '@/agent/debugLog';
 import { loadSkills } from '@/skills/loader';
@@ -88,7 +88,7 @@ export async function runConsultTurn(history: ConsultMsg[]): Promise<ChatTurnRes
     content: m.content,
   }));
 
-  const res = await callAnthropic({
+  const res = await callClaude({
     messages,
     // Adaptive thinking on chat — short DDx Q&A stays cheap; deep clinical
     // pushback gets reasoning budget. No explicit effort dial; let the
@@ -181,7 +181,7 @@ export async function runConsultEmit(
   const started = Date.now();
   let res;
   try {
-    res = await callAnthropic(
+    res = await callClaude(
       {
         messages: [{ role: 'user', content: userText }],
         max_tokens: 16000,

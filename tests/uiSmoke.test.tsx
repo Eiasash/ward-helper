@@ -41,24 +41,10 @@ vi.mock('@/skills/loader', () => ({
   loadSkills: vi.fn(async () => ({})),
 }));
 
-// Passthrough mocks for the two modules driving the Settings path indicator.
-// Default behavior is identical to the real implementation; individual tests
-// override useApiKey / activePath to cover the 🟢/🟡 states.
-vi.mock('@/ui/hooks/useSettings', async () => {
-  const actual =
-    await vi.importActual<typeof import('@/ui/hooks/useSettings')>(
-      '@/ui/hooks/useSettings',
-    );
-  return { ...actual, useApiKey: vi.fn(actual.useApiKey) };
-});
-vi.mock('@/agent/client', async () => {
-  const actual =
-    await vi.importActual<typeof import('@/agent/client')>('@/agent/client');
-  return { ...actual, activePath: vi.fn(actual.activePath) };
-});
-
-import { useApiKey } from '@/ui/hooks/useSettings';
-import { activePath } from '@/agent/client';
+// v1.39.0: useApiKey + activePath were the Settings.tsx API-key UI. That UI
+// moved into AccountSection (with /v1/models validation + status badge), so
+// the Settings-screen path-indicator tests that lived here are gone — see
+// AccountSection's own tests when they're added.
 
 import { App } from '@/ui/App';
 import { Capture } from '@/ui/screens/Capture';
@@ -315,95 +301,5 @@ describe('Settings screen', () => {
   it('mounts without crashing (no saved API key, no passphrase)', async () => {
     expect(() => renderAt('/settings', <Settings />)).not.toThrow();
     await flushEffects();
-  });
-
-  it('shows 🟢 direct-path status when API key is set', async () => {
-    vi.mocked(useApiKey).mockReturnValue({
-      present: true,
-      save: vi.fn(async () => {}),
-      peek: vi.fn(async () => null),
-      clear: vi.fn(async () => {}),
-    });
-    vi.mocked(activePath).mockResolvedValue('direct');
-    renderAt('/settings', <Settings />);
-    await flushEffects();
-    expect(
-      screen.getByText('🟢 פנייה ישירה (api.anthropic.com)'),
-    ).toBeInTheDocument();
-  });
-
-  it('shows 🟡 proxy-path status when no API key', async () => {
-    vi.mocked(useApiKey).mockReturnValue({
-      present: false,
-      save: vi.fn(async () => {}),
-      peek: vi.fn(async () => null),
-      clear: vi.fn(async () => {}),
-    });
-    vi.mocked(activePath).mockResolvedValue('proxy');
-    renderAt('/settings', <Settings />);
-    await flushEffects();
-    expect(
-      screen.getByText('🟡 Toranot proxy — פסק זמן 10 שניות'),
-    ).toBeInTheDocument();
-  });
-
-  // v1.36.1 — mask-on-render API-key input. The actual stored key is NEVER
-  // bound to the input's `value` attribute; only the user's draft (while
-  // typing) or a fixed-width bullet placeholder (when a key is stored at
-  // rest). Defensive against accidental future changes to useApiKey that
-  // might surface the real key into Settings state.
-  it('API-key input shows bullet placeholder when a key is stored, never the real key', async () => {
-    vi.mocked(useApiKey).mockReturnValue({
-      present: true,
-      save: vi.fn(async () => {}),
-      peek: vi.fn(async () => 'sk-ant-real-secret-1234567890'),
-      clear: vi.fn(async () => {}),
-    });
-    vi.mocked(activePath).mockResolvedValue('direct');
-    renderAt('/settings', <Settings />);
-    await flushEffects();
-
-    const input = document.getElementById('settings-api-key') as HTMLInputElement;
-    expect(input).not.toBeNull();
-    expect(input.value).toBe('•'.repeat(20));
-    // Belt-and-suspenders: even if the bullet count ever changes, never
-    // expose any portion of the real key in the DOM.
-    expect(input.value).not.toContain('sk-ant');
-    expect(input.value).not.toContain('secret');
-  });
-
-  it('API-key input is empty when no key stored', async () => {
-    vi.mocked(useApiKey).mockReturnValue({
-      present: false,
-      save: vi.fn(async () => {}),
-      peek: vi.fn(async () => null),
-      clear: vi.fn(async () => {}),
-    });
-    vi.mocked(activePath).mockResolvedValue('proxy');
-    renderAt('/settings', <Settings />);
-    await flushEffects();
-
-    const input = document.getElementById('settings-api-key') as HTMLInputElement;
-    expect(input).not.toBeNull();
-    expect(input.value).toBe('');
-  });
-
-  it('API-key input clears bullet placeholder when user starts typing', async () => {
-    vi.mocked(useApiKey).mockReturnValue({
-      present: true,
-      save: vi.fn(async () => {}),
-      peek: vi.fn(async () => 'sk-ant-real-secret'),
-      clear: vi.fn(async () => {}),
-    });
-    vi.mocked(activePath).mockResolvedValue('direct');
-    renderAt('/settings', <Settings />);
-    await flushEffects();
-
-    const input = document.getElementById('settings-api-key') as HTMLInputElement;
-    expect(input.value).toBe('•'.repeat(20));
-
-    fireEvent.change(input, { target: { value: 'sk-ant-typed-by-user' } });
-    expect(input.value).toBe('sk-ant-typed-by-user');
-    expect(input.value).not.toContain('•');
   });
 });

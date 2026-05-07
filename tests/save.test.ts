@@ -154,6 +154,18 @@ describe('saveBoth — local-only path (no passphrase)', () => {
 });
 
 describe('saveBoth — cloud-push path (passphrase set)', () => {
+  // v1.39.0: saveBoth now requires BOTH a logged-in user AND an in-memory
+  // login password for the cloud path. Guests short-circuit with reason
+  // 'guest' before any pushBlob/canary work.
+  const AUTHED = {
+    username: 'eias',
+    displayName: 'Eias',
+    loggedInAt: 1_700_000_000_000,
+  };
+  beforeEach(() => {
+    (auth.getCurrentUser as ReturnType<typeof vi.fn>).mockReturnValue(AUTHED);
+  });
+
   it('encrypts patient + note and pushes both blobs when passphrase present', async () => {
     (auth.getLastLoginPasswordOrNull as ReturnType<typeof vi.fn>).mockReturnValue('correct horse battery staple');
     const result = await saveBoth({ name: 'Z' }, 'admission', 'body');
@@ -211,12 +223,14 @@ describe('saveBoth — cloud-push path (passphrase set)', () => {
     expect(calls[1]![3]).toBe('eias');
   });
 
-  it('passes null to pushBlob when guest (no app_users session)', async () => {
+  it('guests (no app_users session) short-circuit before pushBlob — IndexedDB only, no network', async () => {
+    // v1.39.0: pre-1.39 guests went through pushBlob with username=null.
+    // Now guests skip the cloud path entirely — `cloudSkippedReason: 'guest'`.
     (auth.getLastLoginPasswordOrNull as ReturnType<typeof vi.fn>).mockReturnValue('k');
     (auth.getCurrentUser as ReturnType<typeof vi.fn>).mockReturnValue(null);
-    await saveBoth({ name: 'guest' }, 'soap', 'body');
-    const calls = (cloud.pushBlob as ReturnType<typeof vi.fn>).mock.calls;
-    expect(calls[0]![3]).toBeNull();
-    expect(calls[1]![3]).toBeNull();
+    const result = await saveBoth({ name: 'guest' }, 'soap', 'body');
+    expect(result.cloudPushed).toBe(false);
+    expect(result.cloudSkippedReason).toBe('guest');
+    expect(cloud.pushBlob).not.toHaveBeenCalled();
   });
 });

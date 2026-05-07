@@ -18,7 +18,7 @@
  * section only. It must NEVER trigger a full re-emit.
  */
 
-import { callAnthropic } from '@/agent/client';
+import { callClaude } from '@/ai/dispatch';
 import { addTurn } from '@/agent/costs';
 import { recordEmit, recordError } from '@/agent/debugLog';
 import { extractJsonStrategy } from '@/agent/loop';
@@ -76,7 +76,7 @@ export async function regenerateSection(args: {
 
   let res;
   try {
-    res = await callAnthropic(
+    res = await callClaude(
       {
         messages: [{ role: 'user', content: [{ type: 'text', text: userText }] }],
         // 6k headroom for adaptive thinking on short clinical section regen.

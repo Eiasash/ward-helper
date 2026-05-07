@@ -134,6 +134,14 @@ export interface RpcResult {
   ok: boolean;
   /** Present when ok=true, returned by auth_register_user / auth_login_user. */
   user?: { username: string; display_name: string | null };
+  /**
+   * Personal Anthropic API key, returned by auth_login_user when the user has
+   * one set server-side (auth_set_api_key RPC). Mirrors shlav-a-mega's pattern
+   * (samega_apikey + login response field). When present, the AccountSection
+   * login flow stamps it into localStorage `wardhelper_apikey` so the BYOK
+   * path is active immediately on a fresh device login.
+   */
+  api_key?: string | null;
   /** Present when ok=false. Examples: 'invalid_username', 'invalid_password', 'username_taken', 'locked_out', 'http_500'. */
   error?: string;
   /** Optional human-readable message; safe to surface verbatim. */
@@ -231,8 +239,9 @@ async function _rpc(fn: string, body: Record<string, unknown>): Promise<RpcResul
  * auth history of the app.
  */
 function normalizeUserShape(res: RpcResult & Record<string, unknown>): RpcResult {
+  let next: RpcResult = res;
   if (res.ok && !res.user && typeof res.username === 'string') {
-    return {
+    next = {
       ...res,
       user: {
         username: res.username,
@@ -240,7 +249,32 @@ function normalizeUserShape(res: RpcResult & Record<string, unknown>): RpcResult
       },
     };
   }
-  return res;
+  // Server may return api_key flat or nested. Surface it at the top level
+  // either way so callers don't have to dig — same idea as the user.username
+  // flattening above. Empty/undefined → field stays absent.
+  if (next.ok && next.api_key === undefined && typeof res.api_key === 'string') {
+    next = { ...next, api_key: res.api_key };
+  }
+  return next;
+}
+
+/**
+ * Push the api_key from a login RPC response into localStorage so the BYOK
+ * path is active on the very next callClaude call. Empty/null/whitespace
+ * value clears the localStorage entry — server is the source of truth.
+ *
+ * Called from authLogin's success path. Idempotent.
+ */
+function applyApiKeyFromLoginResponse(api_key: string | null | undefined): void {
+  if (typeof localStorage === 'undefined') return;
+  if (typeof api_key === 'string' && api_key.trim()) {
+    localStorage.setItem('wardhelper_apikey', api_key.trim());
+  } else if (api_key === '' || api_key === null) {
+    localStorage.removeItem('wardhelper_apikey');
+  }
+  // api_key === undefined: server didn't return the field on this login —
+  // don't disturb whatever the client already has. Older deployments of the
+  // shared RPC predate the api_key column.
 }
 
 export async function authRegister(
@@ -261,7 +295,11 @@ export async function authLogin(username: string, password: string): Promise<Rpc
     p_username: username,
     p_password: password,
   });
-  return normalizeUserShape(res as RpcResult & Record<string, unknown>);
+  const normalized = normalizeUserShape(res as RpcResult & Record<string, unknown>);
+  if (normalized.ok) {
+    applyApiKeyFromLoginResponse(normalized.api_key);
+  }
+  return normalized;
 }
 
 export async function authChangePassword(
@@ -273,6 +311,29 @@ export async function authChangePassword(
     p_username: username,
     p_old_password: oldPwd,
     p_new_password: newPwd,
+  });
+}
+
+/**
+ * Persist the user's personal Anthropic API key server-side via the shared
+ * `auth_set_api_key` RPC (defined in the Toranot Supabase project, mirrors
+ * shlav-a-mega's setter). The server stores the key on the app_users row
+ * and surfaces it back via `api_key` on subsequent auth_login_user calls,
+ * which is how a fresh device gets the key without depending on cloud
+ * blob restore. Sensitive op — re-prompts for the current password.
+ *
+ * Pass an empty string to clear the server-side copy. Local localStorage
+ * cleanup is the caller's responsibility.
+ */
+export async function authSetApiKey(
+  username: string,
+  password: string,
+  apiKey: string,
+): Promise<RpcResult> {
+  return _rpc('auth_set_api_key', {
+    p_username: username,
+    p_password: password,
+    p_api_key: apiKey,
   });
 }
 
@@ -430,6 +491,14 @@ export async function logout(): Promise<void> {
   // push, regressing into the pre-v1.36.0 state where wrong-password
   // attempts silently bulk-skip on the next fresh-device restore.
   resetCanaryArmed();
+  // Same cross-user concern for the personal Anthropic key — A's key
+  // must not bleed into B's session. Next login rehydrates from the
+  // auth_login_user response if B has one set server-side.
+  try {
+    localStorage.removeItem('wardhelper_apikey');
+  } catch {
+    // ignore — DOM not available (test env, SSR)
+  }
   localStorage.removeItem(AUTH_LS_KEY);
   // Fresh random uid; do NOT reuse a prior guest uid.
   localStorage.setItem(UID_LS_KEY, 'u' + Math.random().toString(36).slice(2, 10));

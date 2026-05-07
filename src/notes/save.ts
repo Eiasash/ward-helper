@@ -151,10 +151,20 @@ export async function saveBoth(
   // that the ID is known. Safe no-op if no session was open.
   finalizeSessionFor(patientId);
 
-  // v1.35.0: login password IS the cloud encryption key. Saved-in-memory by
-  // AccountSection on successful login (stashLastLoginPassword). Guests and
-  // logged-out users have null here → cloud push is silently skipped, same
-  // posture as the old "no passphrase set" case but with no UI to forget.
+  // 3-state design: guests get IndexedDB only — no pushBlob, no canary
+  // arming, no Supabase round-trip at all. Logged-in users with the
+  // login password in memory follow the encrypted-backup path. Logged-in
+  // users WITHOUT the password (post-reload pre-relogin) skip cloud and
+  // the next login will rehydrate the stash.
+  const user = getCurrentUser();
+  if (!user) {
+    return {
+      patientId,
+      noteId,
+      cloudPushed: false,
+      cloudSkippedReason: 'guest',
+    };
+  }
   const pass = getLastLoginPasswordOrNull();
   if (!pass) {
     return {
@@ -279,12 +289,23 @@ export interface RestoreResult {
 export async function restoreFromCloud(passphrase: string): Promise<RestoreResult> {
   if (!passphrase) throw new Error('passphrase required for restore');
 
-  // Route selection: when logged in via app_users, prefer the
-  // cross-device RPC. On a fresh install, the per-anon-user path returns
-  // nothing because the new device has a fresh auth.uid(). On the user's
-  // original device the RPC returns the same rows (idempotent). Guests
-  // (no app_users session) keep using the legacy per-anon-user path.
+  // 3-state design: guests have no cloud presence — restore is a logged-in
+  // operation. Returning a synthetic empty result (no network) so callers
+  // (Settings.tsx, post-login banner) can render a clear "log in to restore"
+  // affordance instead of attempting a doomed Supabase round-trip.
   const user = getCurrentUser();
+  if (!user) {
+    return {
+      scanned: 0,
+      restoredPatients: 0,
+      restoredNotes: 0,
+      restoredApiKey: 0,
+      wrongPassphrase: false,
+      skipped: [],
+      source: 'anon',
+    };
+  }
+
   // Canary fail-fast: probe a single tiny blob with the passphrase before
   // pulling N rows. Wrong passphrase exits in one decrypt rather than N.
   const verifyT0 = Date.now();

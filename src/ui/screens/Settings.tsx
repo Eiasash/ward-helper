@@ -1,13 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  useApiKey,
   useBidiAudit,
   useDebugPanel,
   useEmailTarget,
 } from '../hooks/useSettings';
 import { load as loadCosts, reset as resetCosts } from '@/agent/costs';
 import { restoreFromCloud, type RestoreResult } from '@/notes/save';
-import { activePath, type RequestPath } from '@/agent/client';
 import { DebugPanel } from '../components/DebugPanel';
 import {
   loadSnippets,
@@ -25,16 +23,6 @@ import { importLocalBackup } from '@/notes/importLocal';
 import { pushBreadcrumb } from '../components/MobileDebugPanel';
 
 export function Settings() {
-  const { present, save, clear } = useApiKey();
-  // Mask-on-render API-key input. The actual stored key is NEVER bound to
-  // the input's `value` attribute — only the user's draft (while typing) or
-  // a fixed-width bullet placeholder (when a key is stored at rest). This
-  // is defensive: even if a future change to `useApiKey` started returning
-  // the stored key, the input would still not expose it via DevTools'
-  // value-attribute rendering. The bullet count (20) is a placeholder, not
-  // the real key length — leaking length is a side channel we avoid.
-  const [keyDraft, setKeyDraft] = useState('');
-  const [keyMask, setKeyMask] = useState('');
   const [msg, setMsg] = useState('');
   const [bidiAuditOn, setBidiAuditOn] = useBidiAudit();
   const [debugOn, setDebugOn] = useDebugPanel();
@@ -43,7 +31,6 @@ export function Settings() {
   const [restoring, setRestoring] = useState(false);
   const [restoreResult, setRestoreResult] = useState<RestoreResult | null>(null);
   const [restoreErr, setRestoreErr] = useState('');
-  const [path, setPath] = useState<RequestPath | null>(null);
   const [pushingNow, setPushingNow] = useState(false);
   // Snippet editor: rows are mutable until "Save". Loaded once on mount and
   // kept as an array of pairs for ordered rendering — Object would lose
@@ -89,45 +76,6 @@ export function Settings() {
     setSnippetMsg('קטעי טקסט נשמרו ✓');
   }
 
-  // Re-runs whenever `present` flips (save/clear in useApiKey bumps it).
-  // No polling, no refresh button — the path only changes when the key changes.
-  useEffect(() => {
-    let cancelled = false;
-    activePath().then((p) => {
-      if (!cancelled) setPath(p);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [present]);
-
-  // Sync the bullet placeholder to the present-flag. When a key is stored,
-  // the input shows '••••...' (20 chars) so the user can see "yes there
-  // is a key here" without exposing the value. When not stored, the
-  // placeholder is empty and the input shows the real placeholder text.
-  useEffect(() => {
-    if (present === null) return; // still loading
-    setKeyMask(present ? '•'.repeat(20) : '');
-  }, [present]);
-
-  async function onSaveKey() {
-    if (!keyDraft.startsWith('sk-ant-')) {
-      setMsg('מפתח לא תקין');
-      return;
-    }
-    await save(keyDraft);
-    setKeyDraft('');
-    setKeyMask('•'.repeat(20));
-    setMsg('מפתח נשמר ✓');
-  }
-
-  async function onClearKey() {
-    await clear();
-    setKeyDraft('');
-    setKeyMask('');
-    setMsg('מפתח נמחק');
-  }
-
   // v1.35.0: cloud encryption uses the login password (stashed in memory by
   // AccountSection on successful login). If null (guest, or post-reload before
   // re-login), restore is impossible — show a clear "log in again" message
@@ -161,69 +109,11 @@ export function Settings() {
 
       <AccountSection />
 
-      <h2>Anthropic API Key</h2>
-      <div
-        style={{
-          background: 'var(--card)',
-          padding: '4px 10px',
-          borderRadius: 6,
-          marginBottom: 8,
-          fontSize: 13,
-          lineHeight: 1.5,
-        }}
-      >
-        {path === null
-          ? '…'
-          : path === 'direct'
-          ? '🟢 פנייה ישירה (api.anthropic.com)'
-          : '🟡 Toranot proxy — פסק זמן 10 שניות'}
-      </div>
-      {present === null ? (
-        <p>...</p>
-      ) : present ? (
-        <p>
-          ✓ מפתח אישי מוגדר — פניות ישירות ל-<code>api.anthropic.com</code>
-        </p>
-      ) : (
-        <div
-          style={{
-            background: 'var(--warn)',
-            color: 'black',
-            padding: 10,
-            borderRadius: 8,
-            marginBottom: 8,
-            fontSize: 14,
-            lineHeight: 1.5,
-          }}
-        >
-          <strong>אין מפתח — משתמש ב-Toranot proxy.</strong>
-          <br />
-          הפרוקסי קצוב ל-10 שניות ונפסק בשגיאת 504 על רישומים ארוכים (קבלה/שחרור).
-          הגדר מפתח כדי לעקוף את המגבלה הזאת.
-        </div>
-      )}
-      <label htmlFor="settings-api-key" className="visually-hidden">Anthropic API key</label>
-      <input
-        id="settings-api-key"
-        type="password"
-        dir="ltr"
-        placeholder="sk-ant-..."
-        value={keyDraft || keyMask}
-        onChange={(e) => {
-          setKeyDraft(e.target.value);
-          // First keystroke clears the bullet placeholder so the user sees
-          // their typed input, not bullets-then-typed.
-          setKeyMask('');
-        }}
-        autoComplete="off"
-        style={{ marginBottom: 8 }}
-      />
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button onClick={onSaveKey}>שמור מפתח</button>
-        {present && <button className="ghost" onClick={onClearKey}>מחק</button>}
-      </div>
-
       {/*
+        Anthropic API Key UI moved into AccountSection (visible when logged in).
+        That field has /v1/models validation + server-side mirror so the key
+        survives a fresh-device login.
+
         v1.35.0: backup-passphrase UI removed at user request after multiple
         failed activation attempts (see git history for v1.34.0..v1.34.4).
         Cloud encryption now uses the user's login password directly via

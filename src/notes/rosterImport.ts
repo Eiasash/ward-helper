@@ -24,7 +24,8 @@
  * yields a wrong row beats a strict one that yields nothing.
  */
 
-import { callAnthropic, type AnthropicContentBlock } from '@/agent/client';
+import { callClaude } from '@/ai/dispatch';
+import { type AnthropicContentBlock } from '@/agent/client';
 import { stripMarkdownFence } from '@/agent/loop';
 import type { RosterPatient } from '@/storage/roster';
 
@@ -98,7 +99,7 @@ export async function importViaOcr(file: File): Promise<RosterPatient[]> {
     },
   ];
 
-  const res = await callAnthropic(
+  const res = await callClaude(
     {
       messages: [{ role: 'user', content }],
       max_tokens: 4000,
