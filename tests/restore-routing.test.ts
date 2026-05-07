@@ -70,11 +70,16 @@ describe('restoreFromCloud — guest (no app_users session)', () => {
     h.getCurrentUserMock.mockReturnValue(null);
   });
 
-  it('uses pullAllBlobs (legacy per-anon-user path)', async () => {
+  // v1.39.0: guests no longer hit the network at all — restoreFromCloud
+  // returns a synthetic empty result. Pre-1.39 they used pullAllBlobs.
+  it('short-circuits without any pull (no network for guests)', async () => {
     const result = await restoreFromCloud('any-passphrase');
-    expect(h.pullAllBlobsMock).toHaveBeenCalledTimes(1);
+    expect(h.pullAllBlobsMock).not.toHaveBeenCalled();
     expect(h.pullByUsernameMock).not.toHaveBeenCalled();
     expect(result.source).toBe('anon');
+    expect(result.scanned).toBe(0);
+    expect(result.restoredPatients).toBe(0);
+    expect(result.restoredNotes).toBe(0);
   });
 
   it("reports source='anon' so the UI can label the restore correctly", async () => {

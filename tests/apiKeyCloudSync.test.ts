@@ -1,37 +1,27 @@
 /**
- * Tests for the per-account API key cloud sync (Option A).
+ * Tests for the per-account API key cloud sync.
  *
- * Wire diagram:
+ * Wire diagram (v1.39.0+):
  *   saveBoth → pushApiKeyToCloud(key, salt, username)
- *     → loadApiKey() (from local IDB keystore)
+ *     → loadApiKey() (now reads localStorage 'wardhelper_apikey')
  *     → encryptForCloud({ v:1, apiKey, savedAt })
  *     → pushBlob('api-key', '__user_default__', sealed, username)
  *
  *   restoreFromCloud → on row.blob_type === 'api-key' → applyApiKeyFromCloud
  *     → decryptFromCloud<ApiKeyCloudBlob>
- *     → if v:1 schema valid → saveApiKey(blob.apiKey)
+ *     → if v:1 schema valid → saveApiKey(blob.apiKey) (writes localStorage)
  *
- * What this test covers:
- *   - no-op when no local key
- *   - happy path: push uses correct blob_type + blob_id
- *   - apply: valid v:1 blob writes to keystore
- *   - apply: malformed blob (wrong v, missing apiKey, empty apiKey) returns
- *     false without touching the keystore — restore caller should record
- *     a skipped entry rather than abort the whole pull
- *
- * Mocks: pushBlob (no real Supabase), saveApiKey/loadApiKey (no real IDB).
- * The encrypt/decrypt path uses real WebCrypto since happy-dom + node 20+
- * provides it.
+ * Storage moved from IDB-XOR to localStorage in v1.39.0 — the test now
+ * drives the local key via localStorage.setItem rather than mocking
+ * @/storage/indexed::getSettings.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // vi.mock factories are hoisted above all imports, so any variables they
-// reference must also be hoisted via vi.hoisted(). This is the canonical
-// pattern for vitest 4+.
-const { pushBlobMock, localKeyState } = vi.hoisted(() => ({
+// reference must also be hoisted via vi.hoisted().
+const { pushBlobMock } = vi.hoisted(() => ({
   pushBlobMock: vi.fn(),
-  localKeyState: { current: null as string | null },
 }));
 
 vi.mock('@/storage/cloud', async (importOriginal) => {
@@ -42,28 +32,6 @@ vi.mock('@/storage/cloud', async (importOriginal) => {
   };
 });
 
-vi.mock('@/storage/indexed', () => ({
-  getSettings: vi.fn(async () => {
-    if (!localKeyState.current) return null;
-    return {
-      apiKeyXor: new TextEncoder().encode(localKeyState.current),
-      deviceSecret: new Uint8Array(16),
-      lastPassphraseAuthAt: null,
-      prefs: {},
-    };
-  }),
-  setSettings: vi.fn(async () => {
-    /* no-op shim */
-  }),
-}));
-
-// Mock the XOR layer to be identity (skip the obfuscation in tests).
-vi.mock('@/crypto/xor', () => ({
-  xorEncrypt: (s: string) => new TextEncoder().encode(s),
-  xorDecrypt: (b: Uint8Array) => new TextDecoder().decode(b),
-  generateDeviceSecret: () => new Uint8Array(16),
-}));
-
 import {
   pushApiKeyToCloud,
   applyApiKeyFromCloud,
@@ -72,6 +40,16 @@ import {
   API_KEY_BLOB_ID,
 } from '@/crypto/keystore';
 import { encryptForCloud } from '@/storage/cloud';
+
+const localKeyState = {
+  set current(v: string | null) {
+    if (v) localStorage.setItem('wardhelper_apikey', v);
+    else localStorage.removeItem('wardhelper_apikey');
+  },
+  get current(): string | null {
+    return localStorage.getItem('wardhelper_apikey');
+  },
+};
 
 beforeEach(() => {
   pushBlobMock.mockReset();

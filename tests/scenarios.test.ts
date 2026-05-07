@@ -62,12 +62,17 @@ vi.mock('@supabase/supabase-js', () => ({
   })),
 }));
 
-// v1.35.0: cloud-push gate is now `getLastLoginPasswordOrNull` from
-// @/auth/auth (was `getPassphrase` from @/ui/hooks/useSettings). Mock the
-// new gate to return a fixed pseudo-login-password so the cloud-push
-// branch fires for the scenarios under test.
+// v1.39.0: cloud path now requires BOTH a logged-in user AND an in-memory
+// login password. Pre-1.39 these scenarios mocked getCurrentUser=null and
+// still pushed (guests went through pushBlob with username=null). Now
+// guests skip the cloud path entirely, so the scenario tests need an
+// authed mock to exercise the encrypted-push pipeline.
 vi.mock('@/auth/auth', () => ({
-  getCurrentUser: vi.fn(() => null),
+  getCurrentUser: vi.fn(() => ({
+    username: 'fictional',
+    displayName: 'Fictional Test User',
+    loggedInAt: 1_700_000_000_000,
+  })),
   getLastLoginPasswordOrNull: vi.fn(() => 'fictional-test-login-pwd-2026'),
 }));
 

@@ -5,11 +5,13 @@ const { callAnthropicSpy } = vi.hoisted(() => ({
   callAnthropicSpy: vi.fn(),
 }));
 
-vi.mock('@/agent/client', async (orig) => {
+// rosterImport.ts now imports callClaude from @/ai/dispatch (v1.39.0
+// single-chokepoint refactor). Mocks attach to dispatch.
+vi.mock('@/ai/dispatch', async (orig) => {
   const actual = (await orig()) as Record<string, unknown>;
   return {
     ...actual,
-    callAnthropic: callAnthropicSpy,
+    callClaude: callAnthropicSpy,
   };
 });
 

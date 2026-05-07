@@ -4,7 +4,10 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { replaceSectionInBody, regenerateSection, SectionRegenError } from '@/notes/regenerate';
-import * as client from '@/agent/client';
+// regenerate.ts now imports callClaude from @/ai/dispatch (v1.39.0
+// single-chokepoint refactor). Spies attach to dispatch, not the legacy
+// @/agent/client surface.
+import * as client from '@/ai/dispatch';
 
 describe('replaceSectionInBody', () => {
   const body = [
@@ -73,10 +76,10 @@ describe('regenerateSection (proxy contract)', () => {
   });
 
   it('returns the regenerated section body when the model honors the contract', async () => {
-    vi.spyOn(client, 'callAnthropic').mockResolvedValue({
+    vi.spyOn(client, 'callClaude').mockResolvedValue({
       content: [{ type: 'text', text: '{"sectionBody": "# מהלך אשפוז\\nאושפזה בשל UTI עם המודינמיקה תקינה."}' }],
       usage: { input_tokens: 100, output_tokens: 50 },
-    } as Awaited<ReturnType<typeof client.callAnthropic>>);
+    } as Awaited<ReturnType<typeof client.callClaude>>);
 
     const result = await regenerateSection({
       noteType: 'admission',
@@ -89,10 +92,10 @@ describe('regenerateSection (proxy contract)', () => {
   });
 
   it('throws when the regenerated header drifts to a different section', async () => {
-    vi.spyOn(client, 'callAnthropic').mockResolvedValue({
+    vi.spyOn(client, 'callClaude').mockResolvedValue({
       content: [{ type: 'text', text: '{"sectionBody": "# המלצות\\nמשהו אחר."}' }],
       usage: { input_tokens: 100, output_tokens: 50 },
-    } as Awaited<ReturnType<typeof client.callAnthropic>>);
+    } as Awaited<ReturnType<typeof client.callClaude>>);
 
     await expect(
       regenerateSection({
@@ -105,10 +108,10 @@ describe('regenerateSection (proxy contract)', () => {
   });
 
   it('throws when sectionBody is missing', async () => {
-    vi.spyOn(client, 'callAnthropic').mockResolvedValue({
+    vi.spyOn(client, 'callClaude').mockResolvedValue({
       content: [{ type: 'text', text: '{}' }],
       usage: { input_tokens: 10, output_tokens: 5 },
-    } as Awaited<ReturnType<typeof client.callAnthropic>>);
+    } as Awaited<ReturnType<typeof client.callClaude>>);
 
     await expect(
       regenerateSection({
@@ -133,11 +136,11 @@ describe('regenerateSection (proxy contract)', () => {
 
   it('uses a small max_tokens (6000) — section regen budget is bounded vs full-emit', async () => {
     const spy = vi
-      .spyOn(client, 'callAnthropic')
+      .spyOn(client, 'callClaude')
       .mockResolvedValue({
         content: [{ type: 'text', text: '{"sectionBody": "# מהלך אשפוז\\nתוכן."}' }],
         usage: { input_tokens: 50, output_tokens: 20 },
-      } as Awaited<ReturnType<typeof client.callAnthropic>>);
+      } as Awaited<ReturnType<typeof client.callClaude>>);
 
     await regenerateSection({
       noteType: 'admission',

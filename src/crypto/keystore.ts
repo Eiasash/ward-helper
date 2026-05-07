@@ -1,5 +1,3 @@
-import { getSettings, setSettings } from '@/storage/indexed';
-import { xorEncrypt, xorDecrypt, generateDeviceSecret } from './xor';
 import { encryptForCloud, decryptFromCloud, pushBlob } from '@/storage/cloud';
 
 /**
@@ -18,60 +16,47 @@ interface ApiKeyCloudBlob {
 export const API_KEY_BLOB_ID = '__user_default__';
 
 /**
- * API key at-rest protection.
+ * localStorage is the on-device home for the personal Anthropic API key in
+ * the 3-state design (matches shlav-a-mega's `samega_apikey`). The src/ai/
+ * dispatch chokepoint reads from this same key, gated on a logged-in user.
  *
- * Threat model — what this protects against:
- *   - Casual IDB inspection showing a plaintext sk-ant-... key in devtools.
- *   - Backups that sweep IDB contents (the key appears as ciphertext bytes).
- *   - Accidental leak via a screenshot of Supabase Console or a bug report.
+ * Why localStorage and not IndexedDB+XOR (the v1.x posture):
+ *   - Single source of truth: dispatch, AccountSection, useApiKey hook, and
+ *     manual cloud-push all read/write the same string. The XOR layer was
+ *     defense-in-depth that turned out to be friction-in-depth — a devtools
+ *     attacker recovers the key in either case (deviceSecret colocated).
+ *   - Synchronous read: dispatch.callClaude doesn't have to await an IDB
+ *     transaction on every API call. Cleaner abort + retry logic.
+ *   - Matches the established samega pattern across the four PWAs.
  *
- * What this does NOT protect against:
- *   - A determined attacker with open devtools on the same browser profile.
- *     The deviceSecret lives in the same IDB record as the ciphertext, so
- *     ten seconds of inspection is enough to recover the key.
- *   - Malicious apps that exploit Android accessibility to read the browser
- *     profile. Same reason — the secret is colocated.
- *   - Cross-device theft (the key is deterministic given both values).
- *
- * This is "obfuscation at rest" not "encryption". The XOR scheme is
- * deliberately simple to keep the bundle small; upgrading to real WebCrypto
- * AES-GCM would require the user to unlock the app with a passphrase on
- * every launch, which isn't the tradeoff this PWA wants.
- *
- * If you need real encryption here, see `deriveAesKey` in src/crypto/pbkdf2
- * and the passphrase-gated cloud backup path in src/notes/save.ts — that
- * path genuinely encrypts because the key never touches storage.
+ * Threat model unchanged: same-origin storage, never leaves the device
+ * (except encrypted as part of the cloud-backup blob below).
  */
+export const LOCAL_API_KEY_LS = 'wardhelper_apikey';
+
 export async function saveApiKey(apiKey: string): Promise<void> {
-  const existing = await getSettings();
-  const deviceSecret = existing?.deviceSecret ?? generateDeviceSecret();
-  const apiKeyXor = xorEncrypt(apiKey, deviceSecret);
-  await setSettings({
-    apiKeyXor,
-    deviceSecret,
-    lastPassphraseAuthAt: existing?.lastPassphraseAuthAt ?? null,
-    prefs: existing?.prefs ?? {},
-  });
+  if (typeof localStorage === 'undefined') return;
+  const v = apiKey.trim();
+  if (!v) {
+    localStorage.removeItem(LOCAL_API_KEY_LS);
+    return;
+  }
+  localStorage.setItem(LOCAL_API_KEY_LS, v);
 }
 
 export async function loadApiKey(): Promise<string | null> {
-  const s = await getSettings();
-  if (!s || !s.apiKeyXor || s.apiKeyXor.length === 0) return null;
-  return xorDecrypt(s.apiKeyXor, s.deviceSecret);
+  if (typeof localStorage === 'undefined') return null;
+  const raw = localStorage.getItem(LOCAL_API_KEY_LS);
+  return raw && raw.trim() ? raw.trim() : null;
 }
 
 export async function hasApiKey(): Promise<boolean> {
-  const s = await getSettings();
-  return !!(s && s.apiKeyXor && s.apiKeyXor.length > 0);
+  return (await loadApiKey()) !== null;
 }
 
 export async function clearApiKey(): Promise<void> {
-  const s = await getSettings();
-  if (!s) return;
-  await setSettings({
-    ...s,
-    apiKeyXor: new Uint8Array(0),
-  });
+  if (typeof localStorage === 'undefined') return;
+  localStorage.removeItem(LOCAL_API_KEY_LS);
 }
 
 /**
@@ -79,7 +64,7 @@ export async function clearApiKey(): Promise<void> {
  * passes the already-derived AES key + salt so we don't re-derive PBKDF2
  * just for the api-key blob — same reason patient + note share derivation.
  *
- * No-op when the user hasn't set a local API key. Idempotent: rePush with
+ * No-op when the user hasn't set a local API key. Idempotent: re-push with
  * same content produces a fresh IV but upserts the same row (blob_id is
  * pinned to API_KEY_BLOB_ID so onConflict deduplicates).
  *
