@@ -16,6 +16,7 @@ import {
   pullByUsername,
   pullAllBlobs,
   base64ToBytes,
+  getSupabase,
   type CloudBlobRow,
 } from '@/storage/cloud';
 import { deriveAesKey } from '@/crypto/pbkdf2';
@@ -52,6 +53,34 @@ export async function pushCanary(
   const payload: CanaryPayload = { ...CANARY_PLAINTEXT, createdAt: Date.now() };
   const sealed = await encryptForCloud(payload, key, salt);
   await pushBlob('canary', CANARY_BLOB_ID, sealed, username);
+}
+
+/**
+ * v1.39.17: dedupe stale canary rows that accumulated under prior anon-auth
+ * user_ids for the SAME username. Call AFTER a successful pushCanary —
+ * the server-side RPC's defensive check requires the caller to already
+ * own a canary under the username.
+ *
+ * NOT called from pushCanary itself: importing pushBreadcrumb here would
+ * create a circular dependency through MobileDebugPanel→save.ts→cloud.ts
+ * →canary.ts that breaks vi.mock resolution in the auth test suite. The
+ * caller (armCanaryOnce in save.ts) does the breadcrumb wrapping where
+ * the import cycle is already established and harmless.
+ *
+ * Returns the number of rows deleted. Throws on RPC error so the caller
+ * can decide whether to swallow.
+ */
+export async function dedupeStaleCanaries(username: string | null): Promise<number> {
+  if (!username) return 0;
+  const trimmed = username.trim();
+  if (!trimmed) return 0;
+  const sb = await getSupabase();
+  const { data, error } = await sb.rpc(
+    'ward_helper_dedupe_stale_canaries',
+    { p_username: trimmed },
+  );
+  if (error) throw error;
+  return typeof data === 'number' ? data : 0;
 }
 
 /**
