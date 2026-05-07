@@ -49,7 +49,7 @@ import { resetDbForTests } from '@/storage/indexed';
 describe('importViaPaste — pipe format', () => {
   it('parses 5 rows with all 7 fields mapped', () => {
     const text = `
-123456789 | רוזנברג מרים | 87 | 12 | A | 5 | Hip fracture s/p Hemiarthroplasty
+123456782 | רוזנברג מרים | 87 | 12 | A | 5 | Hip fracture s/p Hemiarthroplasty
 234567890 | לוי דוד | 79 | 12 | B | 3 | CHF exacerbation
 345678901 | כהן אברהם | 91 | 14 | A | 12 | Post-CVA rehab
 456789012 | פרץ רחל | 68 | 14 | B | 7 | Decompensated cirrhosis
@@ -60,7 +60,7 @@ describe('importViaPaste — pipe format', () => {
     expect(rows).toHaveLength(5);
 
     expect(rows[0]).toMatchObject({
-      tz: '123456789',
+      tz: '123456782',
       name: 'רוזנברג מרים',
       age: 87,
       room: '12',
@@ -76,7 +76,7 @@ describe('importViaPaste — pipe format', () => {
   it('drops the header row when first cell is "id"/"name"/"שם"', () => {
     const text = `
 id | name | age | room | bed | los | dx
-123456789 | רוזנברג מרים | 87 | 12 | A | 5 | Hip fracture
+123456782 | רוזנברג מרים | 87 | 12 | A | 5 | Hip fracture
     `.trim();
     const rows = importViaPaste(text);
     expect(rows).toHaveLength(1);
@@ -95,7 +95,7 @@ describe('importViaPaste — AZMA TSV grid format', () => {
     // tab-separated, 7 cols
     const lines = [
       'חדר\tמיטה\tשם\tת.ז.\tגיל\tימי אשפוז\tאבחנה',
-      '12\tA\tרוזנברג מרים\t123456789\t87\t5\tHip fracture',
+      '12\tA\tרוזנברג מרים\t123456782\t87\t5\tHip fracture',
       '12\tB\tלוי דוד\t234567890\t79\t3\tCHF',
     ];
     const text = lines.join('\n');
@@ -105,7 +105,7 @@ describe('importViaPaste — AZMA TSV grid format', () => {
       room: '12',
       bed: 'A',
       name: 'רוזנברג מרים',
-      tz: '123456789',
+      tz: '123456782',
       age: 87,
       losDays: 5,
       dxShort: 'Hip fracture',
@@ -162,13 +162,13 @@ describe('importViaPaste — garbage input', () => {
 describe('importViaPaste — mixed Hebrew/English numbers', () => {
   it('handles Arabic-Indic digits in age cell', () => {
     // ٨٧ = 87 in Arabic-Indic
-    const text = '123456789 | רוזנברג מרים | ٨٧ | 12 | A | 5 | Dx';
+    const text = '123456782 | רוזנברג מרים | ٨٧ | 12 | A | 5 | Dx';
     const rows = importViaPaste(text);
     expect(rows[0]?.age).toBe(87);
   });
 
   it('handles Latin digits as-is', () => {
-    const text = '123456789 | לוי דוד | 79 | 14 | B | 3 | Dx';
+    const text = '123456782 | לוי דוד | 79 | 14 | B | 3 | Dx';
     const rows = importViaPaste(text);
     expect(rows[0]?.age).toBe(79);
   });
@@ -178,7 +178,7 @@ describe('importViaManual', () => {
   it('passes through valid rows with id + sourceMode + importedAt added', () => {
     const rows: ManualRow[] = [
       {
-        tz: '123456789',
+        tz: '123456782',
         name: 'רוזנברג מרים',
         age: 87,
         sex: 'F',
@@ -191,7 +191,7 @@ describe('importViaManual', () => {
     const out = importViaManual(rows);
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({
-      tz: '123456789',
+      tz: '123456782',
       name: 'רוזנברג מרים',
       age: 87,
       sex: 'F',
@@ -244,7 +244,7 @@ describe('importViaOcr', () => {
           text: JSON.stringify({
             patients: [
               {
-                tz: '123456789',
+                tz: '123456782',
                 name: 'רוזנברג מרים',
                 age: 87,
                 sex: 'F',
@@ -273,7 +273,7 @@ describe('importViaOcr', () => {
     const rows = await importViaOcr(fakeFile());
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({
-      tz: '123456789',
+      tz: '123456782',
       name: 'רוזנברג מרים',
       age: 87,
       sex: 'F',
@@ -294,7 +294,7 @@ describe('importViaOcr', () => {
           type: 'text',
           text: JSON.stringify({
             patients: [
-              { tz: '123456789', name: 'רוזנברג מרים', age: 87 },
+              { tz: '123456782', name: 'רוזנברג מרים', age: 87 },
             ],
           }),
         },
@@ -308,9 +308,9 @@ describe('importViaOcr', () => {
     expect(row.id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
     );
-    expect(row.tz).toBe('123456789');
+    expect(row.tz).toBe('123456782');
     // And explicitly: id is NOT the clinical identifier.
-    expect(row.id).not.toBe('123456789');
+    expect(row.id).not.toBe('123456782');
   });
 
   it('strips a leading ```json fence the model occasionally adds', async () => {
@@ -364,7 +364,7 @@ describe('importViaOcr', () => {
           type: 'text',
           text: JSON.stringify({
             patients: [
-              { tz: '123456789', name: '', age: 87 },
+              { tz: '123456782', name: '', age: 87 },
               { tz: null, name: 'מטופל', age: 80 },
             ],
           }),
@@ -385,7 +385,7 @@ describe('importViaOcr', () => {
         {
           type: 'text',
           text: JSON.stringify({
-            patients: [{ tz: '123456789', name: 'מטופל', age: 80 }],
+            patients: [{ tz: '123456782', name: 'מטופל', age: 80 }],
           }),
         },
       ],

@@ -29,6 +29,7 @@ import { type AnthropicContentBlock } from '@/agent/client';
 import { stripMarkdownFence } from '@/agent/loop';
 import { compressImage, estimateDataUrlBytes } from '@/camera/compress';
 import { pushBreadcrumb } from '@/ui/components/MobileDebugPanel';
+import { normalizeIsraeliTz, isValidIsraeliTzLuhn } from './israeliTz';
 import type { RosterPatient } from '@/storage/roster';
 
 // ─── Types ─────────────────────────────────────────────────────────
@@ -85,8 +86,9 @@ interface OcrPatientRaw {
   dxShort?: string | null;
 }
 
-/** Strict 9-digit ת.ז. check — matches the safety guard in orchestrate.ts. */
-const ISRAELI_TZ_RE = /^\d{9}$/;
+// ת.ז. validation moved to ./israeliTz.ts (length + Luhn). The legacy
+// length-only `normalizeTz` accepted Luhn-invalid 9-digit garbage like
+// "666544000"; the new shared `normalizeIsraeliTz` rejects it.
 
 /** Stage callback for the import pipeline. UI consumers render progress. */
 export type OcrStage =
@@ -452,7 +454,7 @@ export function importViaManual(rows: ManualRow[]): RosterPatient[] {
     .filter((r) => r.name && r.name.trim().length > 0)
     .map((r) => ({
       id: crypto.randomUUID(),
-      tz: r.tz?.trim() && ISRAELI_TZ_RE.test(r.tz.trim()) ? r.tz.trim() : null,
+      tz: r.tz?.trim() && isValidIsraeliTzLuhn(r.tz.trim()) ? r.tz.trim() : null,
       name: r.name.trim(),
       age: typeof r.age === 'number' && r.age > 0 ? r.age : null,
       sex: r.sex ?? null,
@@ -467,11 +469,10 @@ export function importViaManual(rows: ManualRow[]): RosterPatient[] {
 
 // ─── Helpers ───────────────────────────────────────────────────────
 
+// Local alias preserved for call-site readability; delegates to shared
+// validator that includes Luhn check (v1.39.3).
 function normalizeTz(raw: unknown): string | null {
-  if (typeof raw !== 'string') return null;
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  return ISRAELI_TZ_RE.test(trimmed) ? trimmed : null;
+  return normalizeIsraeliTz(raw);
 }
 
 function parseIntOrNull(s: string | undefined): number | null {
