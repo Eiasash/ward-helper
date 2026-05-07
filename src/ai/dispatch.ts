@@ -89,6 +89,48 @@ function isTransient(e: unknown): boolean {
   return /\bHTTP 5\d\d\b/.test(m) || /Upstream timeout/i.test(m) || /network|aborted|fetch failed|load failed/i.test(m);
 }
 
+/**
+ * Translate a non-OK Anthropic / proxy response into a user-friendly Hebrew
+ * Error. The raw JSON shape Anthropic returns
+ *   {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"},"request_id":"..."}
+ * was leaking straight into the UI (v1.39.5 user report: 529 spam shown as
+ * raw JSON in /census). This translator runs at the chokepoint so EVERY
+ * caller (Census, Review, Capture, Consult, RosterImport, Regenerate) gets
+ * the same clean message without duplicating logic per screen.
+ *
+ * Two design choices worth pinning:
+ * 1. The HTTP code stays in parens at the end of the user message. That
+ *    keeps `isTransient()`'s regex matching for the retry path AND gives
+ *    the doctor a code they can quote if reporting persistent failures.
+ * 2. Only the documented transient/capacity cases get translated. 4xx codes
+ *    other than 401/403/429 (which we already special-case) keep the raw
+ *    `HTTP <code>: <text>` shape — those indicate request-shape bugs the
+ *    developer needs to see, not user-facing conditions.
+ */
+export function translateAnthropicError(prefix: 'anthropic' | 'proxy', status: number, text: string): Error {
+  let inner = '';
+  try {
+    const j = JSON.parse(text) as { error?: { type?: string; message?: string } };
+    inner = j.error?.type ?? '';
+  } catch {
+    /* response wasn't JSON — fall through */
+  }
+
+  if (status === 529 || inner === 'overloaded_error') {
+    return new Error(`השרת של Anthropic עמוס כרגע. נסה שוב בעוד דקה. (HTTP ${status})`);
+  }
+  if (status === 503) {
+    return new Error(`שירות Anthropic לא זמין כרגע. נסה שוב בעוד דקה. (HTTP ${status})`);
+  }
+  if (status === 504 || inner === 'request_timeout') {
+    return new Error(`פסק זמן מהשרת. נסה שוב — אם נמשך, צמצם את מספר התמונות. (HTTP ${status})`);
+  }
+  if (status === 429) {
+    return new Error(`חריגה ממכסת קריאות. נסה שוב בעוד דקה. (HTTP ${status})`);
+  }
+  return new Error(`${prefix} HTTP ${status}${text ? ': ' + text.slice(0, 200) : ''}`);
+}
+
 function linkExternalAbort(external: AbortSignal | undefined, internal: AbortController): () => void {
   if (!external) return () => {};
   if (external.aborted) {
@@ -131,7 +173,7 @@ async function callDirectOnce(
           `מפתח Anthropic האישי שלך נדחה (HTTP ${res.status}). בדוק/החלף את המפתח בהגדרות. לא בוצעה החזרה אוטומטית ל-proxy — כדי שלא תפספס שהמפתח שבור.`,
         );
       }
-      throw new Error(`anthropic HTTP ${res.status}${text ? ': ' + text.slice(0, 300) : ''}`);
+      throw translateAnthropicError('anthropic', res.status, text);
     }
     return (await res.json()) as AnthropicResponse;
   } finally {
@@ -162,7 +204,7 @@ async function callProxyOnce(
     });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(`proxy HTTP ${res.status}${text ? ': ' + text.slice(0, 200) : ''}`);
+      throw translateAnthropicError('proxy', res.status, text);
     }
     return (await res.json()) as AnthropicResponse;
   } catch (err) {
