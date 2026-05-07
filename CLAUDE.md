@@ -122,10 +122,14 @@ The auth scheme is username-only — there's no email-based self-service reset y
 4. Tell the user to log in with the new password, then change it via Settings → Account.
 
 **Failure modes & fixes:**
-- `0 rows updated` → username typo (usernames are stored lowercase per `USERNAME_RE` in `src/auth/auth.ts`).
-- `function crypt does not exist` → enable the `pgcrypto` extension once: `CREATE EXTENSION IF NOT EXISTS pgcrypto;` (should already be enabled per project setup).
-- User still can't log in → check `app_users.locked_out_until`; clear it: `UPDATE app_users SET failed_attempts = 0, locked_out_until = NULL WHERE username = 'username';`
+- `0 rows updated` → username typo (usernames are stored lowercase per `USERNAME_RE` in `src/auth/auth.ts`). Run `SELECT username FROM app_users WHERE username ILIKE 'eias%'` to find the actual stored value.
+- `function crypt does not exist` → use the schema-qualified form: `extensions.crypt(...)` and `extensions.gen_salt(...)`. pgcrypto lives in the `extensions` schema, not `public`. (See `feedback_supabase_function_search_path_extensions.md` in memory.)
+- `column "X" does not exist` → the schema has no lockout columns (`failed_attempts`, `locked_out_until` were planned but never shipped). The minimal UPDATE is just `password_hash`. Confirmed live 2026-05-07 — `42703` error rejected the older runbook variant; trimmed clause works.
 
-### Self-service password reset — Tier 2 (DEFERRED, design only)
+### Self-service password reset — Tier 2 (SHIPPED 2026-05-02, pending RESEND_API_KEY)
 
-Multi-step project, not yet implemented. When prioritized, the staged plan is: schema migration (`email TEXT NULL UNIQUE` column on `app_users`) → reset RPCs (`auth_request_password_reset`, `auth_reset_password_with_token`) → Resend.com email integration via a new Netlify function → "שכחת סיסמה?" UI flow with token-bearing reset route. ~half-day of focused work spread across 5 PRs. Until shipped, **all password resets go through the Tier 1 runbook above**.
+Backend live (schema + 3 RPCs + Edge Function `send-password-reset`). Client UI shipped in PR #41 — "שכחת סיסמה?" link on login form + `/reset-password` route handles token redemption.
+
+**One-time config still required before working end-to-end:** set `RESEND_API_KEY` secret on Supabase Edge Functions (`supabase secrets set RESEND_API_KEY=re_...`). Until then, requests return HTTP 503 `email_not_configured` and the client shows a clear message — fall back to the Tier 1 runbook above.
+
+Full deployment notes (RPC list, anti-enumeration design, token lifecycle, cross-sibling porting plan) live in memory file `project_ward_helper_password_recovery.md`.
