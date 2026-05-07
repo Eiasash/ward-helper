@@ -166,10 +166,13 @@ describe('callAnthropic — direct path (API key present)', () => {
     expect(body.messages).toEqual([{ role: 'user', content: 'hi' }]);
   });
 
-  it('surfaces direct-API errors with "anthropic HTTP" prefix', async () => {
+  it('surfaces direct-API rate-limit error in Hebrew with HTTP code preserved', async () => {
+    // v1.39.6: error is translated to friendly Hebrew at the chokepoint, but
+    // (HTTP 429) is preserved both for the doctor's diagnostic copy-paste
+    // and for isTransient() to keep matching on the retry path.
     vi.stubGlobal('fetch', mockHttp(429, 'rate limit'));
     await expect(callAnthropic({ messages: [{ role: 'user', content: 'x' }], max_tokens: 1 })).rejects.toThrow(
-      /anthropic HTTP 429.*rate limit/,
+      /חריגה ממכסת.*HTTP 429/,
     );
   });
 });
@@ -178,8 +181,10 @@ describe('callAnthropic — transient retry policy (proxy path)', () => {
   it('does not retry by default (retryOnTransient unset)', async () => {
     const fetchSpy = mockHttp(504, 'Upstream timeout');
     vi.stubGlobal('fetch', fetchSpy);
+    // v1.39.6: 504 is translated to friendly Hebrew; HTTP code retained for
+    // both diagnostic copy and isTransient() detection.
     await expect(callAnthropic({ messages: [{ role: 'user', content: 'x' }], max_tokens: 1 })).rejects.toThrow(
-      /proxy HTTP 504/,
+      /פסק זמן.*HTTP 504/,
     );
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
