@@ -39,11 +39,18 @@ vi.mock('@/storage/cloud', async (importOriginal) => {
 // the cloud↔canary cycle means canary.ts's internal pushBlob binding
 // stays unmocked even when @/storage/cloud is mocked, so we'd never
 // see the backfill push otherwise.
+//
+// v1.39.8: restoreFromCloud now calls verifyCanaryFromRows (in-memory)
+// instead of verifyCanary (which used to pull internally). The same
+// `verifyCanaryMock` covers both — it's the post-pull verification step
+// that the test cares about. verifyCanary itself is still exported
+// (debug panel uses it) but restoreFromCloud no longer routes through it.
 vi.mock('@/storage/canary', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/storage/canary')>();
   return {
     ...actual,
     verifyCanary: verifyCanaryMock,
+    verifyCanaryFromRows: verifyCanaryMock,
     pushCanary: pushCanaryMock,
   };
 });
@@ -308,8 +315,13 @@ describe('restoreFromCloud — Phase B fresh-device cache-clear survival', () =>
   });
 
   it('Case 2 — fresh device + wrong password: wrongPassphrase fast-fail', async () => {
+    // v1.39.8: pullByUsername now happens BEFORE the canary verify (single
+    // round-trip), so on wrong-pass we still see exactly one pull. The
+    // savings is on the decrypt loop (skipped via wrongPassphrase=true),
+    // not the network round-trip. Provide an empty row set so the verify
+    // call has something to inspect.
+    pullByUsernameMock.mockResolvedValue([]);
     verifyCanaryMock.mockResolvedValue('wrong-passphrase');
-    // No bulk-pull rows needed — restoreFromCloud short-circuits.
 
     const result = await restoreFromCloud(WRONG_PASS);
 
@@ -318,7 +330,7 @@ describe('restoreFromCloud — Phase B fresh-device cache-clear survival', () =>
     expect(result.restoredPatients).toBe(0);
     expect(result.restoredNotes).toBe(0);
     expect(pushCanaryMock).not.toHaveBeenCalled();
-    expect(pullByUsernameMock).not.toHaveBeenCalled();
+    expect(pullByUsernameMock).toHaveBeenCalledTimes(1);
   });
 
   it('Case 3 — pre-existing data, no canary, correct password: restores AND backfills canary', async () => {

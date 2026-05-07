@@ -39,8 +39,11 @@ vi.mock('@/storage/cloud', () => ({
   encryptForCloud: vi.fn(),
   // Canary fail-fast probe — the routing tests don't simulate a populated
   // canary, so report 'absent' to let restoreFromCloud proceed to the
-  // routing logic under test.
+  // routing logic under test. v1.39.8: restoreFromCloud now calls
+  // verifyCanaryFromRows (in-memory) instead of verifyCanary (which used
+  // to pull internally) to avoid the duplicate-pull bug.
   verifyCanary: vi.fn(async () => 'absent' as const),
+  verifyCanaryFromRows: vi.fn(async () => 'absent' as const),
 }));
 
 vi.mock('@/auth/auth', () => ({
