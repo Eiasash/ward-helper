@@ -22,6 +22,7 @@ import { markSyncedNow, notifyNotesChanged } from '@/ui/hooks/glanceableEvents';
 // init-order sensitive and the binding may be in TDZ — relocate it.
 import { getCurrentUser, getLastLoginPasswordOrNull } from '@/auth/auth';
 import { pushBreadcrumb } from '@/ui/components/MobileDebugPanel';
+import { checkCanaryProtection } from '@/storage/canaryProtection';
 import type { ParseFields } from '@/agent/tools';
 import type { SafetyFlags } from '@/safety/types';
 
@@ -78,8 +79,23 @@ async function armCanaryOnce(
   salt: Uint8Array<ArrayBuffer>,
   username: string | null,
   trigger: 'save' | 'login-restore',
+  passphrase: string,
 ): Promise<void> {
   if (canaryArmedThisSession) return;
+  // v1.39.9: orphan guard — if cloud has existing data encrypted with a
+  // different passphrase, refuse to overwrite the canary. Without this
+  // guard the very first save of a session silently makes the prior
+  // data unrecoverable. Cost: one extra pull on the first save, cached
+  // for the rest of the session.
+  const protection = await checkCanaryProtection(passphrase, username);
+  if (protection === 'orphan') {
+    lastCanaryPushOutcome = 'fail';
+    pushBreadcrumb('canary.push.skipped', {
+      reason: 'orphan-protected',
+      trigger,
+    });
+    return;
+  }
   const t0 = Date.now();
   pushBreadcrumb('canary.push.start', { username, trigger });
   try {
@@ -206,7 +222,7 @@ export async function saveBoth(
     // organic-flow users saw bulk-skip rather than the helpful
     // wrong-password warning on a fresh-device restore. armCanaryOnce
     // never throws; failure is recorded in the breadcrumb stream only.
-    await armCanaryOnce(key, salt, username, 'save');
+    await armCanaryOnce(key, salt, username, 'save', pass);
     // Header-strip "last sync" relies on this — marker for the glanceable
     // header so the rounding doctor knows the cloud backup is current.
     markSyncedNow();
@@ -413,6 +429,7 @@ export async function restoreFromCloud(passphrase: string): Promise<RestoreResul
       backfillSalt,
       user?.username ?? null,
       'login-restore',
+      passphrase,
     );
   }
 
