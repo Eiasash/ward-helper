@@ -60,7 +60,8 @@ export interface ManualRow {
 // UUID. Fixed by renaming `id` → `tz` (the right clinical name) and
 // switching `los_days`/`dx_short` to camelCase to remove the
 // snake↔camel translation step.
-const OCR_SYSTEM_PROMPT = `אתה מחלץ רשימת חולים מצילום מסך AZMA. החזר JSON תקני בלבד עם
+const OCR_SYSTEM_PROMPT = `אתה מחלץ רשימת חולים מצילום של מסך AZMA או מדף מודפס של
+רשימת המחלקה (handover sheet — דף נייר). החזר JSON תקני בלבד עם
 מערך patients. כל חולה:
 - tz (תעודת זהות, מספר 9 ספרות בלבד או null אם לא מוצג —
   זה השדה הקליני המזהה, לא להמציא ולא לחתוך)
