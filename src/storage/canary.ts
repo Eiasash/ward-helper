@@ -55,20 +55,17 @@ export async function pushCanary(
 }
 
 /**
- * Probe the cloud for a canary row and try to decrypt it with the given
- * passphrase. Result: 'ok' / 'wrong-passphrase' / 'absent'.
- *
- * Routes through pullByUsername when an app_users session is active, else
- * pullAllBlobs (legacy per-anon path). Either way the canary row carries
- * its own salt, so we re-derive the AES key per-call.
+ * Verify the canary against an already-pulled rows array. Used by
+ * restoreFromCloud to check passphrase WITHOUT re-pulling, since the
+ * restore flow already has the rows in hand. Pre-v1.39.8 the flow was
+ * (pull → verifyCanary which pulls again → decrypt loop on third use of
+ * rows), producing two identical ward_helper_pull_by_username RPCs per
+ * login. This split lets restoreFromCloud pull once.
  */
-export async function verifyCanary(
+export async function verifyCanaryFromRows(
   passphrase: string,
-  username: string | null,
+  rows: CloudBlobRow[],
 ): Promise<'ok' | 'wrong-passphrase' | 'absent'> {
-  const rows: CloudBlobRow[] = username && username.trim()
-    ? await pullByUsername(username)
-    : await pullAllBlobs();
   const canary = rows.find(
     (r) => r.blob_type === 'canary' && r.blob_id === CANARY_BLOB_ID,
   );
@@ -86,4 +83,25 @@ export async function verifyCanary(
   } catch {
     return 'wrong-passphrase';
   }
+}
+
+/**
+ * Probe the cloud for a canary row and try to decrypt it with the given
+ * passphrase. Result: 'ok' / 'wrong-passphrase' / 'absent'.
+ *
+ * Routes through pullByUsername when an app_users session is active, else
+ * pullAllBlobs (legacy per-anon path). Either way the canary row carries
+ * its own salt, so we re-derive the AES key per-call.
+ *
+ * Used by MobileDebugPanel for standalone passphrase probing. The restore
+ * flow uses verifyCanaryFromRows directly to avoid a duplicate pull.
+ */
+export async function verifyCanary(
+  passphrase: string,
+  username: string | null,
+): Promise<'ok' | 'wrong-passphrase' | 'absent'> {
+  const rows: CloudBlobRow[] = username && username.trim()
+    ? await pullByUsername(username)
+    : await pullAllBlobs();
+  return verifyCanaryFromRows(passphrase, rows);
 }

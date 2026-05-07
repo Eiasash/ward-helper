@@ -230,7 +230,7 @@ import {
   pullByUsername,
   decryptFromCloud,
   base64ToBytes,
-  verifyCanary,
+  verifyCanaryFromRows,
   type CloudBlobRow,
 } from '@/storage/cloud';
 
@@ -306,13 +306,21 @@ export async function restoreFromCloud(passphrase: string): Promise<RestoreResul
     };
   }
 
-  // Canary fail-fast: probe a single tiny blob with the passphrase before
-  // pulling N rows. Wrong passphrase exits in one decrypt rather than N.
+  // v1.39.8: pull ONCE here, then verify the canary against the in-memory
+  // rows. Pre-v1.39.8 this called verifyCanary() (which did its own pull)
+  // and then pulled again, producing two identical
+  // ward_helper_pull_by_username RPCs per restore (~4.5s click handler).
+  // The canary fast-fail guarantee is preserved — wrong-passphrase still
+  // exits before the N-row decrypt loop, just one network call earlier.
+  const rows: CloudBlobRow[] = user
+    ? await pullByUsername(user.username)
+    : await pullAllBlobs();
   const verifyT0 = Date.now();
-  const canaryStatus = await verifyCanary(passphrase, user?.username ?? null);
+  const canaryStatus = await verifyCanaryFromRows(passphrase, rows);
   pushBreadcrumb('canary.verify', {
     result: canaryStatus,
     ms: Date.now() - verifyT0,
+    rowCount: rows.length,
   });
   if (canaryStatus === 'wrong-passphrase') {
     return {
@@ -325,9 +333,6 @@ export async function restoreFromCloud(passphrase: string): Promise<RestoreResul
       source: user ? 'username' : 'anon',
     };
   }
-  const rows: CloudBlobRow[] = user
-    ? await pullByUsername(user.username)
-    : await pullAllBlobs();
   const result: RestoreResult = {
     scanned: rows.length,
     restoredPatients: 0,
