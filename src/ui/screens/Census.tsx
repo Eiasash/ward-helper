@@ -5,6 +5,8 @@ import { dataUrlToBlob } from '@/camera/session';
 import { runCensusExtractTurn, type CensusRow, type CensusResult } from '@/agent/loop';
 import { loadSkills } from '@/skills/loader';
 import { upsertCensus, type CensusUpsertResult } from '@/storage/census';
+import { getPatientByTz } from '@/storage/indexed';
+import { pushBreadcrumb } from '@/ui/components/MobileDebugPanel';
 
 type Status = 'idle' | 'parsing' | 'editing' | 'saving' | 'done' | 'error';
 
@@ -91,7 +93,35 @@ export function Census() {
         );
         return;
       }
-      setRows(result.rows);
+      // v1.39.15: TZ→roster augmentation. The v1.39.7 NAME DISCIPLINE prompt
+      // makes the model conservative on paper handover sheets — when names
+      // are visually ambiguous (small font, JPEG compression), the model
+      // emits empty strings rather than risk a header bleed. Cross-reference
+      // each extracted TZ against IndexedDB. If we've seen this patient
+      // before, fill in the name from the existing record. Validator-before-
+      // prompt: deterministic, free, self-improving (every successful name
+      // extraction in the past helps future ones). Per memory
+      // feedback_validator_before_prompt.md.
+      let augmentedFromRoster = 0;
+      const augmented: CensusRow[] = await Promise.all(
+        result.rows.map(async (row) => {
+          if (row.name?.trim()) return row;
+          if (!row.teudatZehut) return row;
+          const known = await getPatientByTz(row.teudatZehut);
+          if (known?.name) {
+            augmentedFromRoster++;
+            return { ...row, name: known.name };
+          }
+          return row;
+        }),
+      );
+      if (augmentedFromRoster > 0) {
+        pushBreadcrumb('census.augmentedFromRoster', {
+          augmented: augmentedFromRoster,
+          totalRows: augmented.length,
+        });
+      }
+      setRows(augmented);
       setStatus('editing');
     } catch (e) {
       setParseErr((e as Error).message ?? 'parse failed');
