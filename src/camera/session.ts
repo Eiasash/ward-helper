@@ -209,7 +209,16 @@ export function getPastedText(): string | null {
   return t ? t.content : null;
 }
 
-function dataUrlToBlob(dataUrl: string): Blob {
+/**
+ * Convert a `data:image/...;base64,...` URL to a Blob synchronously,
+ * without going through `fetch()`. The fetch path technically counts
+ * as a "connection" under CSP and is blocked when `connect-src`
+ * doesn't include `data:` — which it shouldn't, since allowing
+ * `data:` widens connect-src for no real network benefit. Census.tsx
+ * was hitting that exact failure (live since v1.20.0) before being
+ * routed through this utility.
+ */
+export function dataUrlToBlob(dataUrl: string): Blob {
   const [meta, data = ''] = dataUrl.split(',');
   const mime = /data:([^;]+);/.exec(meta ?? '')?.[1] ?? 'image/png';
   const bin = atob(data);

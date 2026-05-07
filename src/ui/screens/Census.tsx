@@ -1,6 +1,7 @@
 import { useEffect, useState, type ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { compressImage } from '@/camera/compress';
+import { dataUrlToBlob } from '@/camera/session';
 import { runCensusExtractTurn, type CensusRow, type CensusResult } from '@/agent/loop';
 import { loadSkills } from '@/skills/loader';
 import { upsertCensus, type CensusUpsertResult } from '@/storage/census';
@@ -53,7 +54,9 @@ export function Census() {
         reader.readAsDataURL(f);
       });
       const compressed = await compressImage(dataUrl, 'census');
-      const blob = await (await fetch(compressed)).blob();
+      // fetch(dataUrl) is blocked by CSP connect-src; use the synchronous
+      // base64 → Blob path instead. See dataUrlToBlob's docblock.
+      const blob = dataUrlToBlob(compressed);
       const preview = URL.createObjectURL(blob);
       next.push({ id: crypto.randomUUID(), preview, dataUrl: compressed });
     }
