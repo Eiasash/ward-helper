@@ -4,6 +4,7 @@ import type { ParseResult, ParseFields } from './tools';
 import { addTurn } from './costs';
 import { recordExtract, recordEmit, recordError } from './debugLog';
 import { pushBreadcrumb } from '@/ui/components/MobileDebugPanel';
+import { isValidIsraeliTzLuhn } from '@/notes/israeliTz';
 import type { NoteType } from '@/storage/indexed';
 import type { CaptureBlock } from '@/camera/session';
 
@@ -364,10 +365,18 @@ export async function runExtractTurn(
     ((f.allergies?.length ?? 0) > 0 ? 1 : 0) +
     (f.vitals && Object.keys(f.vitals).length > 0 ? 1 : 0);
   if (clinicalCount === 0) {
+    // Capture tz shape (length + Luhn validity) but NOT the raw value —
+    // breadcrumbs are device-local but we still don't write 9-digit
+    // identifiers to localStorage. Length lets us tell "model returned
+    // 6 digits" (AZMA showed it short, OCR didn't pad) from "model
+    // returned 9 zero-padded digits" (the 666544000 failure mode).
+    const tzRaw = f.teudatZehut?.trim() ?? '';
     pushBreadcrumb('extract.lowClinical', {
       imageCount,
       hasName: Boolean(f.name?.trim()),
-      hasTz: Boolean(f.teudatZehut?.trim()),
+      hasTz: Boolean(tzRaw),
+      tzLen: tzRaw.length,
+      tzLuhnValid: tzRaw ? isValidIsraeliTzLuhn(tzRaw) : false,
       hasAge: typeof f.age === 'number',
       in_tokens: res.usage.input_tokens,
       out_tokens: res.usage.output_tokens,

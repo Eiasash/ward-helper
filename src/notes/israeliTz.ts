@@ -29,6 +29,15 @@
 const NINE_DIGITS_RE = /^\d{9}$/;
 
 /**
+ * A Luhn-valid 9-digit ת.ז. for use in tests. Worked example documented
+ * in this file's header (sum=40). Exported as a named constant so test
+ * authors don't reach for "obvious sequential" strings like 123456789
+ * — sum=47, Luhn-fail — and lose 5 minutes wondering why a passing
+ * fixture suddenly nulls out post-v1.39.3.
+ */
+export const VALID_TEST_TZ = '123456782';
+
+/**
  * Pure check — does this 9-digit string satisfy the Israeli check-digit
  * algorithm? Returns false for non-string, non-9-digit, or Luhn-failing
  * inputs. Caller must trim before calling.
