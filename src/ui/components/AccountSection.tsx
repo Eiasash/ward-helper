@@ -275,7 +275,14 @@ function ApiKeyField({ username }: { username: string }) {
           </button>
         </div>
       ) : (
-        <div style={{ display: 'flex', gap: 8 }}>
+        // v1.39.10: wrapped in <form> so Chrome stops emitting the
+        // "Password field is not contained in a form" DOM warning AND so
+        // password managers can recognise the field shape correctly.
+        // Enter-to-submit also works now.
+        <form
+          style={{ display: 'flex', gap: 8 }}
+          onSubmit={(e) => { e.preventDefault(); if (!busy && draft.trim()) onSaveStart(); }}
+        >
           <input
             type="password"
             placeholder="sk-ant-..."
@@ -286,13 +293,21 @@ function ApiKeyField({ username }: { username: string }) {
             autoComplete="off"
             style={{ flex: 1 }}
           />
-          <button type="button" className="primary" onClick={onSaveStart} disabled={busy || !draft.trim()}>
+          <button type="submit" className="primary" disabled={busy || !draft.trim()}>
             {busy ? '...' : 'שמור'}
           </button>
-        </div>
+        </form>
       )}
       {showPwdPrompt && (
-        <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+        <form
+          style={{ marginTop: 8, display: 'flex', gap: 8 }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (busy || !pwd) return;
+            if (showPwdPrompt === 'save') onSaveCommit();
+            else onClearCommit();
+          }}
+        >
           <input
             type="password"
             placeholder="הסיסמה הנוכחית"
@@ -302,12 +317,7 @@ function ApiKeyField({ username }: { username: string }) {
             disabled={busy}
             style={{ flex: 1 }}
           />
-          <button
-            type="button"
-            className="primary"
-            onClick={showPwdPrompt === 'save' ? onSaveCommit : onClearCommit}
-            disabled={busy || !pwd}
-          >
+          <button type="submit" className="primary" disabled={busy || !pwd}>
             אשר
           </button>
           <button
@@ -325,7 +335,7 @@ function ApiKeyField({ username }: { username: string }) {
           >
             ביטול
           </button>
-        </div>
+        </form>
       )}
       {status && (
         <div className={`account-status ${status.tone}`} style={{ marginTop: 8 }}>
