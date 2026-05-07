@@ -2,12 +2,21 @@ import { listPatients, listAllNotes } from '@/storage/indexed';
 import { encryptForCloud, pushBlob, pushCanary } from '@/storage/cloud';
 import { deriveAesKey } from '@/crypto/pbkdf2';
 import { pushApiKeyToCloud, hasApiKey } from '@/crypto/keystore';
+import { checkCanaryProtection } from '@/storage/canaryProtection';
+import { pushBreadcrumb } from '@/ui/components/MobileDebugPanel';
 
 export interface PushAllResult {
   pushedPatients: number;
   pushedNotes: number;
   pushedApiKey: boolean;
   pushedCanary: boolean;
+  /**
+   * v1.39.9: true when the canary push was deliberately skipped because
+   * cloud has rows encrypted with a different passphrase. Caller should
+   * surface a UI prompt — pushing patients/notes still proceeded, but
+   * the canary marker was preserved so the prior data stays recoverable.
+   */
+  canarySkippedOrphan?: boolean;
   failed: Array<{ blob_type: string; blob_id: string; reason: string }>;
 }
 
@@ -35,15 +44,25 @@ export async function pushAllToCloud(
   const salt = crypto.getRandomValues(new Uint8Array(16)) as Uint8Array<ArrayBuffer>;
   const key = await deriveAesKey(passphrase, salt);
 
-  try {
-    await pushCanary(key, salt, username);
-    result.pushedCanary = true;
-  } catch (e) {
-    result.failed.push({
-      blob_type: 'canary',
-      blob_id: '__canary__',
-      reason: (e as Error).message ?? 'unknown',
-    });
+  // v1.39.9: orphan-canary guard. If cloud has data encrypted with a
+  // different passphrase, refuse to overwrite the canary — the marker
+  // for the existing data must survive so the user can still recover
+  // it later by re-entering the original passphrase.
+  const protection = await checkCanaryProtection(passphrase, username);
+  if (protection === 'orphan') {
+    result.canarySkippedOrphan = true;
+    pushBreadcrumb('canary.push.skipped', { reason: 'orphan-protected', trigger: 'manualPush' });
+  } else {
+    try {
+      await pushCanary(key, salt, username);
+      result.pushedCanary = true;
+    } catch (e) {
+      result.failed.push({
+        blob_type: 'canary',
+        blob_id: '__canary__',
+        reason: (e as Error).message ?? 'unknown',
+      });
+    }
   }
 
   for (const patient of await listPatients()) {
