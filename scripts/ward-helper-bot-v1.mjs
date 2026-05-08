@@ -197,8 +197,33 @@ Return JSON exactly matching this shape:
 The scenario MUST be ready to copy-paste into a real clinical workflow. Any obvious AI-isms (e.g. "this is a synthetic patient") should NOT appear in the clinical text fields. The clinical text should read as if a tired geriatrics fellow at 03:00 typed it.`;
 
   console.log(`  → generating scenario ${seedIdx + 1}/${CONFIG.scenarios}: "${seed}" (${dayCount}d)`);
-  const { text } = await callOpus({ system: SCENARIO_SYSTEM, user: userPrompt, maxTokens: 32000 });
-  const scenario = extractJsonBlock(text);
+  // 64k output max; adaptive thinking can consume ~10-15k of budget on medium
+  // effort, leaving plenty for the 5-8k token JSON. v5 truncated at 32k.
+  const { text } = await callOpus({ system: SCENARIO_SYSTEM, user: userPrompt, maxTokens: 64000 });
+  let scenario;
+  try {
+    scenario = extractJsonBlock(text);
+  } catch (err) {
+    // Fallback: attempt to repair a truncated JSON by slicing from the first
+    // '{' and trimming back to the last balanced position.
+    const firstBrace = text.indexOf('{');
+    if (firstBrace >= 0) {
+      let depth = 0;
+      let lastOk = -1;
+      for (let i = firstBrace; i < text.length; i++) {
+        if (text[i] === '{') depth++;
+        else if (text[i] === '}') { depth--; if (depth === 0) lastOk = i; }
+      }
+      if (lastOk > 0) {
+        try { scenario = JSON.parse(text.slice(firstBrace, lastOk + 1)); }
+        catch (_) { /* still bad */ }
+      }
+    }
+    if (!scenario) {
+      logBug('HIGH', `seed-${seedIdx}`, 'scenario-generate', `JSON extract failed: ${err.message.slice(0, 80)}`, text.slice(text.length - 200));
+      throw err;
+    }
+  }
 
   // Validate.
   if (!scenario.demographics?.tz || !/^\d{9}$/.test(scenario.demographics.tz)) {
