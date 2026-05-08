@@ -113,7 +113,8 @@ async function callOpus({ system, user, maxTokens = 32000 }) {
   const body = {
     model: CONFIG.model,
     max_tokens: maxTokens,
-    thinking: { type: 'enabled', budget_tokens: CONFIG.thinkingBudget },
+    thinking: { type: 'adaptive' },
+    output_config: { effort: process.env.CHAOS_EFFORT || 'medium' },
     system,
     messages: [{ role: 'user', content: user }],
   };
@@ -407,7 +408,7 @@ async function main() {
   await fs.mkdir(CONFIG.reportDir, { recursive: true });
   console.log(`ward-helper-bot-v1 starting`);
   console.log(`  url=${CONFIG.url} scenarios=${CONFIG.scenarios} model=${CONFIG.model}`);
-  console.log(`  cost-cap=$${CONFIG.costCapUsd} thinking-budget=${CONFIG.thinkingBudget}`);
+  console.log(`  cost-cap=$${CONFIG.costCapUsd} effort=${process.env.CHAOS_EFFORT || 'medium'}`);
   console.log(`  report=${REPORT_PATH}`);
 
   const browser = await chromium.launch({ headless: CONFIG.headless });
@@ -441,7 +442,7 @@ async function writeReport() {
   const lines = [];
   lines.push(`# ward-helper-bot-v1 report — ${RUN_ID}`);
   lines.push('');
-  lines.push(`- Model: ${CONFIG.model}, thinking budget: ${CONFIG.thinkingBudget}`);
+  lines.push(`- Model: ${CONFIG.model}, effort: ${process.env.CHAOS_EFFORT || 'medium'}`);
   lines.push(`- Scenarios: ${CONFIG.scenarios}`);
   lines.push(`- Cost: $${totalUsd().toFixed(2)} (${COST.calls} calls, ${COST.inTok}/${COST.outTok} tokens)`);
   lines.push(`- Bugs: ${BUGS.length}`);
