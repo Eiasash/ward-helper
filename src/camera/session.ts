@@ -71,6 +71,15 @@ export const PDF_HARD_CAP = 5;
 export const PDF_MAX_BYTES = 5_000_000;
 
 /**
+ * Per-image size cap. Phone photos at native resolution land 3-5MB; the
+ * compressImage step downscales to ~400-700kB. 10MB pre-compress allows
+ * RAW phone snapshots + safety margin without letting a 50MB adversarial
+ * upload through. Phase 7 ward-helper-bot-v1 caught the unguarded path
+ * (50MB blob → readAsDataUrl → 66MB base64 → loadImage page crash in 9ms).
+ */
+export const IMAGE_MAX_BYTES = 10_000_000;
+
+/**
  * Thrown by `addImageBlock` / `addTextBlock` when the per-kind cap is hit.
  * We throw rather than returning null because silent drops are exactly the
  * UX failure caps exist to prevent — every caller should either pre-check
