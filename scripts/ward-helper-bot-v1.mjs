@@ -408,23 +408,17 @@ async function runPlaywrightFlow(scenario, browser) {
     await page.goto(CONFIG.url, { timeout: CONFIG.navigationTimeoutMs, waitUntil: 'domcontentloaded' });
     await sleep(rand(800, 1500));
 
-    const synthUser = `bot${Date.now().toString(36).slice(-6)}`;
-    const synthPass = `Pass${Date.now().toString(36).slice(-4)}!`;
-
-    const reg = await registerSyntheticUser(page, scenario.scenario_id, synthUser, synthPass);
-    if (!reg.ok) {
-      await ctx.close();
-      return { consoleErrors, networkErrors, success: false, error: reg.error };
+    // ward-helper is local-first — no auth gate on landing. Just verify the
+    // app loaded by checking for the Capture screen's file inputs.
+    const fileInputs = await page.locator('input[type="file"]').count().catch(() => 0);
+    if (fileInputs === 0) {
+      logBug('MEDIUM', scenario.scenario_id, 'journey-load', 'no file inputs on landing — Capture may not be the default route');
     }
 
-    // Post-register: should be on home/today screen (Capture default).
-    const url = page.url();
-    if (url.includes('#login') || url.includes('#register')) {
-      logBug('MEDIUM', scenario.scenario_id, 'post-register', `still on auth route after register: ${url}`);
-    }
-
+    // Settings → AccountSection → register flow could be tested here, but
+    // the cloud-sync register flow is separate concern from chart UX.
     await ctx.close();
-    return { consoleErrors, networkErrors, success: true, synthUser, synthPass };
+    return { consoleErrors, networkErrors, success: true };
   } catch (err) {
     logBug('CRITICAL', scenario.scenario_id, 'playwright-flow', err.message, err.stack?.slice(0, 500));
     await ctx.close().catch(() => {});
@@ -437,36 +431,34 @@ async function runPlaywrightFlow(scenario, browser) {
 // ============================================================================
 
 /**
- * Authenticated browser context: register fresh user, navigate to Capture.
- * Returns { ctx, page, creds } or { ok: false, error } on failure.
- * Caller is responsible for ctx.close().
+ * Browser context on the Capture screen. ward-helper is local-first — no
+ * auth gate on landing — so we just navigate and rely on file inputs being
+ * present in DOM (Capture is the default route).
+ *
+ * (The Phase 7 v2 attempt to register first was wrong: AccountSection lives
+ * in Settings, not on landing. Reverting to v1's direct-navigate strategy.)
  */
-async function authedCaptureContext(scenario, browser) {
+async function captureContext(scenario, browser) {
   const ctx = await browser.newContext({ viewport: { width: 380, height: 800 } });
   const page = await ctx.newPage();
   let crashed = false;
   page.on('pageerror', (err) => {
     crashed = true;
-    logBug('CRITICAL', scenario.scenario_id, 'authed-pageerror', err.message);
+    logBug('CRITICAL', scenario.scenario_id, 'capture-context-pageerror', err.message);
   });
-
   await page.goto(CONFIG.url, { timeout: CONFIG.navigationTimeoutMs, waitUntil: 'domcontentloaded' });
   await sleep(800);
 
-  const synthUser = `bot${Date.now().toString(36).slice(-6)}${Math.random().toString(36).slice(-3)}`;
-  const synthPass = `Pass${Date.now().toString(36).slice(-4)}!`;
-  const reg = await registerSyntheticUser(page, scenario.scenario_id, synthUser, synthPass);
-  if (!reg.ok) {
-    await ctx.close();
-    return { ok: false, error: reg.error, crashed };
+  const fileInputs = await page.locator('input[type="file"]').all();
+  if (fileInputs.length === 0) {
+    logBug('MEDIUM', scenario.scenario_id, 'capture-context', 'no file inputs on landing — UI may have shifted');
   }
-
-  const onCapture = await navigateToCapture(page);
-  if (!onCapture) {
-    logBug('MEDIUM', scenario.scenario_id, 'authed-context', 'navigated to / but no file inputs found — Capture may not be the default route post-register');
-  }
-  return { ok: true, ctx, page, crashed: () => crashed, creds: { username: synthUser, password: synthPass } };
+  return { ok: true, ctx, page, crashed: () => crashed };
 }
+
+// Legacy auth-context kept for the Settings-flow tests (later sub-bots may
+// need it for cloud sync features). Not used by current sub-bots.
+const authedCaptureContext = captureContext;
 
 async function runAdversarialUpload(scenario, browser) {
   const session = await authedCaptureContext(scenario, browser);
