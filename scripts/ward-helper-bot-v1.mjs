@@ -173,7 +173,11 @@ Output ONLY valid JSON matching the shape requested. No prose outside the JSON b
 
 async function generateScenario(seedIdx) {
   const seed = SCENARIOS_SEEDS[seedIdx % SCENARIOS_SEEDS.length];
-  const dayCount = rand(3, 7);
+  // 3-4 day cap (was 3-7). Longer scenarios occasionally truncate at 64k
+  // even with effort=medium — Opus produces verbose Hebrew SOAP rounds.
+  // 3-4 days is enough to test upload flows; the bot doesn't validate
+  // clinical longitudinal-care logic.
+  const dayCount = rand(3, 4);
   const userPrompt = `Generate ONE synthetic scenario for: "${seed}" with ${dayCount} day SOAP rounds.
 
 Return JSON exactly matching this shape:
@@ -197,9 +201,11 @@ Return JSON exactly matching this shape:
 The scenario MUST be ready to copy-paste into a real clinical workflow. Any obvious AI-isms (e.g. "this is a synthetic patient") should NOT appear in the clinical text fields. The clinical text should read as if a tired geriatrics fellow at 03:00 typed it.`;
 
   console.log(`  → generating scenario ${seedIdx + 1}/${CONFIG.scenarios}: "${seed}" (${dayCount}d)`);
-  // 64k output max; adaptive thinking can consume ~10-15k of budget on medium
-  // effort, leaving plenty for the 5-8k token JSON. v5 truncated at 32k.
-  const { text } = await callOpus({ system: SCENARIO_SYSTEM, user: userPrompt, maxTokens: 64000 });
+  // 96k output cap. v5 truncated at 32k, v10 truncated at 64k on 5-day
+  // scenarios with effort=medium. Opus 4.7 thinking can consume 20-30k
+  // tokens leaving variable output budget. 96k is generous; thinking-mode
+  // tokens billed at output rate so cost-per-call ≈ $1.50-2.00 max.
+  const { text } = await callOpus({ system: SCENARIO_SYSTEM, user: userPrompt, maxTokens: 96000 });
   let scenario;
   try {
     scenario = extractJsonBlock(text);
