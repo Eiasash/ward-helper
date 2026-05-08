@@ -14,6 +14,7 @@ import {
   TEXT_HARD_CAP as SESSION_TEXT_HARD_CAP,
   PDF_HARD_CAP as SESSION_PDF_HARD_CAP,
   PDF_MAX_BYTES,
+  IMAGE_MAX_BYTES,
   type CaptureBlock,
   type ImageSource,
   type TextSource,
@@ -114,8 +115,13 @@ export function Capture() {
       e.preventDefault();
       let imageDropped = 0;
       let textDropped = 0;
+      let imageOversized = 0;
       if (imageFiles.length > 0) {
-        const dataUrls = await Promise.all(imageFiles.map(readAsDataUrl));
+        const sizedFiles = imageFiles.filter((f) => {
+          if (f.size > IMAGE_MAX_BYTES) { imageOversized++; return false; }
+          return true;
+        });
+        const dataUrls = await Promise.all(sizedFiles.map(readAsDataUrl));
         const compressed = await Promise.all(dataUrls.map((d) => compressImage(d)));
         for (const d of compressed) {
           try {
@@ -140,6 +146,8 @@ export function Capture() {
         setPickWarn(
           `הגעת לתקרה של ${IMAGE_HARD_CAP} תמונות. ${imageDropped} לא נוספו.`,
         );
+      } else if (imageOversized > 0) {
+        setPickWarn(`${imageOversized} תמונות גדולות מדי (מקס׳ ${Math.round(IMAGE_MAX_BYTES / 1_000_000)}MB).`);
       } else if (textDropped > 0) {
         setPickWarn(`הגעת לתקרה של ${TEXT_HARD_CAP} בלוקי טקסט.`);
       }
@@ -159,12 +167,23 @@ export function Capture() {
       e.target.value = '';
       return;
     }
-    const toAdd = Array.from(files).slice(0, remaining);
-    const dropped = files.length - toAdd.length;
+    const toAddRaw = Array.from(files).slice(0, remaining);
+    const dropped = files.length - toAddRaw.length;
+    let oversized = 0;
+    const toAdd = toAddRaw.filter((f) => {
+      if (f.size > IMAGE_MAX_BYTES) { oversized++; return false; }
+      return true;
+    });
     if (dropped > 0) {
       setPickWarn(`הגעת לתקרה של ${IMAGE_HARD_CAP} תמונות. ${dropped} לא נוספו.`);
+    } else if (oversized > 0) {
+      setPickWarn(`${oversized} תמונות גדולות מדי (מקס׳ ${Math.round(IMAGE_MAX_BYTES / 1_000_000)}MB).`);
     } else {
       setPickWarn('');
+    }
+    if (toAdd.length === 0) {
+      e.target.value = '';
+      return;
     }
     setCompressing(true);
     try {
