@@ -253,6 +253,98 @@ async function persistScenario(scenario) {
 // Playwright flow — register synthetic user + draft note
 // ============================================================================
 
+/**
+ * Switch to the register form. ward-helper's AccountSection toggles between
+ * login and register inline — login form has placeholder "שם משתמש" (no
+ * length suffix), register has "שם משתמש (3-32 תווים, אנגלית קטנה+מספרים)".
+ * Click the toggle button labeled "אין לי חשבון" / "הרשמה" / "register" to
+ * reveal the register form.
+ */
+async function switchToRegisterForm(page) {
+  // Try multiple toggle patterns observed in ward-helper history.
+  const togglePatterns = [
+    /אין לי חשבון/,                    // "I don't have an account"
+    /צור חשבון/,                       // "Create account"
+    /הרשמה חדשה/,                      // "New registration"
+    /^הרשמה$/,                          // bare "Registration"
+    /^register$/i,
+  ];
+  for (const pat of togglePatterns) {
+    const tab = page.getByRole('button', { name: pat }).first();
+    if ((await tab.count().catch(() => 0)) > 0) {
+      await tab.click({ timeout: CONFIG.actionTimeoutMs }).catch(() => {});
+      await sleep(rand(400, 800));
+      // Confirm the register placeholder is now visible.
+      const regField = page.getByPlaceholder(/שם משתמש \(3-32 תווים/);
+      if ((await regField.count().catch(() => 0)) > 0) return true;
+    }
+  }
+  return false;
+}
+
+/** Programmatic register flow. Returns { ok, error } */
+async function registerSyntheticUser(page, scenarioId, synthUser, synthPass) {
+  const switched = await switchToRegisterForm(page);
+  if (!switched) {
+    // Maybe the page already shows register by default. Check.
+    const regField = page.getByPlaceholder(/שם משתמש \(3-32 תווים/);
+    if ((await regField.count().catch(() => 0)) === 0) {
+      logBug('HIGH', scenarioId, 'register-form', 'could not switch to register tab — no toggle button matched any known pattern');
+      return { ok: false, error: 'no_register_tab' };
+    }
+  }
+
+  const userField = page.getByPlaceholder(/שם משתמש \(3-32 תווים/);
+  const passField = page.getByPlaceholder(/סיסמה \(לפחות 6 תווים\)/);
+  await userField.fill(synthUser);
+  await sleep(rand(150, 400));
+  await passField.fill(synthPass);
+  await sleep(rand(300, 600));
+
+  const submitBtn = page.getByRole('button', { name: /הרשמה|הירשם|submit|create/i }).first();
+  if ((await submitBtn.count().catch(() => 0)) === 0) {
+    logBug('HIGH', scenarioId, 'register-form', 'no submit button found');
+    return { ok: false, error: 'no_submit' };
+  }
+  await submitBtn.click({ timeout: CONFIG.actionTimeoutMs }).catch(() => {});
+  await sleep(rand(1500, 2500));
+
+  // Check for error banner.
+  const errBanner = page.getByText(/שגיאה|error/i).first();
+  if ((await errBanner.count().catch(() => 0)) > 0) {
+    const errText = await errBanner.textContent().catch(() => 'unknown');
+    logBug('HIGH', scenarioId, 'register-flow', `register returned error: ${errText}`);
+    return { ok: false, error: errText };
+  }
+  return { ok: true };
+}
+
+/** Programmatic login flow (assumes register form is NOT shown). */
+async function loginUser(page, username, password) {
+  const userField = page.getByPlaceholder(/^שם משתמש$/).first();
+  if ((await userField.count().catch(() => 0)) === 0) return { ok: false, error: 'no_login_form' };
+  const passField = page.getByPlaceholder(/^סיסמה$/).first();
+  await userField.fill(username);
+  await sleep(rand(150, 350));
+  await passField.fill(password);
+  await sleep(rand(150, 350));
+  const submitBtn = page.getByRole('button', { name: /^התחבר$|^login$|^sign in$/i }).first();
+  if ((await submitBtn.count().catch(() => 0)) === 0) return { ok: false, error: 'no_login_submit' };
+  await submitBtn.click({ timeout: CONFIG.actionTimeoutMs }).catch(() => {});
+  await sleep(rand(1500, 2500));
+  return { ok: true };
+}
+
+/** Navigate to the Capture screen post-auth. ward-helper SPA uses hash routing. */
+async function navigateToCapture(page) {
+  await page.evaluate(() => { window.location.hash = '#/'; });
+  await sleep(rand(400, 700));
+  // The default route should be Capture for an authenticated user.
+  // Verify: file inputs of the Capture component are now in DOM.
+  const fileInputs = await page.locator('input[type="file"]').all();
+  return fileInputs.length > 0;
+}
+
 async function runPlaywrightFlow(scenario, browser) {
   const ctx = await browser.newContext({ viewport: { width: 380, height: 800 } });
   const page = await ctx.newPage();
@@ -273,61 +365,23 @@ async function runPlaywrightFlow(scenario, browser) {
     await page.goto(CONFIG.url, { timeout: CONFIG.navigationTimeoutMs, waitUntil: 'domcontentloaded' });
     await sleep(rand(800, 1500));
 
-    // Synthetic user identifiers.
     const synthUser = `bot${Date.now().toString(36).slice(-6)}`;
     const synthPass = `Pass${Date.now().toString(36).slice(-4)}!`;
 
-    // Find and click "register" / "הרשם" tab if it exists. Most ward-helper installs land on login first.
-    const registerTab = page.getByRole('button', { name: /הרשמ|register/i }).first();
-    if ((await registerTab.count().catch(() => 0)) > 0) {
-      await registerTab.click({ timeout: CONFIG.actionTimeoutMs }).catch(() => {});
-      await sleep(rand(400, 800));
-    }
-
-    // Register: placeholder pattern from AccountSection.tsx:836,844,853.
-    const userField = page.getByPlaceholder(/שם משתמש \(3-32 תווים/);
-    const passField = page.getByPlaceholder(/סיסמה \(לפחות 6 תווים\)/);
-
-    if ((await userField.count().catch(() => 0)) === 0) {
-      logBug('HIGH', scenario.scenario_id, 'register-form', 'username register placeholder not found — UI may have changed');
+    const reg = await registerSyntheticUser(page, scenario.scenario_id, synthUser, synthPass);
+    if (!reg.ok) {
       await ctx.close();
-      return { consoleErrors, networkErrors, success: false };
+      return { consoleErrors, networkErrors, success: false, error: reg.error };
     }
 
-    await userField.fill(synthUser);
-    await sleep(rand(150, 400));
-    await passField.fill(synthPass);
-    await sleep(rand(300, 600));
-
-    // Click submit.
-    const submitBtn = page.getByRole('button', { name: /הרשמה|הירשם|submit|create/i }).first();
-    if ((await submitBtn.count().catch(() => 0)) > 0) {
-      await submitBtn.click({ timeout: CONFIG.actionTimeoutMs }).catch(() => {});
-      await sleep(rand(1500, 2500));
-    } else {
-      logBug('HIGH', scenario.scenario_id, 'register-form', 'no submit button found');
-    }
-
-    // Look for either an error toast or successful redirect to home/today screen.
-    const errBanner = page.getByText(/שגיאה|error/i).first();
-    if ((await errBanner.count().catch(() => 0)) > 0) {
-      const errText = await errBanner.textContent().catch(() => 'unknown');
-      logBug('HIGH', scenario.scenario_id, 'register-flow', `register returned error: ${errText}`);
-    }
-
-    // Proxy/AI not exercised in MVP — that requires a real photo or the user opening capture.
-    // For MVP: navigate to NoteEditor manually if the route exists, type a section, and verify save.
-    // ward-helper has no programmatic patient-create path without a photo, so we test the auth+register flow only.
-
-    // Final state assertion: login should produce some recognisable post-auth marker.
-    // If the URL still has `#login` / `#register`, registration failed silently.
+    // Post-register: should be on home/today screen (Capture default).
     const url = page.url();
     if (url.includes('#login') || url.includes('#register')) {
       logBug('MEDIUM', scenario.scenario_id, 'post-register', `still on auth route after register: ${url}`);
     }
 
     await ctx.close();
-    return { consoleErrors, networkErrors, success: true, synthUser };
+    return { consoleErrors, networkErrors, success: true, synthUser, synthPass };
   } catch (err) {
     logBug('CRITICAL', scenario.scenario_id, 'playwright-flow', err.message, err.stack?.slice(0, 500));
     await ctx.close().catch(() => {});
@@ -339,55 +393,83 @@ async function runPlaywrightFlow(scenario, browser) {
 // Adversarial 50MB upload — separate browser session
 // ============================================================================
 
-async function runAdversarialUpload(scenario, browser) {
+/**
+ * Authenticated browser context: register fresh user, navigate to Capture.
+ * Returns { ctx, page, creds } or { ok: false, error } on failure.
+ * Caller is responsible for ctx.close().
+ */
+async function authedCaptureContext(scenario, browser) {
   const ctx = await browser.newContext({ viewport: { width: 380, height: 800 } });
   const page = await ctx.newPage();
   let crashed = false;
   page.on('pageerror', (err) => {
     crashed = true;
-    logBug('CRITICAL', scenario.scenario_id, 'adversarial-pageerror', err.message);
+    logBug('CRITICAL', scenario.scenario_id, 'authed-pageerror', err.message);
   });
 
-  try {
-    await page.goto(CONFIG.url, { timeout: CONFIG.navigationTimeoutMs, waitUntil: 'domcontentloaded' });
-    await sleep(800);
+  await page.goto(CONFIG.url, { timeout: CONFIG.navigationTimeoutMs, waitUntil: 'domcontentloaded' });
+  await sleep(800);
 
-    // We don't need to log in — we're testing what happens if a 50MB blob is shoved into a
-    // file-input URL. ward-helper has hidden file inputs styled with .visually-hidden — find them.
+  const synthUser = `bot${Date.now().toString(36).slice(-6)}${Math.random().toString(36).slice(-3)}`;
+  const synthPass = `Pass${Date.now().toString(36).slice(-4)}!`;
+  const reg = await registerSyntheticUser(page, scenario.scenario_id, synthUser, synthPass);
+  if (!reg.ok) {
+    await ctx.close();
+    return { ok: false, error: reg.error, crashed };
+  }
+
+  const onCapture = await navigateToCapture(page);
+  if (!onCapture) {
+    logBug('MEDIUM', scenario.scenario_id, 'authed-context', 'navigated to / but no file inputs found — Capture may not be the default route post-register');
+  }
+  return { ok: true, ctx, page, crashed: () => crashed, creds: { username: synthUser, password: synthPass } };
+}
+
+async function runAdversarialUpload(scenario, browser) {
+  const session = await authedCaptureContext(scenario, browser);
+  if (!session.ok) return { skipped: session.error };
+  const { ctx, page } = session;
+  try {
     const fileInputs = await page.locator('input[type="file"]').all();
     if (fileInputs.length === 0) {
-      logBug('LOW', scenario.scenario_id, 'adversarial-upload', 'no file inputs visible on landing page (auth-gated)');
+      logBug('LOW', scenario.scenario_id, 'adversarial-upload', 'no file inputs in DOM after login + navigateToCapture');
       await ctx.close();
       return { skipped: 'no_file_inputs' };
     }
 
-    // Generate 50MB Buffer locally.
     const big = Buffer.alloc(50 * 1024 * 1024, 0x42); // 50MB of 'B'
-    const tmpPath = path.resolve(CONFIG.reportDir, '_adv_50mb.bin');
+    const tmpPath = path.resolve(CONFIG.reportDir, `_adv_50mb_${scenario.scenario_id}.bin`);
     await fs.writeFile(tmpPath, big);
 
-    // Try to set on the first file input.
+    // Use the first IMAGE-accepting input (skip PDF inputs that have their own guard).
+    let imageInput = null;
+    for (const inp of fileInputs) {
+      const accept = await inp.getAttribute('accept').catch(() => '');
+      if (!accept || accept.startsWith('image')) { imageInput = inp; break; }
+    }
+    if (!imageInput) imageInput = fileInputs[0];
+
     const t0 = Date.now();
     let raised = false;
     try {
-      await fileInputs[0].setInputFiles(tmpPath, { timeout: 30_000 });
+      await imageInput.setInputFiles(tmpPath, { timeout: 30_000 });
     } catch (err) {
       raised = true;
       console.log(`  adversarial: setInputFiles raised: ${err.message.slice(0, 100)}`);
     }
     const dt = Date.now() - t0;
-
-    // Wait for any UI feedback.
     await sleep(2000);
     const errBanner = page.getByText(/שגיאה|too large|גדול מדי|error/i).first();
     const hasError = (await errBanner.count().catch(() => 0)) > 0;
+    const crashed = session.crashed();
 
     if (!raised && !hasError && !crashed) {
       logBug('MEDIUM', scenario.scenario_id, 'adversarial-upload', `50MB upload accepted silently — no error UI, no crash. dt=${dt}ms`);
     } else if (crashed) {
       logBug('CRITICAL', scenario.scenario_id, 'adversarial-upload', `50MB upload crashed page in ${dt}ms`);
     } else if (hasError) {
-      console.log(`  adversarial: graceful failure ✓ (banner shown in ${dt}ms)`);
+      const txt = await errBanner.textContent().catch(() => '');
+      console.log(`  adversarial: graceful failure ✓ banner: "${(txt || '').slice(0, 60)}" in ${dt}ms`);
     }
 
     await fs.unlink(tmpPath).catch(() => {});
@@ -395,6 +477,166 @@ async function runAdversarialUpload(scenario, browser) {
     return { dt, raised, hasError, crashed };
   } catch (err) {
     logBug('HIGH', scenario.scenario_id, 'adversarial-upload', `harness error: ${err.message}`);
+    await ctx.close().catch(() => {});
+    return { error: err.message };
+  }
+}
+
+// ============================================================================
+// Sub-bot scaffolds — each follows the runAdversarialUpload pattern.
+// All accept (scenario, browser); return { ok, bugs } summary.
+// MVP: each does the upload + checks for graceful UI feedback.
+// ============================================================================
+
+/** Sub-bot 1: synthetic lab-report PDF upload. Tests PDF path graceful behavior. */
+async function runLabReportPDF(scenario, browser) {
+  const session = await authedCaptureContext(scenario, browser);
+  if (!session.ok) return { skipped: session.error };
+  const { ctx, page } = session;
+  try {
+    // Generate a tiny minimal PDF (header + EOF) — valid enough to parse, small enough to upload.
+    const minimalPdf = Buffer.from(
+      '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n' +
+      '2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n' +
+      '3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>endobj\n' +
+      'xref\n0 4\n0000000000 65535 f\n0000000009 00000 n\n0000000052 00000 n\n0000000101 00000 n\n' +
+      'trailer<</Size 4/Root 1 0 R>>\nstartxref\n149\n%%EOF',
+      'utf8'
+    );
+    const tmpPath = path.resolve(CONFIG.reportDir, `_lab_${scenario.scenario_id}.pdf`);
+    await fs.writeFile(tmpPath, minimalPdf);
+
+    // Find PDF input.
+    const fileInputs = await page.locator('input[type="file"]').all();
+    let pdfInput = null;
+    for (const inp of fileInputs) {
+      const accept = await inp.getAttribute('accept').catch(() => '');
+      if (accept && accept.includes('pdf')) { pdfInput = inp; break; }
+    }
+    if (!pdfInput) {
+      logBug('LOW', scenario.scenario_id, 'lab-report-pdf', 'no PDF-accepting input found in DOM');
+      await ctx.close();
+      return { skipped: 'no_pdf_input' };
+    }
+
+    await pdfInput.setInputFiles(tmpPath, { timeout: 10_000 }).catch((err) => {
+      logBug('MEDIUM', scenario.scenario_id, 'lab-report-pdf', `setInputFiles failed: ${err.message.slice(0, 100)}`);
+    });
+    await sleep(1500);
+    if (session.crashed()) logBug('CRITICAL', scenario.scenario_id, 'lab-report-pdf', 'page crashed on minimal PDF');
+
+    await fs.unlink(tmpPath).catch(() => {});
+    await ctx.close();
+    return { ok: true };
+  } catch (err) {
+    logBug('HIGH', scenario.scenario_id, 'lab-report-pdf', `harness error: ${err.message}`);
+    await ctx.close().catch(() => {});
+    return { error: err.message };
+  }
+}
+
+/** Sub-bot 2: synthetic medical-image PNG upload. Tests image path graceful behavior. */
+async function runMedicalImagePNG(scenario, browser) {
+  const session = await authedCaptureContext(scenario, browser);
+  if (!session.ok) return { skipped: session.error };
+  const { ctx, page } = session;
+  try {
+    // Generate a 1x1 transparent PNG (smallest valid). This tests that tiny images don't crash.
+    const tinyPng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+      'base64'
+    );
+    const tmpPath = path.resolve(CONFIG.reportDir, `_img_${scenario.scenario_id}.png`);
+    await fs.writeFile(tmpPath, tinyPng);
+
+    const fileInputs = await page.locator('input[type="file"]').all();
+    let imgInput = null;
+    for (const inp of fileInputs) {
+      const accept = await inp.getAttribute('accept').catch(() => '');
+      if (!accept || accept.startsWith('image')) { imgInput = inp; break; }
+    }
+    if (!imgInput) {
+      logBug('LOW', scenario.scenario_id, 'medical-image-png', 'no image-accepting input found in DOM');
+      await ctx.close();
+      return { skipped: 'no_image_input' };
+    }
+
+    await imgInput.setInputFiles(tmpPath, { timeout: 10_000 }).catch((err) => {
+      logBug('MEDIUM', scenario.scenario_id, 'medical-image-png', `setInputFiles failed: ${err.message.slice(0, 100)}`);
+    });
+    await sleep(2000);
+    if (session.crashed()) logBug('CRITICAL', scenario.scenario_id, 'medical-image-png', 'page crashed on 1x1 PNG');
+
+    await fs.unlink(tmpPath).catch(() => {});
+    await ctx.close();
+    return { ok: true };
+  } catch (err) {
+    logBug('HIGH', scenario.scenario_id, 'medical-image-png', `harness error: ${err.message}`);
+    await ctx.close().catch(() => {});
+    return { error: err.message };
+  }
+}
+
+/** Sub-bot 3: census-photo OCR roundtrip. Validates extracted-rows match input. */
+async function runCensusPhoto(scenario, browser) {
+  // SCAFFOLD: the full impl needs to navigate to /census, upload an overlay-text image,
+  // wait for OCR, then assert the extracted rows. Requires synthetic image generation
+  // (sharp / canvas-server) or a pre-built fixture. Punt to next session.
+  logBug('LOW', scenario.scenario_id, 'census-photo', 'sub-bot scaffolded but not implemented — needs synthetic overlay-text image generator (sharp/canvas-server) and /census route navigation');
+  return { skipped: 'not_implemented' };
+}
+
+/** Sub-bot 4: roster-import CSV ingest. */
+async function runRosterImport(scenario, browser) {
+  const session = await authedCaptureContext(scenario, browser);
+  if (!session.ok) return { skipped: session.error };
+  const { ctx, page } = session;
+  try {
+    // Navigate to roster import flow. ward-helper exposes this via the RosterImportModal.
+    await page.evaluate(() => { window.location.hash = '#/today'; });
+    await sleep(800);
+
+    // Generate a tiny CSV with synthetic patients — derived from the scenario's demographics
+    // plus 2 generic mock rows.
+    const d = scenario.demographics || {};
+    const csvRows = [
+      'name,tz,room,bed,age,sex',
+      `${d.name_he || 'מטופל א'},${d.tz || '111111118'},${d.room || '12'},${d.bed || 'A'},${d.age || 80},${d.sex || 'F'}`,
+      'מטופל ב,222222226,15,B,75,M',
+      'מטופל ג,333333334,20,A,90,F',
+    ];
+    const tmpPath = path.resolve(CONFIG.reportDir, `_roster_${scenario.scenario_id}.csv`);
+    await fs.writeFile(tmpPath, csvRows.join('\n'), 'utf8');
+
+    // Find roster CSV input. RosterImportModal accepts CSV; need to open it first.
+    const importBtn = page.getByRole('button', { name: /ייבוא רשימה|import roster|רוסטר/i }).first();
+    if ((await importBtn.count().catch(() => 0)) > 0) {
+      await importBtn.click({ timeout: CONFIG.actionTimeoutMs }).catch(() => {});
+      await sleep(800);
+    }
+    const fileInputs = await page.locator('input[type="file"]').all();
+    let csvInput = null;
+    for (const inp of fileInputs) {
+      const accept = await inp.getAttribute('accept').catch(() => '');
+      if (accept && accept.includes('csv')) { csvInput = inp; break; }
+    }
+    if (!csvInput) csvInput = fileInputs[fileInputs.length - 1]; // fallback to last
+
+    if (csvInput) {
+      await csvInput.setInputFiles(tmpPath, { timeout: 10_000 }).catch((err) => {
+        logBug('MEDIUM', scenario.scenario_id, 'roster-import', `setInputFiles failed: ${err.message.slice(0, 100)}`);
+      });
+      await sleep(2500);
+      if (session.crashed()) logBug('CRITICAL', scenario.scenario_id, 'roster-import', 'page crashed on tiny CSV');
+    } else {
+      logBug('LOW', scenario.scenario_id, 'roster-import', 'no CSV-accepting input found in DOM');
+    }
+
+    await fs.unlink(tmpPath).catch(() => {});
+    await ctx.close();
+    return { ok: true };
+  } catch (err) {
+    logBug('HIGH', scenario.scenario_id, 'roster-import', `harness error: ${err.message}`);
     await ctx.close().catch(() => {});
     return { error: err.message };
   }
@@ -426,8 +668,17 @@ async function main() {
 
     const journey = await runPlaywrightFlow(scenario, browser);
     const adversarial = await runAdversarialUpload(scenario, browser);
+    const labPdf = await runLabReportPDF(scenario, browser);
+    const imagePng = await runMedicalImagePNG(scenario, browser);
+    const census = await runCensusPhoto(scenario, browser);
+    const roster = await runRosterImport(scenario, browser);
 
-    console.log(`  scenario ${i + 1} done — bugs: ${BUGS.filter((b) => b.scenario_id === scenario.scenario_id).length}, journey ok=${journey?.success}, adv crashed=${adversarial?.crashed || false}`);
+    const sBugs = BUGS.filter((b) => b.scenario_id === scenario.scenario_id).length;
+    console.log(
+      `  scenario ${i + 1} done — bugs: ${sBugs}, journey=${journey?.success}, adv-crashed=${adversarial?.crashed || false}, ` +
+      `lab=${labPdf?.ok || labPdf?.skipped}, img=${imagePng?.ok || imagePng?.skipped}, ` +
+      `census=${census?.skipped || 'ok'}, roster=${roster?.ok || roster?.skipped}`
+    );
   }
 
   await browser.close();
