@@ -261,20 +261,38 @@ async function persistScenario(scenario) {
  * reveal the register form.
  */
 async function switchToRegisterForm(page) {
-  // Try multiple toggle patterns observed in ward-helper history.
+  // First check if register form is already visible (no toggle needed).
+  const regAlready = page.getByPlaceholder(/שם משתמש \(3-32 תווים/);
+  if ((await regAlready.count().catch(() => 0)) > 0) return true;
+
+  // ward-helper AccountSection (tsx:733+) uses role="tab" on the login/register
+  // tabs, NOT role="button". Try tab role first, then fall back to button.
   const togglePatterns = [
-    /אין לי חשבון/,                    // "I don't have an account"
-    /צור חשבון/,                       // "Create account"
-    /הרשמה חדשה/,                      // "New registration"
-    /^הרשמה$/,                          // bare "Registration"
+    /^הרשמה$/,                          // bare "Registration" — primary
+    /אין לי חשבון/,
+    /צור חשבון/,
+    /הרשמה חדשה/,
     /^register$/i,
   ];
-  for (const pat of togglePatterns) {
-    const tab = page.getByRole('button', { name: pat }).first();
+  for (const role of ['tab', 'button']) {
+    for (const pat of togglePatterns) {
+      const tab = page.getByRole(role, { name: pat }).first();
+      if ((await tab.count().catch(() => 0)) > 0) {
+        await tab.click({ timeout: CONFIG.actionTimeoutMs }).catch(() => {});
+        await sleep(rand(400, 800));
+        const regField = page.getByPlaceholder(/שם משתמש \(3-32 תווים/);
+        if ((await regField.count().catch(() => 0)) > 0) return true;
+      }
+    }
+  }
+  // Last resort: navigate to /account hash and retry once.
+  await page.evaluate(() => { window.location.hash = '#/account'; }).catch(() => {});
+  await sleep(800);
+  for (const role of ['tab', 'button']) {
+    const tab = page.getByRole(role, { name: /^הרשמה$/ }).first();
     if ((await tab.count().catch(() => 0)) > 0) {
       await tab.click({ timeout: CONFIG.actionTimeoutMs }).catch(() => {});
-      await sleep(rand(400, 800));
-      // Confirm the register placeholder is now visible.
+      await sleep(600);
       const regField = page.getByPlaceholder(/שם משתמש \(3-32 תווים/);
       if ((await regField.count().catch(() => 0)) > 0) return true;
     }
