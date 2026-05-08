@@ -460,6 +460,49 @@ async function captureContext(scenario, browser) {
 // need it for cloud sync features). Not used by current sub-bots.
 const authedCaptureContext = captureContext;
 
+/**
+ * Wait up to `maxMs` for a banner matching one of several selectors. ward-helper
+ * Capture.tsx renders setPickWarn into an element with class `pick-warn` (or
+ * a sibling status class). React state updates may be batched and the banner
+ * may appear 100ms+ after setInputFiles fires — a flat 2s sleep can miss it
+ * on fast machines (the file-filter early-returns + setPickWarn is sync but
+ * the React re-render is async).
+ */
+async function waitForWarningBanner(page, maxMs = 5000) {
+  const selectors = [
+    '.pick-warn',
+    '[class*="warn"]',
+    '[class*="status"]',
+    '[role="alert"]',
+    '[role="status"]',
+  ];
+  const textPatterns = [/גדול מדי/, /שגיאה/, /too large/i, /error/i];
+  const t0 = Date.now();
+  while (Date.now() - t0 < maxMs) {
+    for (const sel of selectors) {
+      const loc = page.locator(sel).first();
+      if ((await loc.count().catch(() => 0)) > 0) {
+        const text = (await loc.textContent().catch(() => '')) || '';
+        if (text.trim().length > 0) {
+          for (const re of textPatterns) {
+            if (re.test(text)) return { found: true, via: sel, text: text.slice(0, 120) };
+          }
+        }
+      }
+    }
+    // Fall back to text-only search across the whole page.
+    for (const re of textPatterns) {
+      const loc = page.getByText(re).first();
+      if ((await loc.count().catch(() => 0)) > 0) {
+        const text = (await loc.textContent().catch(() => '')) || '';
+        return { found: true, via: 'text', text: text.slice(0, 120) };
+      }
+    }
+    await sleep(200);
+  }
+  return { found: false };
+}
+
 async function runAdversarialUpload(scenario, browser) {
   const session = await authedCaptureContext(scenario, browser);
   if (!session.ok) return { skipped: session.error };
@@ -493,23 +536,25 @@ async function runAdversarialUpload(scenario, browser) {
       console.log(`  adversarial: setInputFiles raised: ${err.message.slice(0, 100)}`);
     }
     const dt = Date.now() - t0;
-    await sleep(2000);
-    const errBanner = page.getByText(/שגיאה|too large|גדול מדי|error/i).first();
-    const hasError = (await errBanner.count().catch(() => 0)) > 0;
+
+    // Improved banner detection: poll for up to 5s with multiple selectors
+    // and explicit React-rerender tolerance. The previous flat 2s sleep
+    // missed the banner on fast machines — see project_phase7_first_run_findings.md.
+    const banner = await waitForWarningBanner(page, 5000);
+    const hasError = banner.found;
     const crashed = session.crashed();
 
     if (!raised && !hasError && !crashed) {
-      logBug('MEDIUM', scenario.scenario_id, 'adversarial-upload', `50MB upload accepted silently — no error UI, no crash. dt=${dt}ms`);
+      logBug('MEDIUM', scenario.scenario_id, 'adversarial-upload', `50MB upload accepted silently — no error banner found in 5s. dt=${dt}ms`);
     } else if (crashed) {
       logBug('CRITICAL', scenario.scenario_id, 'adversarial-upload', `50MB upload crashed page in ${dt}ms`);
     } else if (hasError) {
-      const txt = await errBanner.textContent().catch(() => '');
-      console.log(`  adversarial: graceful failure ✓ banner: "${(txt || '').slice(0, 60)}" in ${dt}ms`);
+      console.log(`  adversarial: graceful failure ✓ banner via=${banner.via}: "${banner.text}" in ${dt}ms`);
     }
 
     await fs.unlink(tmpPath).catch(() => {});
     await ctx.close();
-    return { dt, raised, hasError, crashed };
+    return { dt, raised, hasError, crashed, bannerVia: banner.via };
   } catch (err) {
     logBug('HIGH', scenario.scenario_id, 'adversarial-upload', `harness error: ${err.message}`);
     await ctx.close().catch(() => {});
@@ -612,13 +657,115 @@ async function runMedicalImagePNG(scenario, browser) {
   }
 }
 
-/** Sub-bot 3: census-photo OCR roundtrip. Validates extracted-rows match input. */
+/**
+ * Generate a synthetic AZMA-style patient list image by rendering an HTML
+ * table to PNG via Playwright's chromium screenshot. No new deps needed —
+ * we already have Playwright. Returns the PNG buffer + the rows used.
+ */
+async function generateCensusPhoto(scenario, browser) {
+  const ctx = await browser.newContext({ viewport: { width: 900, height: 1200 } });
+  const page = await ctx.newPage();
+  // Mix the scenario patient with 3 generic mocks to give a realistic 4-row list.
+  const d = scenario.demographics || {};
+  const rows = [
+    { name: d.name_he || 'מטופל א', tz: d.tz || '111111118', room: d.room || '12', bed: d.bed || 'A', age: d.age || 80 },
+    { name: 'יעקב כהן', tz: '222222226', room: '15', bed: 'B', age: 75 },
+    { name: 'שרה לוי', tz: '333333334', room: '20', bed: 'A', age: 88 },
+    { name: 'דוד אברהם', tz: '444444442', room: '23', bed: 'B', age: 92 },
+  ];
+  const html = `<!doctype html>
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: 'Arial Hebrew', Arial, sans-serif; padding: 24px; background: #fff; color: #000; }
+    h2 { margin: 0 0 16px 0; font-size: 22px; }
+    table { border-collapse: collapse; width: 100%; font-size: 18px; }
+    th, td { border: 1px solid #444; padding: 12px 16px; text-align: right; }
+    th { background: #e8e8e8; font-weight: 700; }
+    tr:nth-child(even) td { background: #f8f8f8; }
+  </style>
+</head>
+<body>
+  <h2>רשימת חולים — מחלקה גריאטרית</h2>
+  <table>
+    <tr><th>שם</th><th>ת.ז.</th><th>חדר</th><th>מיטה</th><th>גיל</th></tr>
+    ${rows.map(r => `<tr><td>${r.name}</td><td>${r.tz}</td><td>${r.room}</td><td>${r.bed}</td><td>${r.age}</td></tr>`).join('\n    ')}
+  </table>
+</body>
+</html>`;
+  await page.setContent(html);
+  await sleep(300); // let fonts load
+  const buf = await page.screenshot({ type: 'png', fullPage: true });
+  await ctx.close();
+  return { buf, rows };
+}
+
+/** Sub-bot 3: census-photo OCR roundtrip. Renders synthetic patient-list to PNG,
+ * uploads via /census flow, watches for OCR-extracted rows. */
 async function runCensusPhoto(scenario, browser) {
-  // SCAFFOLD: the full impl needs to navigate to /census, upload an overlay-text image,
-  // wait for OCR, then assert the extracted rows. Requires synthetic image generation
-  // (sharp / canvas-server) or a pre-built fixture. Punt to next session.
-  logBug('LOW', scenario.scenario_id, 'census-photo', 'sub-bot scaffolded but not implemented — needs synthetic overlay-text image generator (sharp/canvas-server) and /census route navigation');
-  return { skipped: 'not_implemented' };
+  // Generate synthetic census image first.
+  let synth;
+  try {
+    synth = await generateCensusPhoto(scenario, browser);
+  } catch (err) {
+    logBug('HIGH', scenario.scenario_id, 'census-photo', `synth-image-gen failed: ${err.message.slice(0, 100)}`);
+    return { error: err.message };
+  }
+  const tmpPath = path.resolve(CONFIG.reportDir, `_census_${scenario.scenario_id}.png`);
+  await fs.writeFile(tmpPath, synth.buf);
+
+  const session = await captureContext(scenario, browser);
+  if (!session.ok) {
+    await fs.unlink(tmpPath).catch(() => {});
+    return { skipped: session.error };
+  }
+  const { ctx, page } = session;
+  try {
+    // Navigate to /census. ward-helper uses hash routing.
+    await page.evaluate(() => { window.location.hash = '#/census'; });
+    await sleep(1000);
+    // Find the file input — Census.tsx exposes one for image uploads.
+    const fileInputs = await page.locator('input[type="file"]').all();
+    let censusInput = null;
+    for (const inp of fileInputs) {
+      const accept = await inp.getAttribute('accept').catch(() => '');
+      if (!accept || accept.startsWith('image')) { censusInput = inp; break; }
+    }
+    if (!censusInput) {
+      logBug('LOW', scenario.scenario_id, 'census-photo', 'no image-accepting file input on /census — route may have shifted');
+      await fs.unlink(tmpPath).catch(() => {});
+      await ctx.close();
+      return { skipped: 'no_census_input' };
+    }
+    await censusInput.setInputFiles(tmpPath, { timeout: 15_000 }).catch((err) => {
+      logBug('MEDIUM', scenario.scenario_id, 'census-photo', `setInputFiles failed: ${err.message.slice(0, 100)}`);
+    });
+    // OCR via the proxy can take ~5-15s. Wait then check page contents for
+    // any of our 4 fictitious tz numbers — any extraction proves OCR fired.
+    await sleep(15_000);
+    if (session.crashed()) {
+      logBug('CRITICAL', scenario.scenario_id, 'census-photo', 'page crashed during OCR roundtrip');
+    } else {
+      const pageText = await page.evaluate(() => document.body.innerText).catch(() => '');
+      const found = synth.rows.filter((r) => pageText.includes(r.tz)).length;
+      if (found === 0) {
+        logBug('LOW', scenario.scenario_id, 'census-photo', `OCR returned 0/${synth.rows.length} synthetic rows — either OCR didn't fire, didn't extract, or output isn't rendered yet`);
+      } else if (found < synth.rows.length) {
+        logBug('MEDIUM', scenario.scenario_id, 'census-photo', `OCR extracted only ${found}/${synth.rows.length} synthetic rows — partial extraction`);
+      } else {
+        console.log(`  census-photo: OCR roundtrip ✓ ${found}/${synth.rows.length} rows extracted`);
+      }
+    }
+    await fs.unlink(tmpPath).catch(() => {});
+    await ctx.close();
+    return { ok: true, rowsExpected: synth.rows.length };
+  } catch (err) {
+    logBug('HIGH', scenario.scenario_id, 'census-photo', `harness error: ${err.message}`);
+    await fs.unlink(tmpPath).catch(() => {});
+    await ctx.close().catch(() => {});
+    return { error: err.message };
+  }
 }
 
 /** Sub-bot 4: roster-import CSV ingest. */
