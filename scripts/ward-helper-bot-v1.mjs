@@ -468,15 +468,28 @@ const authedCaptureContext = captureContext;
  * on fast machines (the file-filter early-returns + setPickWarn is sync but
  * the React re-render is async).
  */
-async function waitForWarningBanner(page, maxMs = 5000) {
+async function waitForWarningBanner(page, maxMs = 4000) {
+  // Capture.tsx renders setPickWarn into <div className="pill pill-warn">.
+  // The fix-shipped Hebrew text is "X תמונות גדולות מדי (מקס׳ 10MB)" —
+  // "גדולות" (fem.pl.) NOT "גדול" (masc.sg.) so the regex needs to handle
+  // gender forms. Also: pickWarn auto-clears after 4s (PICK_WARN_TTL_MS).
   const selectors = [
-    '.pick-warn',
+    '.pill-warn',                  // exact ward-helper class
+    '.pick-warn',                  // legacy/sibling
+    '[class*="pill-warn"]',
     '[class*="warn"]',
-    '[class*="status"]',
     '[role="alert"]',
     '[role="status"]',
   ];
-  const textPatterns = [/גדול מדי/, /שגיאה/, /too large/i, /error/i];
+  // Hebrew gender forms: גדול (m.sg), גדולה (f.sg), גדולים (m.pl), גדולות (f.pl)
+  const textPatterns = [
+    /גדול\S* מדי/,                  // any "big-form too" — sg/pl/m/f
+    /תקרה/,                         // "ceiling/limit" — banner message
+    /מקס[׳']?\s*\d+\s*MB/i,         // "max NMB" suffix
+    /שגיאה/,                        // generic error
+    /too\s+large/i,
+    /error/i,
+  ];
   const t0 = Date.now();
   while (Date.now() - t0 < maxMs) {
     for (const sel of selectors) {
@@ -498,7 +511,7 @@ async function waitForWarningBanner(page, maxMs = 5000) {
         return { found: true, via: 'text', text: text.slice(0, 120) };
       }
     }
-    await sleep(200);
+    await sleep(150);  // poll faster — banner has 4s TTL
   }
   return { found: false };
 }
@@ -537,10 +550,11 @@ async function runAdversarialUpload(scenario, browser) {
     }
     const dt = Date.now() - t0;
 
-    // Improved banner detection: poll for up to 5s with multiple selectors
-    // and explicit React-rerender tolerance. The previous flat 2s sleep
-    // missed the banner on fast machines — see project_phase7_first_run_findings.md.
-    const banner = await waitForWarningBanner(page, 5000);
+    // Improved banner detection: poll up to 4s (matches PICK_WARN_TTL_MS)
+    // with selectors keyed on actual ward-helper class `.pill-warn` and
+    // Hebrew gender-form-tolerant regex (פגדולות vs גדול). v8 missed because
+    // /גדול מדי/ literal didn't match the feminine-plural rendered string.
+    const banner = await waitForWarningBanner(page, 4000);
     const hasError = banner.found;
     const crashed = session.crashed();
 
