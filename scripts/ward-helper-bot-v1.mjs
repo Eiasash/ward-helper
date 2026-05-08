@@ -755,9 +755,24 @@ async function runCensusPhoto(scenario, browser) {
     await censusInput.setInputFiles(tmpPath, { timeout: 15_000 }).catch((err) => {
       logBug('MEDIUM', scenario.scenario_id, 'census-photo', `setInputFiles failed: ${err.message.slice(0, 100)}`);
     });
-    // OCR via the proxy can take ~5-15s. Wait then check page contents for
-    // any of our 4 fictitious tz numbers — any extraction proves OCR fired.
-    await sleep(15_000);
+    // After upload, the user must explicitly click "נתח רשימה" to start
+    // OCR (Census.tsx:362). Without that click, no extraction happens.
+    await sleep(1500);
+    const analyzeBtn = page.getByRole('button', { name: /נתח רשימה/ }).first();
+    if ((await analyzeBtn.count().catch(() => 0)) > 0) {
+      await analyzeBtn.click({ timeout: CONFIG.actionTimeoutMs }).catch(() => {});
+      console.log('  census-photo: clicked "נתח רשימה", waiting up to 30s for OCR...');
+    } else {
+      logBug('LOW', scenario.scenario_id, 'census-photo', '"נתח רשימה" button not found after upload — UI may have shifted');
+    }
+    // OCR via the proxy can take ~10-25s for a 4-row image. Wait + poll.
+    const ocrStart = Date.now();
+    while (Date.now() - ocrStart < 30_000) {
+      await sleep(2000);
+      const pageText = await page.evaluate(() => document.body.innerText).catch(() => '');
+      const found = synth.rows.filter((r) => pageText.includes(r.tz)).length;
+      if (found > 0) break;
+    }
     if (session.crashed()) {
       logBug('CRITICAL', scenario.scenario_id, 'census-photo', 'page crashed during OCR roundtrip');
     } else {
@@ -782,53 +797,76 @@ async function runCensusPhoto(scenario, browser) {
   }
 }
 
-/** Sub-bot 4: roster-import CSV ingest. */
+/**
+ * Sub-bot 4: roster-import paste-flow. RosterImportModal has paste/ocr/manual
+ * tabs — NO CSV file input. Use the paste tab with pipe-format text matching
+ * the placeholder example. Tests the parse + preview pipeline end-to-end.
+ */
 async function runRosterImport(scenario, browser) {
-  const session = await authedCaptureContext(scenario, browser);
+  const session = await captureContext(scenario, browser);
   if (!session.ok) return { skipped: session.error };
   const { ctx, page } = session;
   try {
-    // Navigate to roster import flow. ward-helper exposes this via the RosterImportModal.
     await page.evaluate(() => { window.location.hash = '#/today'; });
+    await sleep(1000);
+
+    // Click "⬆ ייבא רשומה" to open the modal (Today.tsx:267-271).
+    const openBtn = page.getByRole('button', { name: /ייבא רשומה/ }).first();
+    if ((await openBtn.count().catch(() => 0)) === 0) {
+      logBug('LOW', scenario.scenario_id, 'roster-import', '"ייבא רשומה" opener button not found on /today — feature flag may be off');
+      await ctx.close();
+      return { skipped: 'opener_not_found' };
+    }
+    await openBtn.click({ timeout: CONFIG.actionTimeoutMs }).catch(() => {});
     await sleep(800);
 
-    // Generate a tiny CSV with synthetic patients — derived from the scenario's demographics
-    // plus 2 generic mock rows.
+    // Modal opens on 'paste' tab by default. Find the textarea.
+    const ta = page.locator('#roster-paste').first();
+    if ((await ta.count().catch(() => 0)) === 0) {
+      logBug('LOW', scenario.scenario_id, 'roster-import', 'paste textarea (#roster-paste) not visible after modal open');
+      await ctx.close();
+      return { skipped: 'no_textarea' };
+    }
+    // Pipe-format matching the placeholder: id | name | age | room | bed | los | dx
     const d = scenario.demographics || {};
-    const csvRows = [
-      'name,tz,room,bed,age,sex',
-      `${d.name_he || 'מטופל א'},${d.tz || '111111118'},${d.room || '12'},${d.bed || 'A'},${d.age || 80},${d.sex || 'F'}`,
-      'מטופל ב,222222226,15,B,75,M',
-      'מטופל ג,333333334,20,A,90,F',
+    const lines = [
+      `1 | ${d.name_he || 'מטופל א'} | ${d.age || 80} | ${d.room || '12'} | ${d.bed || 'A'} | 5 | hip fx`,
+      '2 | יעקב כהן | 75 | 15 | B | 3 | CHF',
+      '3 | שרה לוי | 88 | 20 | A | 7 | UTI + delirium',
+      '4 | דוד אברהם | 92 | 23 | B | 2 | aspiration pneumonia',
     ];
-    const tmpPath = path.resolve(CONFIG.reportDir, `_roster_${scenario.scenario_id}.csv`);
-    await fs.writeFile(tmpPath, csvRows.join('\n'), 'utf8');
+    await ta.fill(lines.join('\n'));
+    await sleep(500);
 
-    // Find roster CSV input. RosterImportModal accepts CSV; need to open it first.
-    const importBtn = page.getByRole('button', { name: /ייבוא רשימה|import roster|רוסטר/i }).first();
-    if ((await importBtn.count().catch(() => 0)) > 0) {
-      await importBtn.click({ timeout: CONFIG.actionTimeoutMs }).catch(() => {});
-      await sleep(800);
+    // Click preview button "תצוגה מקדימה ←"
+    const previewBtn = page.getByRole('button', { name: /תצוגה מקדימה/ }).first();
+    if ((await previewBtn.count().catch(() => 0)) === 0) {
+      logBug('LOW', scenario.scenario_id, 'roster-import', 'preview button "תצוגה מקדימה" not found after paste');
+      await ctx.close();
+      return { skipped: 'no_preview_btn' };
     }
-    const fileInputs = await page.locator('input[type="file"]').all();
-    let csvInput = null;
-    for (const inp of fileInputs) {
-      const accept = await inp.getAttribute('accept').catch(() => '');
-      if (accept && accept.includes('csv')) { csvInput = inp; break; }
-    }
-    if (!csvInput) csvInput = fileInputs[fileInputs.length - 1]; // fallback to last
-
-    if (csvInput) {
-      await csvInput.setInputFiles(tmpPath, { timeout: 10_000 }).catch((err) => {
-        logBug('MEDIUM', scenario.scenario_id, 'roster-import', `setInputFiles failed: ${err.message.slice(0, 100)}`);
-      });
-      await sleep(2500);
-      if (session.crashed()) logBug('CRITICAL', scenario.scenario_id, 'roster-import', 'page crashed on tiny CSV');
+    const isDisabled = await previewBtn.isDisabled().catch(() => false);
+    if (isDisabled) {
+      logBug('MEDIUM', scenario.scenario_id, 'roster-import', 'preview button stayed disabled after paste — parser failed to recognize pipe format');
     } else {
-      logBug('LOW', scenario.scenario_id, 'roster-import', 'no CSV-accepting input found in DOM');
+      await previewBtn.click({ timeout: CONFIG.actionTimeoutMs }).catch(() => {});
+      await sleep(1500);
+      // Verify preview phase: heading should change to include patient count.
+      const pageText = await page.evaluate(() => document.body.innerText).catch(() => '');
+      const found = lines.filter((l) => {
+        const name = l.split('|')[1].trim();
+        return pageText.includes(name);
+      }).length;
+      if (found === 0) {
+        logBug('MEDIUM', scenario.scenario_id, 'roster-import', '0/4 patient names visible after preview click — parse may have failed silently');
+      } else if (found < 4) {
+        logBug('LOW', scenario.scenario_id, 'roster-import', `${found}/4 patient names in preview — partial parse`);
+      } else {
+        console.log(`  roster-import: paste-flow ✓ ${found}/4 names rendered in preview`);
+      }
     }
 
-    await fs.unlink(tmpPath).catch(() => {});
+    if (session.crashed()) logBug('CRITICAL', scenario.scenario_id, 'roster-import', 'page crashed during roster paste flow');
     await ctx.close();
     return { ok: true };
   } catch (err) {
