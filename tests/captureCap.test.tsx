@@ -153,6 +153,13 @@ describe('Capture — hard cap enforcement on file pick', () => {
   });
 });
 
+describe('Capture — image size cap (regression: Phase 7 50MB-crash)', () => {
+  it('IMAGE_MAX_BYTES exists and is 10MB', async () => {
+    const { IMAGE_MAX_BYTES } = await import('@/camera/session');
+    expect(IMAGE_MAX_BYTES).toBe(10_000_000);
+  });
+});
+
 describe('Capture — empty state when no blocks', () => {
   it('shows the "אין קלט" empty card', async () => {
     renderCapture();
