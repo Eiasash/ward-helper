@@ -251,3 +251,21 @@ No telemetry currently shipped — `saveBoth` returns a `cloudSkippedReason` to 
 
 - Vite warning: `useGlanceable.ts` is dynamically imported by `indexed.ts` but statically imported by 5+ other modules — the dynamic import is therefore a no-op. Either drop the dynamic import or refactor those static importers if a chunking benefit is actually wanted. Not a blocker.
 - `tests/extraction/eval.test.ts` remains the only skipped test, gated on `ANTHROPIC_API_KEY` env var. By design — runs against the live proxy in nightly CI when the secret is present.
+
+## v1.41+ candidates (deferred from v1.40 brainstorm 2026-05-09)
+
+### Cloud sync for `daySnapshots`
+Opt-in toggle. Requires:
+- Settings toggle "סנכרן היסטוריה לענן"
+- New Supabase migration: extend `ALLOWED_BLOB_TYPES` to include `'day-snapshot'`
+- Sync hook on `notifyDayArchived` event
+- Orphan-canary check extension
+
+### Use-yesterday's-note seed-draft flow runtime wiring (Task 3.8 sub-task B deferred)
+The infrastructure is in place: `decideSeed`/`detectReadmit` orchestrator (`src/notes/seedFromYesterdaySoap.ts`), `buildSeedBlocks` SOAP prompt helper (`src/notes/orchestrate.ts`). What's missing:
+- A "השתמש בהערת אתמול" button in `RecentPatientsList`
+- A `Patient → ParseFields` seed builder
+- `seedContext?: SeedDecision` arg threaded through `generateNote` → `buildPromptPrefix` → `buildSoapPromptPrefix`
+- A sessionStorage contract or new route for the button → NoteEditor handoff
+
+Concrete next step: decide on the route shape (new `/seed/:patientId` vs. extend NoteEditor with sessionStorage `seedContext`).

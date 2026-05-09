@@ -13,6 +13,7 @@ import { Consult } from './screens/Consult';
 import { HeaderStrip } from './components/HeaderStrip';
 import { PostLoginRestorePrompt } from './components/PostLoginRestorePrompt';
 import { MobileDebugPanel } from './components/MobileDebugPanel';
+import { MorningArchivePrompt } from './components/MorningArchivePrompt';
 
 // Lazy-loaded routes. Cold start usually lands on /today or /capture; the
 // three below are not on the hot path, so splitting them out trims the
@@ -105,6 +106,12 @@ export function App() {
       <a className="skip-link" href="#main-content">דלג לתוכן</a>
       <HeaderStrip />
       <main className="shell" id="main-content" tabIndex={-1}>
+        {/* Morning-rounds-prep banner — self-gated on lastArchivedDate <
+           today. Renders null on every other day, so it's safe to mount
+           App-wide. Surfaces above all routes so a doctor entering the
+           PWA on a fresh morning is offered the archive-yesterday flow
+           regardless of which screen is active. */}
+        <MorningArchivePrompt />
         <Suspense fallback={<section><h1>טוען...</h1></section>}>
           <Routes>
             <Route path="/" element={<Capture />} />

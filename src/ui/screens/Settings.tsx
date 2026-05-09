@@ -426,6 +426,14 @@ export function Settings() {
         </p>
       )}
 
+      <h2>היסטוריית סיכום יום</h2>
+      <p
+        dir="auto"
+        style={{ fontSize: 12, color: 'var(--muted, #666)', marginTop: 4 }}
+      >
+        שמורה רק במכשיר הזה. סנכרון לענן יתווסף בעתיד.
+      </p>
+
       <h2>עלות מצטברת</h2>
       {(() => {
         const c = loadCosts();
