@@ -12,7 +12,7 @@ import { resolveContinuity, type ContinuityContext } from '@/notes/continuity';
 import { ContinuityBanner } from '../components/ContinuityBanner';
 import { PriorNotesBanner } from '../components/PriorNotesBanner';
 import { ReadmitBanner } from '../components/ReadmitBanner';
-import { detectReadmit } from '@/notes/seedFromYesterdaySoap';
+import { decideSeed, detectReadmit } from '@/notes/seedFromYesterdaySoap';
 import { getPatientByTz } from '@/storage/indexed';
 import { unDischargePatient } from '@/storage/rounds';
 import type { SafetyFlags } from '@/safety/types';
@@ -71,6 +71,16 @@ export function Review() {
   const [fields, setFields] = useState<ParseFields>({});
   const [continuity, setContinuity] = useState<ContinuityContext | null>(null);
   const [continuityEnabled, setContinuityEnabled] = useState<boolean>(true);
+  // v1.41.0: runtime "השתמש בהערת אתמול" toggle. `seedAvailable` is set
+  // true when `decideSeed` returns a prefill SeedDecision for the
+  // currently-extracted patient. The button is rendered only when
+  // available; default off (doctor explicitly opts in) — the prompt
+  // augmentation adds tokens, and we don't want to spend on it
+  // implicitly. State is per-session; flushed via sessionStorage
+  // on Proceed and consumed by NoteEditor.
+  const [seedAvailable, setSeedAvailable] = useState<boolean>(false);
+  const [seedFromYesterdayEnabled, setSeedFromYesterdayEnabled] =
+    useState<boolean>(false);
   const [safetyFlags, setSafetyFlags] = useState<SafetyFlags | null>(null);
   const [safetyOpen, setSafetyOpen] = useState(false);
   // Per-critical-row confirmation state, populated by FieldRow's onConfirmChange
@@ -194,6 +204,20 @@ export function Review() {
       const stored = sessionStorage.getItem('soapContinuity');
       const hasAnyContext = !!(ctx.admission || ctx.priorSoaps.length > 0);
       setContinuityEnabled(stored === 'off' ? false : hasAnyContext);
+      // v1.41.0: compute seed availability for the runtime toggle. We
+      // run decideSeed only when we already have a patient record —
+      // resolveContinuity returns ctx.patient===null when no patient
+      // matches, in which case decideSeed has nothing to seed from.
+      // decideSeed re-resolves continuity internally, so we only call
+      // it when the cheap precondition (ctx.patient + mostRecentSoap)
+      // is met to avoid the redundant IDB hop on every TZ tick.
+      if (ctx.patient && ctx.mostRecentSoap) {
+        const decision = await decideSeed(ctx.patient);
+        if (cancelled) return;
+        setSeedAvailable(decision.kind === 'prefill');
+      } else {
+        setSeedAvailable(false);
+      }
     })();
     return () => {
       cancelled = true;
@@ -395,6 +419,24 @@ export function Review() {
     } else {
       sessionStorage.removeItem('continuityTeudatZehut');
     }
+    // v1.41.0: persist the runtime "השתמש בהערת אתמול" choice. NoteEditor
+    // reads this flag together with `continuityTeudatZehut` to call
+    // `decideSeed(patient)` and pass the resulting SeedDecision into
+    // `generateNote`. We only set the flag when the toggle is on AND
+    // continuity is enabled — yesterday-seeding without continuity would
+    // mean the patient durable-fields lines but no MOST RECENT SOAP body
+    // for context, which is incoherent for the current architecture.
+    if (
+      isSoap &&
+      seedAvailable &&
+      seedFromYesterdayEnabled &&
+      continuity?.patient &&
+      continuityEnabled
+    ) {
+      sessionStorage.setItem('seedFromYesterday', '1');
+    } else {
+      sessionStorage.removeItem('seedFromYesterday');
+    }
     if (safetyFlags) {
       sessionStorage.setItem('validatedSafety', JSON.stringify(safetyFlags));
     } else {
@@ -441,6 +483,39 @@ export function Review() {
           enabled={continuityEnabled}
           onToggle={onToggleContinuity}
         />
+      )}
+
+      {isSoap && seedAvailable && continuityEnabled && (
+        <div
+          aria-label="השתמש בהערת אתמול — אזור בקרה"
+          style={{
+            background: 'var(--card)',
+            border: '1px solid var(--border-strong, var(--border, rgba(255,255,255,0.08)))',
+            padding: '8px 12px',
+            borderRadius: 8,
+            marginBottom: 12,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+            flexWrap: 'wrap',
+          }}
+        >
+          <span style={{ fontSize: 13, color: 'var(--muted)' }}>
+            הוסף הקשר מתמשך של המטופל (handover, תוכנית ארוכת טווח) להנחיות.
+          </span>
+          <button
+            type="button"
+            className={seedFromYesterdayEnabled ? '' : 'ghost'}
+            aria-pressed={seedFromYesterdayEnabled}
+            onClick={() => setSeedFromYesterdayEnabled((v) => !v)}
+            style={{ minHeight: 32, padding: '4px 12px', fontSize: 13 }}
+          >
+            {seedFromYesterdayEnabled
+              ? 'אל תשתמש בהערת אתמול'
+              : 'השתמש בהערת אתמול'}
+          </button>
+        </div>
       )}
 
       {!fields.name && !fields.teudatZehut && (
