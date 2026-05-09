@@ -43,4 +43,14 @@ describe('discharge + un-discharge', () => {
     expect(back?.handoverNote).toContain('5');
     expect(back?.handoverNote).toContain('re-admission via capture');
   });
+
+  it('unDischargePatient on a not-currently-discharged patient still appends re-admit line', async () => {
+    await putPatient(newP('1'));
+    // patient is not discharged
+    await unDischargePatient('1', 0, 'manual call');
+    const back = await getPatient('1');
+    expect(back?.discharged).toBe(false);
+    expect(back?.dischargedAt).toBeUndefined();
+    expect(back?.handoverNote).toContain('manual call');
+  });
 });

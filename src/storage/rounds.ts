@@ -1,6 +1,6 @@
-import { getDb, getPatient, putPatient } from './indexed';
+import { getDb } from './indexed';
 import type { Patient } from './indexed';
-import { notifyDayArchived } from '@/ui/hooks/glanceableEvents';
+import { notifyDayArchived, notifyPatientsChanged } from '@/ui/hooks/glanceableEvents';
 
 export const SNAPSHOT_HISTORY_CAP = 20;
 
@@ -96,6 +96,7 @@ export async function archiveDay(): Promise<DaySnapshot> {
 
   localStorage.setItem(LAST_ARCHIVED_KEY, today);
   notifyDayArchived();
+  notifyPatientsChanged();
   return snapshot;
 }
 
@@ -134,17 +135,31 @@ export async function runV1_40_0_BackfillIfNeeded(): Promise<void> {
  * Mark a patient as discharged. Records `dischargedAt = Date.now()` so the UI
  * can sort/show discharged-today rosters and so re-admit (`unDischargePatient`)
  * can compute the gap.
+ *
+ * Atomicity: the read+write run inside a single `readwrite` transaction so a
+ * concurrent caller can't observe a stale row between get and put. Mirrors
+ * `unDischargePatient` for consistency even though `dischargePatient` itself
+ * doesn't have a read-modify-write hazard (its writes are absolute, not
+ * additive).
  */
 export async function dischargePatient(patientId: string): Promise<void> {
-  const p = await getPatient(patientId);
-  if (!p) throw new Error(`Patient ${patientId} not found`);
+  const db = await getDb();
+  const tx = db.transaction('patients', 'readwrite');
+  const store = tx.objectStore('patients');
+  const p = (await store.get(patientId)) as Patient | undefined;
+  if (!p) {
+    await tx.done;
+    throw new Error(`Patient ${patientId} not found`);
+  }
   const now = Date.now();
-  await putPatient({
+  await store.put({
     ...p,
     discharged: true,
     dischargedAt: now,
     updatedAt: now,
   });
+  await tx.done;
+  notifyPatientsChanged();
 }
 
 /**
@@ -152,22 +167,37 @@ export async function dischargePatient(patientId: string): Promise<void> {
  * Hebrew re-admit line to `handoverNote` so the next shift sees context.
  * Caller passes `gapDays` (days between discharge and re-admit) and a free-text
  * `reason` (e.g. "re-admission via capture", a complaint, a note from the ER).
+ *
+ * Atomicity: the read+write run inside a single `readwrite` transaction so two
+ * concurrent calls (e.g. doctor double-tap) can't both read the same `p` and
+ * both compute their own appended line — the second write would otherwise
+ * silently lose the first's appended line.
  */
 export async function unDischargePatient(
   patientId: string,
   gapDays: number,
   reason: string,
 ): Promise<void> {
-  const p = await getPatient(patientId);
-  if (!p) throw new Error(`Patient ${patientId} not found`);
+  const db = await getDb();
+  const tx = db.transaction('patients', 'readwrite');
+  const store = tx.objectStore('patients');
+  const p = (await store.get(patientId)) as Patient | undefined;
+  if (!p) {
+    await tx.done;
+    throw new Error(`Patient ${patientId} not found`);
+  }
   const today = new Date().toLocaleDateString('en-CA');
-  const reAdmitLine = `\nחזר לאשפוז ב-${today} לאחר ${gapDays} ימים: ${reason}`;
-  const newHandoverNote = (p.handoverNote ?? '') + reAdmitLine;
-  await putPatient({
+  const reAdmitLine = `חזר לאשפוז ב-${today} לאחר ${gapDays} ימים: ${reason}`;
+  const newHandoverNote = p.handoverNote
+    ? `${p.handoverNote}\n${reAdmitLine}`
+    : reAdmitLine;
+  await store.put({
     ...p,
     discharged: false,
     dischargedAt: undefined,
     handoverNote: newHandoverNote,
     updatedAt: Date.now(),
   });
+  await tx.done;
+  notifyPatientsChanged();
 }
