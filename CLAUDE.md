@@ -13,13 +13,13 @@ These four rules are the floor. They override any conflicting guidance later in 
 
 Mobile-first Hebrew-RTL PWA for SZMC ward rounds. Camera an AZMA screen → reviewed Hebrew note → paste to Chameleon. Single-user, proxy-based Claude access (no BYO key), local-first IndexedDB, encrypted Supabase backup.
 
-## Snapshot (last audit 2026-05-02, v1.32.0)
+## Snapshot (last audit 2026-05-10, v1.41.0)
 
-- 701 vitest cases passing across 62 files (+ 1 skipped live-eval gated on `ANTHROPIC_API_KEY`)
-- Entry chunk **156,580 bytes** gzipped (87.0% of 180 kB CI ceiling)
-- Total JS ≈ **165,000 bytes** gzipped (~41% of 400 kB CI ceiling)
-- All 13 CI gates green; skill drift between `~/.claude/skills/` and `public/skills/` = none
-- Vite mixed static/dynamic-import warning fixed (R1 followup)
+- **986 vitest cases passing across 97 files** (+ 1 skipped live-eval gated on `ANTHROPIC_API_KEY`)
+- Entry chunk **133,691 bytes** gzipped (72.5% of 180 kB CI ceiling — 50,629 B headroom)
+- Total assets gz **203,898 bytes** (49.8% of 400 kB CI ceiling)
+- All 8 CI gates green; skill drift between `~/.claude/skills/` and `public/skills/` = none (5 skills synced incl. `geriatrics-knowledge`)
+- Coverage: total statements 65.34%, branches 80.96% (UI gap by design — covered by Playwright `ward-helper-bot-v1`)
 - See [IMPROVEMENTS.md](IMPROVEMENTS.md) for the full audit log
 
 ## Commands
