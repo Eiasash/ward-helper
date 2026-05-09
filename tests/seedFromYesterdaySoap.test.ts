@@ -1,7 +1,8 @@
 import 'fake-indexeddb/auto';
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
-  putPatient, putNote, resetDbForTests, type Patient, type Note,
+  putPatient, putNote, getPatient, resetDbForTests,
+  type Patient, type Note,
 } from '@/storage/indexed';
 import { decideSeed, detectReadmit } from '@/notes/seedFromYesterdaySoap';
 
@@ -97,7 +98,6 @@ describe('detectReadmit', () => {
 });
 
 async function getPatientHelper(id: string): Promise<Patient> {
-  const { getPatient } = await import('@/storage/indexed');
   const p = await getPatient(id);
   if (!p) throw new Error(`fixture missing: ${id}`);
   return p;
