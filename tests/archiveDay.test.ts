@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   putPatient, listPatients, resetDbForTests, type Patient,
 } from '@/storage/indexed';
@@ -60,5 +60,17 @@ describe('archiveDay', () => {
     const snaps = await listDaySnapshots();
     expect(snaps).toHaveLength(1);
     expect(snaps[0]?.patients).toHaveLength(2);
+  });
+
+  it('emits notifyDayArchived event after successful archive', async () => {
+    await putPatient(newP('1'));
+    const spy = vi.fn();
+    window.addEventListener('ward-helper:day-archived', spy);
+    try {
+      await archiveDay();
+      expect(spy).toHaveBeenCalledOnce();
+    } finally {
+      window.removeEventListener('ward-helper:day-archived', spy);
+    }
   });
 });

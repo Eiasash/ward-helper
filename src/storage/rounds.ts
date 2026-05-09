@@ -1,4 +1,4 @@
-import { getDb, listPatients, putPatient } from './indexed';
+import { getDb } from './indexed';
 import type { Patient } from './indexed';
 import { notifyDayArchived } from '@/ui/hooks/glanceableEvents';
 
@@ -39,34 +39,60 @@ export const LAST_ARCHIVED_KEY = 'ward-helper.lastArchivedDate';
  * `daySnapshots` keyed by today's date (YYYY-MM-DD), then clear `planToday`
  * on every live patient. The snapshot freezes `planToday` BEFORE the clear so
  * yesterday's plans are recoverable. Same-date re-archive replaces the prior
- * snapshot (Q5b), enforced by `putDaySnapshot`'s upsert-on-id semantics.
+ * snapshot (Q5b), enforced by upsert-on-id semantics.
+ *
+ * Atomicity: the snapshot put + per-patient clears all run inside a single
+ * multi-store IDB transaction (`daySnapshots` + `patients`, readwrite). If
+ * any operation fails, the entire transaction aborts — neither the snapshot
+ * nor the clears persist, so re-running is genuinely safe (cf. the original
+ * bug where a partial clear with a persisted snapshot could be overwritten
+ * with corrupted data on retry).
  *
  * Sets `localStorage.LAST_ARCHIVED_KEY = today` and dispatches
- * `ward-helper:day-archived` after persistence completes.
- *
- * Errors from `putPatient` propagate upward — the snapshot has already been
- * written by then, so the user can re-run safely.
+ * `ward-helper:day-archived` after the tx commits.
  */
 export async function archiveDay(): Promise<DaySnapshot> {
   const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
   const archivedAt = Date.now();
-  const patients = await listPatients();
+  const db = await getDb();
 
-  // Frozen copy — capture planToday BEFORE clearing.
+  const tx = db.transaction(['daySnapshots', 'patients'], 'readwrite');
+  const snapshotsStore = tx.objectStore('daySnapshots');
+  const patientsStore = tx.objectStore('patients');
+
+  // Read live patients within the same tx (consistency).
+  const patients = (await patientsStore.getAll()) as Patient[];
+
+  // Frozen copy — capture planToday BEFORE clearing. structuredClone
+  // isolates the returned snapshot from any future caller mutation
+  // (ward-helper targets es2022, which has structuredClone in all
+  // supported runtimes including the test env).
   const snapshot: DaySnapshot = {
     id: today,
     date: today,
     archivedAt,
-    patients: patients.map((p) => ({ ...p })), // shallow clone
+    patients: structuredClone(patients),
   };
-  await putDaySnapshot(snapshot);
+
+  // Snapshot write + cap (mirrors putDaySnapshot's logic, inlined so the
+  // whole archive runs inside one tx — calling putDaySnapshot here would
+  // open a second tx and break atomicity).
+  await snapshotsStore.put(snapshot);
+  const allSnaps = (await snapshotsStore.getAll()) as DaySnapshot[];
+  if (allSnaps.length > SNAPSHOT_HISTORY_CAP) {
+    const sorted = [...allSnaps].sort((a, b) => a.archivedAt - b.archivedAt);
+    const toDelete = sorted.slice(0, allSnaps.length - SNAPSHOT_HISTORY_CAP);
+    for (const s of toDelete) await snapshotsStore.delete(s.id);
+  }
 
   // Clear planToday for all live patients (skip rows already empty).
   for (const p of patients) {
     if (p.planToday !== '') {
-      await putPatient({ ...p, planToday: '', updatedAt: archivedAt });
+      await patientsStore.put({ ...p, planToday: '', updatedAt: archivedAt });
     }
   }
+
+  await tx.done;
 
   localStorage.setItem(LAST_ARCHIVED_KEY, today);
   notifyDayArchived();
