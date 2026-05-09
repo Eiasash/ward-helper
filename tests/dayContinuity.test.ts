@@ -93,4 +93,14 @@ describe('buildDayContinuity', () => {
     expect(ROOM_NAME_PREFIX_LEN).toBe(4);
     expect(HANDOVER_MIN_CHARS).toBe(5);
   });
+
+  it('LRE-prefixed Hebrew name (real OCR artifact) still matches via stripping', () => {
+    // ‪ is LRE — invisible BIDI control char that AZMA OCR sometimes injects
+    const today = [p({ id: 'today-1', name: '‪כהן שרה', room: '5A' })];
+    const yesterday = snap('2026-05-08', 1, [
+      p({ id: 'yest-1', name: 'כהן שרה', room: '5A', handoverNote: 'baseline note here' }),
+    ]);
+    const out = buildDayContinuity(today, [yesterday]);
+    expect(out.get('today-1')?.matchType).toBe('exact');
+  });
 });

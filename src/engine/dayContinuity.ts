@@ -13,8 +13,18 @@ export interface PreviousDayContext {
 }
 
 function namePrefix(s: string): string {
-  // Strip BIDI marks (LRM U+200E, RLM U+200F) and lowercase. First N chars.
-  return s.replace(/[\u200E\u200F]/g, '').trim().toLocaleLowerCase().slice(0, ROOM_NAME_PREFIX_LEN);
+  // Strip full BIDI / zero-width control set commonly seen in Hebrew/RTL OCR + Chameleon paste:
+  //   ZWNJ/ZWJ/LRM/RLM (U+200C\u2013U+200F)
+  //   LRE/RLE/PDF/LRO/RLO (U+202A\u2013U+202E)
+  //   LRI/RLI/FSI/PDI (U+2066\u2013U+2069)
+  //   BOM/ZWNBSP (U+FEFF)
+  // At 4-char prefix granularity, an invisible LRE prefix consumes one of four slots
+  // and silently breaks otherwise-exact matches.
+  return s
+    .replace(/[\u200C-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, '')
+    .trim()
+    .toLocaleLowerCase()
+    .slice(0, ROOM_NAME_PREFIX_LEN);
 }
 
 function filterHandover(s: string | undefined): string {
