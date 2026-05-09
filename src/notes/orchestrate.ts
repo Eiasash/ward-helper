@@ -106,36 +106,34 @@ Forbidden tokens (Chameleon corrupts these): arrows (→ ← ↑ ↓), ** for bo
 `.trim();
 
 /**
- * Builds the optional "Block A (yesterday's SOAP reference) + Block B (durable
- * patient context)" preamble that prepends the SOAP system prompt when the
- * caller has decided to seed today's draft from yesterday's note.
+ * Builds the optional "durable patient context" preamble that prepends the
+ * SOAP system prompt when the caller has decided to seed today's draft from
+ * yesterday's note via the runtime "השתמש בהערת אתמול" toggle.
  *
- * Contract: returns the empty string for any non-prefill seedContext, so
- * callers can unconditionally concatenate. When prepended ahead of
- * `CHAMELEON_RULES + SOAP_STYLE`, the printed-output-order invariant from the
- * szmc-clinical-notes skill is preserved (existing block order is untouched).
+ * Contract:
+ * - returns the empty string for any non-prefill seedContext, so callers can
+ *   unconditionally concatenate.
+ * - emits ONLY the patient-durable fields (handoverNote / planLongTerm /
+ *   clinicalMeta) — yesterday's SOAP body itself is intentionally NOT
+ *   reprinted here because `buildSoapPromptPrefix` already injects
+ *   `MOST RECENT SOAP (date)` from the same `resolveContinuity` source.
+ *   Re-emitting `bodyContext` here would duplicate the body in the prompt
+ *   and confuse the model. (Architecture decision 2026-05-10 v1.41.0.)
  *
- * The "do NOT copy verbatim" framing is critical — the model otherwise tends
- * to regurgitate yesterday's S/vitals/labs as today's, defeating the safety
- * point of seeding (continuity reference, not a copy-paste shortcut).
+ * Currently `seedContext.bodyContext` therefore goes unused at runtime — it
+ * remains on the SeedDecision type for future decoupling (e.g. a path that
+ * uses seed without continuity). Both halves trace to the same SOAP body.
  *
- * Currently exported for `tests/seededSoapPrompt.test.ts` only — not yet
- * threaded into `buildSoapPromptPrefix` / `generateNote`. The runtime
- * "השתמש בהערת אתמול" entry point is deferred (PR 3 Task 3.8 sub-task B)
- * pending a clean integration point with the existing capture/emit flow.
+ * The "do NOT copy verbatim" framing is critical for the body block (which
+ * continuity prints) — the model otherwise tends to regurgitate yesterday's
+ * S/vitals/labs as today's. That instruction lives in `buildSoapPromptPrefix`
+ * already, so it isn't repeated here.
  */
 export function buildSeedBlocks(seedContext: SeedDecision): string {
   if (seedContext.kind !== 'prefill') return '';
   return [
     '',
-    "Yesterday's SOAP for this patient is provided below as reference for clinical",
-    "continuity. When drafting today's, the Subjective, vitals, labs, and today's",
-    "chief complaint must reflect TODAY'S data — do not copy from yesterday.",
-    '',
-    "Yesterday's SOAP (reference only, do NOT copy verbatim):",
-    seedContext.bodyContext,
-    '',
-    'Patient durable context (use directly; do not re-derive from yesterday\'s prose):',
+    "Patient durable context (use directly; do not re-derive from yesterday's prose):",
     `- handoverNote: ${seedContext.patientFields.handoverNote}`,
     `- planLongTerm: ${seedContext.patientFields.planLongTerm}`,
     `- clinicalMeta: ${JSON.stringify(seedContext.patientFields.clinicalMeta)}`,
@@ -320,10 +318,17 @@ Sections in order:
 export function buildSoapPromptPrefix(
   continuity: ContinuityContext | null,
   mode: SoapMode = 'general',
+  seedContext: SeedDecision | null = null,
 ): string {
   const base = [CHAMELEON_RULES, SOAP_STYLE];
   const augmentation = rehabAugmentation(mode);
   const tail = augmentation ? [augmentation] : [];
+  // Seed-prefix: durable patient fields (handoverNote / planLongTerm /
+  // clinicalMeta) when the doctor toggled "השתמש בהערת אתמול" on Review.
+  // Empty string when seedContext is null or non-prefill — non-disruptive
+  // for every existing call site that doesn't pass seedContext.
+  const seedPrefix = seedContext ? buildSeedBlocks(seedContext) : '';
+  const seedTail = seedPrefix ? [seedPrefix] : [];
 
   if (!continuity || (!continuity.admission && continuity.priorSoaps.length === 0)) {
     return [
@@ -331,6 +336,7 @@ export function buildSoapPromptPrefix(
       "First SOAP for this patient — anchor the Assessment one-liner on today's chief complaint + PMH + age/sex.",
       ...base,
       ...tail,
+      ...seedTail,
     ].join('\n\n');
   }
 
@@ -357,6 +363,7 @@ export function buildSoapPromptPrefix(
       '',
       ...base,
       ...tail,
+      ...seedTail,
     ].join('\n');
   }
 
@@ -370,6 +377,7 @@ export function buildSoapPromptPrefix(
     '',
     ...base,
     ...tail,
+    ...seedTail,
   ].join('\n');
 }
 
@@ -377,10 +385,11 @@ export function buildPromptPrefix(
   noteType: NoteType,
   continuity: ContinuityContext | null,
   soapMode: SoapMode = 'general',
+  seedContext: SeedDecision | null = null,
 ): string {
   switch (noteType) {
     case 'soap':
-      return buildSoapPromptPrefix(continuity, soapMode);
+      return buildSoapPromptPrefix(continuity, soapMode, seedContext);
     case 'admission':
       return [CHAMELEON_RULES, ADMISSION_STYLE].join('\n\n');
     case 'discharge':
@@ -504,6 +513,7 @@ export async function generateNote(
   continuity: ContinuityContext | null = null,
   soapMode: SoapMode = 'general',
   abortSignal?: AbortSignal,
+  seedContext: SeedDecision | null = null,
 ): Promise<string> {
   assertExtractIsSafe(noteType, validated);
 
@@ -515,7 +525,12 @@ export async function generateNote(
   // ignored — keeping the signature uniform across note types lets the
   // UI hand the same `mode` to generateNote regardless of the type the
   // user is actually generating.
-  const prefix = buildPromptPrefix(noteType, continuity, soapMode);
+  // seedContext: the runtime "השתמש בהערת אתמול" toggle on Review feeds
+  // a SeedDecision through here so the SOAP prompt can include the
+  // patient's durable context (handoverNote / planLongTerm / clinicalMeta).
+  // null preserves the v1.40.x behavior — only the new toggle path
+  // populates this argument.
+  const prefix = buildPromptPrefix(noteType, continuity, soapMode, seedContext);
   const systemWithPrefix = `${skillContent}\n\n---\n\n${prefix}`;
 
   // abortSignal: Phase E batch driver passes its AbortController so a
