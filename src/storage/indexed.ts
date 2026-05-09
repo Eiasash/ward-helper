@@ -14,6 +14,14 @@ export interface Patient {
   tags: string[];
   createdAt: number;
   updatedAt: number;
+  // v1.40.0 morning-rounds-prep additions
+  discharged?: boolean;
+  dischargedAt?: number;
+  tomorrowNotes?: string[];
+  handoverNote?: string;
+  planLongTerm?: string;
+  planToday?: string;
+  clinicalMeta?: Record<string, string>;
 }
 
 export interface Note {
