@@ -57,6 +57,21 @@ export function notifyNoteTypeChanged(): void {
   }
 }
 
+/**
+ * Notify same-tab listeners that the day was archived — `archiveDay()` has
+ * snapshotted the current roster and cleared `planToday` for all patients.
+ * Glanceable headers / today-list views refresh on this event.
+ */
+export function notifyDayArchived(): void {
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ward-helper:day-archived'));
+    }
+  } catch {
+    /* non-fatal */
+  }
+}
+
 const LAST_SYNC_KEY = 'ward-helper.lastSyncAt';
 
 /**
