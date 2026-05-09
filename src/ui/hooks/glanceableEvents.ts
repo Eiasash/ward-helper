@@ -57,6 +57,42 @@ export function notifyNoteTypeChanged(): void {
   }
 }
 
+/**
+ * Notify same-tab listeners that the day was archived — `archiveDay()` has
+ * snapshotted the current roster and cleared `planToday` for all patients.
+ * Glanceable headers / today-list views refresh on this event.
+ */
+export function notifyDayArchived(): void {
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ward-helper:day-archived'));
+    }
+  } catch {
+    /* non-fatal */
+  }
+}
+
+/**
+ * Notify same-tab listeners that the patients collection changed — a patient
+ * was discharged, un-discharged (re-admitted), or otherwise mutated through
+ * one of the rounds helpers. Distinct from `notifyPatientChanged` (singular)
+ * which fires for the active-patient `validated` sessionStorage blob.
+ *
+ * Roster views, discharged-today lists, and morning-rounds dashboards refresh
+ * on this event. Also dispatched by `archiveDay()` alongside `notifyDayArchived`
+ * so a single archive triggers both "the day rolled over" and "patient state
+ * mutated" listeners.
+ */
+export function notifyPatientsChanged(): void {
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ward-helper:patients-changed'));
+    }
+  } catch {
+    /* non-fatal */
+  }
+}
+
 const LAST_SYNC_KEY = 'ward-helper.lastSyncAt';
 
 /**
