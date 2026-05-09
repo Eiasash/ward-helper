@@ -11,7 +11,7 @@
  * Dedupe rule (per spec): one row per patient (latest note wins). Sorted
  * newest-first by latest-note-updatedAt.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   listPatients,
@@ -20,6 +20,7 @@ import {
   type Note,
   type NoteType,
 } from '@/storage/indexed';
+import { dischargePatient } from '@/storage/rounds';
 import { notifyPatientChanged, notifyNoteTypeChanged } from '../hooks/useGlanceable';
 import { TomorrowBanner } from '@/ui/components/TomorrowBanner';
 import { PatientPlanFields } from '@/ui/components/PatientPlanFields';
@@ -92,6 +93,16 @@ export function RecentPatientsList({
   const nav = useNavigate();
   const [recents, setRecents] = useState<RecentPatient[]>([]);
 
+  // Stable refresher: re-runs on mount AND on the `ward-helper:patients-changed`
+  // event. The discharge button below dispatches that event via
+  // `dischargePatient` → `notifyPatientsChanged()` (storage/rounds.ts), so the
+  // discharged row falls out of `items` (which filters `!discharged`) without
+  // a manual page reload.
+  const refresh = useCallback(async (): Promise<void> => {
+    const [ps, ns] = await Promise.all([listPatients(), listAllNotes()]);
+    setRecents(buildRecentPatients(ps, ns));
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -99,10 +110,16 @@ export function RecentPatientsList({
       if (cancelled) return;
       setRecents(buildRecentPatients(ps, ns));
     })();
+    const handler = (): void => {
+      if (cancelled) return;
+      void refresh();
+    };
+    window.addEventListener('ward-helper:patients-changed', handler);
     return () => {
       cancelled = true;
+      window.removeEventListener('ward-helper:patients-changed', handler);
     };
-  }, []);
+  }, [refresh]);
 
   const items = useMemo(
     () => recents.filter((rp) => !rp.patient.discharged).slice(0, 8),
@@ -140,6 +157,25 @@ export function RecentPatientsList({
                   minute: '2-digit',
                 })}
               </span>
+            </button>
+            <button
+              type="button"
+              className="recent-patient-discharge"
+              onClick={async (e) => {
+                // Sibling of the row button — `stopPropagation` is belt-and-
+                // braces (the row button is not an ancestor) but cheap.
+                e.stopPropagation();
+                if (window.confirm(`לשחרר את ${rp.patient.name}?`)) {
+                  await dischargePatient(rp.patient.id);
+                  // Refresh is also driven by the
+                  // `ward-helper:patients-changed` listener above; the explicit
+                  // call here keeps the UI snappy if the listener races.
+                }
+              }}
+              aria-label={`שחרר את ${rp.patient.name}`}
+              style={{ marginInlineStart: 8, fontSize: 12 }}
+            >
+              שחרר
             </button>
             <TomorrowBanner patientId={rp.patient.id} />
             <PatientPlanFields patientId={rp.patient.id} />
