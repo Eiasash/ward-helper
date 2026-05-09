@@ -201,3 +201,94 @@ export async function unDischargePatient(
   await tx.done;
   notifyPatientsChanged();
 }
+
+/**
+ * Append a single ephemeral "tomorrow" note line to a patient. These lines
+ * are surfaced on the morning rounds screen and can be dismissed (forgotten)
+ * or promoted into the durable `handoverNote` once the work has actually
+ * happened.
+ *
+ * Atomicity: read+write inside one `readwrite` tx so two concurrent calls
+ * (e.g. doctor double-tap or dictation hitting twice) can't both read the
+ * same `p` and overwrite each other's appended line.
+ */
+export async function addTomorrowNote(patientId: string, text: string): Promise<void> {
+  const db = await getDb();
+  const tx = db.transaction('patients', 'readwrite');
+  const store = tx.objectStore('patients');
+  const p = (await store.get(patientId)) as Patient | undefined;
+  if (!p) {
+    await tx.done;
+    throw new Error(`Patient ${patientId} not found`);
+  }
+  await store.put({
+    ...p,
+    tomorrowNotes: [...(p.tomorrowNotes ?? []), text],
+    updatedAt: Date.now(),
+  });
+  await tx.done;
+  notifyPatientsChanged();
+}
+
+/**
+ * Drop a single ephemeral tomorrow-note line by index. Used when the
+ * underlying todo no longer applies (e.g. labs were resulted overnight).
+ *
+ * Atomicity: read+write inside one `readwrite` tx so a concurrent
+ * `addTomorrowNote` / `promoteToHandover` can't be silently clobbered by
+ * a stale `p` snapshot.
+ */
+export async function dismissTomorrowNote(patientId: string, lineIdx: number): Promise<void> {
+  const db = await getDb();
+  const tx = db.transaction('patients', 'readwrite');
+  const store = tx.objectStore('patients');
+  const p = (await store.get(patientId)) as Patient | undefined;
+  if (!p) {
+    await tx.done;
+    throw new Error(`Patient ${patientId} not found`);
+  }
+  const next = (p.tomorrowNotes ?? []).filter((_, i) => i !== lineIdx);
+  await store.put({ ...p, tomorrowNotes: next, updatedAt: Date.now() });
+  await tx.done;
+  notifyPatientsChanged();
+}
+
+/**
+ * Promote an ephemeral tomorrow-note line into the durable `handoverNote`:
+ * append it (newline-separated) and remove it from `tomorrowNotes` in the
+ * same tx so the line never appears in both places.
+ *
+ * Out-of-bounds `lineIdx` is a graceful no-op — the tx still commits
+ * (releasing IDB locks) but no `notifyPatientsChanged` fires since no state
+ * actually changed.
+ *
+ * Atomicity: critical here because the operation reads `handoverNote` AND
+ * `tomorrowNotes`, mutates both, and writes them together. A non-tx version
+ * would risk losing an appended handover line on a concurrent write.
+ */
+export async function promoteToHandover(patientId: string, lineIdx: number): Promise<void> {
+  const db = await getDb();
+  const tx = db.transaction('patients', 'readwrite');
+  const store = tx.objectStore('patients');
+  const p = (await store.get(patientId)) as Patient | undefined;
+  if (!p) {
+    await tx.done;
+    throw new Error(`Patient ${patientId} not found`);
+  }
+  const lines = p.tomorrowNotes ?? [];
+  const line = lines[lineIdx];
+  if (line === undefined) {
+    await tx.done;
+    return; // graceful no-op on out-of-bounds; no state changed, no notify
+  }
+  const nextHandover = (p.handoverNote ?? '') + (p.handoverNote ? '\n' : '') + line;
+  const nextTomorrow = lines.filter((_, i) => i !== lineIdx);
+  await store.put({
+    ...p,
+    handoverNote: nextHandover,
+    tomorrowNotes: nextTomorrow,
+    updatedAt: Date.now(),
+  });
+  await tx.done;
+  notifyPatientsChanged();
+}
