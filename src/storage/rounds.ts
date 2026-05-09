@@ -30,3 +30,34 @@ export async function listDaySnapshots(): Promise<DaySnapshot[]> {
   const all = (await db.getAll('daySnapshots')) as DaySnapshot[];
   return all.sort((a, b) => b.archivedAt - a.archivedAt); // newest first
 }
+
+const BACKFILL_KEY = 'ward-helper.v1_40_0_backfilled';
+
+export async function runV1_40_0_BackfillIfNeeded(): Promise<void> {
+  if (localStorage.getItem(BACKFILL_KEY) === '1') return;
+  try {
+    const db = await getDb();
+    const tx = db.transaction('patients', 'readwrite');
+    const store = tx.objectStore('patients');
+    let cursor = await store.openCursor();
+    while (cursor) {
+      const p = cursor.value as Patient;
+      await cursor.update({
+        ...p,
+        discharged: p.discharged ?? false,
+        tomorrowNotes: p.tomorrowNotes ?? [],
+        handoverNote: p.handoverNote ?? '',
+        planLongTerm: p.planLongTerm ?? '',
+        planToday: p.planToday ?? '',
+        clinicalMeta: p.clinicalMeta ?? {},
+      });
+      cursor = await cursor.continue();
+    }
+    await tx.done;
+    localStorage.setItem(BACKFILL_KEY, '1');
+  } catch (err) {
+    // Don't set marker on failure — retries next boot.
+    // Reads tolerate missing fields via ?? defaults at every read site.
+    console.warn('[rounds] v1.40.0 backfill failed; will retry next boot', err);
+  }
+}
