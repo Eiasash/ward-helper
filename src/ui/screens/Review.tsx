@@ -11,6 +11,10 @@ import { FieldRow } from '../components/FieldRow';
 import { resolveContinuity, type ContinuityContext } from '@/notes/continuity';
 import { ContinuityBanner } from '../components/ContinuityBanner';
 import { PriorNotesBanner } from '../components/PriorNotesBanner';
+import { ReadmitBanner } from '../components/ReadmitBanner';
+import { detectReadmit } from '@/notes/seedFromYesterdaySoap';
+import { getPatientByTz } from '@/storage/indexed';
+import { unDischargePatient } from '@/storage/rounds';
 import type { SafetyFlags } from '@/safety/types';
 import { notifyPatientChanged } from '../hooks/useGlanceable';
 import { CapturePhaseBeads } from '../components/CapturePhaseBeads';
@@ -82,6 +86,17 @@ export function Review() {
   // isRowConfirmed) but never connected until v1.21.3.
   const [criticalConfirmed, setCriticalConfirmed] = useState<Record<string, boolean>>({});
   const isSoap = sessionStorage.getItem('noteType') === 'soap';
+
+  // Re-admit detection: when the extracted TZ matches a previously-discharged
+  // patient in IndexedDB, surface the banner so the doctor can flip them back
+  // to active before drafting the note. State lives here so the lookup can
+  // be cancelled on TZ edit / unmount, and `onAccept` can call the storage
+  // mutation without prop-drilling. Mirrors PriorNotesBanner's lookup pattern.
+  const [readmitState, setReadmitState] = useState<{
+    name: string;
+    gapDays: number;
+    patientId: string;
+  } | null>(null);
 
   // v1.39.3: skip-no-clinical state for the button-flip gate. When the
   // SOAP would be a stub (Marciano case — no clinical content extracted),
@@ -185,9 +200,55 @@ export function Review() {
     };
   }, [isSoap, fields.teudatZehut]);
 
+  // Re-admit lookup: re-run whenever the extracted/edited TZ changes so a
+  // doctor correcting an OCR'd ת.ז. doesn't see a stale banner from the prior
+  // value. `cancelled` guards against the unmount/edit race (same shape as
+  // the continuity effect above).
+  useEffect(() => {
+    const tz = fields.teudatZehut?.trim();
+    if (!tz) {
+      setReadmitState(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const existing = await getPatientByTz(tz);
+      if (cancelled) return;
+      if (!existing || existing.discharged !== true) {
+        setReadmitState(null);
+        return;
+      }
+      const { isReadmit, gapDays } = detectReadmit(existing);
+      if (!isReadmit || gapDays === undefined) {
+        setReadmitState(null);
+        return;
+      }
+      setReadmitState({ name: existing.name, gapDays, patientId: existing.id });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fields.teudatZehut]);
+
   function onToggleContinuity(v: boolean) {
     setContinuityEnabled(v);
     sessionStorage.setItem('soapContinuity', v ? 'on' : 'off');
+  }
+
+  async function onAcceptReadmit() {
+    if (!readmitState) return;
+    // Capture into a local before clearing — setReadmitState(null) below could
+    // otherwise race with the await on slow IDB.
+    const { patientId, gapDays } = readmitState;
+    try {
+      await unDischargePatient(patientId, gapDays, 're-admission via capture');
+    } catch (e) {
+      // Surface (don't hide confusion); the doctor can retry or proceed
+      // without the un-discharge step. The note flow continues regardless —
+      // the banner's job is the side-effect, not blocking capture.
+      console.warn('[Review] unDischargePatient failed', e);
+    }
+    setReadmitState(null);
   }
 
   if (status === 'loading') {
@@ -362,6 +423,15 @@ export function Review() {
   return (
     <section>
       <h1>בדיקה</h1>
+
+      {readmitState && (
+        <ReadmitBanner
+          name={readmitState.name}
+          gapDays={readmitState.gapDays}
+          onAccept={onAcceptReadmit}
+          onDecline={() => setReadmitState(null)}
+        />
+      )}
 
       <PriorNotesBanner tz={fields.teudatZehut} />
 
