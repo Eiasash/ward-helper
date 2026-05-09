@@ -4,6 +4,104 @@ Auto-appended by the audit-fix-deploy pipeline. Most recent run on top.
 
 ---
 
+## 2026-05-10 — v1.42.0 daySnapshots cloud sync (v1.41+ candidate from #122 brainstorm)
+
+Closes the deferred "Cloud sync for `daySnapshots`" item listed under "v1.41+
+candidates" below. Opt-in toggle, per-snapshot encrypted blob, cap mirroring
+via SECURITY DEFINER RPC.
+
+**Files added:**
+- `supabase/migrations/0008_ward_helper_backup_allow_day_snapshot_blob_type.sql`
+  — extends the `blob_type` CHECK constraint to allow `'day-snapshot'`, plus a
+  new `ward_helper_evict_day_snapshots(p_username, p_keep_ids text[])`
+  SECURITY DEFINER RPC. Migration 0002 intentionally has no DELETE policy on
+  `ward_helper_backup`, so the RPC is the only sanctioned client path to
+  evict cloud rows when the local 20-snapshot cap kicks in. Defense pattern
+  mirrors `ward_helper_dedupe_stale_canaries` (migration 0007): caller must
+  already own at least one day-snapshot under `p_username`, and an empty
+  `p_keep_ids` is treated as a no-op (never wipe everything).
+- `src/storage/daySnapshotsCloud.ts` — new module:
+  - `DAY_SNAPSHOT_CLOUD_SYNC_KEY`, `getDaySnapshotCloudSyncEnabled`,
+    `setDaySnapshotCloudSyncEnabled`
+  - `pushLatestDaySnapshotIfEnabled()` — full 3-state guard (toggle off /
+    guest / no-login = silent skip with structured `{ kind: 'skipped',
+    reason }`), pushes the newest local snapshot, then mirrors the cap.
+  - `evictStaleCloudSnapshots(username, keepIds)` — RPC wrapper.
+  - `applyDaySnapshotFromCloudRow(row, passphrase)` — restore-side decrypt +
+    shape-check + putDaySnapshot.
+- `tests/daySnapshotsCloud.test.ts` — 13 cases covering toggle persistence,
+  3-state guard, ciphertext-only-on-wire payload contract (PHI sentinels in
+  patient handover/plan must not appear in any string field), cap-mirror RPC
+  call shape, re-archive idempotency, restore round-trip, shape-check
+  rejection, wrong-passphrase rejection.
+
+**Files touched:**
+- `src/storage/cloud.ts` — extends `pushBlob` `type` union and `CloudBlobRow`
+  `blob_type` to include `'day-snapshot'`. No other change.
+- `src/notes/save.ts` — extends `RestoreResult` with `restoredDaySnapshots:
+  number` and adds the `'day-snapshot'` branch in the per-row decrypt loop
+  inside `restoreFromCloud`.
+- `src/ui/App.tsx` — adds `useEffect` subscribing to
+  `ward-helper:day-archived` window event. Helper does the gating; this
+  subscriber stays trivial and never throws.
+- `src/ui/hooks/useSettings.ts` — adds `useDaySnapshotCloudSync()` hook
+  mirroring the `useBidiAudit` pattern.
+- `src/ui/screens/Settings.tsx` — new "סנכרון ענן" section above developer
+  diagnostics with the toggle and helper text explaining 20-day cap +
+  no-backfill semantics.
+- `tests/canaryProtection.test.ts` — regression case proving day-snapshot
+  rows count as non-canary data, so orphan-protection still triggers when
+  the wrong passphrase tries to overwrite the canary.
+
+**Architecture decisions:**
+
+- **Per-snapshot blob_id = snapshot.id (YYYY-MM-DD)** rather than a single
+  collection blob. Idempotent on re-archive of the same date (upsert by
+  composite key). Granular sync: only the new snapshot is pushed per archive
+  event, not the whole 20-snapshot history.
+- **Cap mirror via DELETE RPC, not collection upsert.** The local cap evicts
+  the oldest snapshot when count > 20; the same eviction must propagate to
+  cloud or storage grows unbounded. RLS blocks raw client DELETE on this
+  table by design (migration 0002), so we add a scoped SECURITY DEFINER RPC.
+- **No backfill on toggle enable.** "Enable" means "from now on" — explicit
+  in the toggle's helper text. Avoids a code path that would push 20 historic
+  snapshots over a slow mobile connection on first opt-in.
+- **Push trigger lives in App.tsx, not inside `archiveDay()`.** The storage
+  layer must not depend on auth/passphrase state — that would invert the
+  existing `storage → no UI; UI → storage` direction. The App-level
+  subscriber pattern matches how `notifyDayArchived` is already consumed by
+  the glanceable header.
+
+**Trinity:** package.json `1.41.0 → 1.42.0`, `public/sw.js` line bumped to
+`ward-v1.42.0` (Vite `swVersionSync` plugin rewrites `dist/sw.js` at build).
+
+**Verification:**
+- `npm run check` clean (tsc --noEmit).
+- `npm test` 1000 passed (was 986 baseline; +14 added — 13 daySnapshotsCloud
+  + 1 canaryProtection regression). 1 skipped unchanged (live-eval gated).
+- `npm run build` clean. Entry chunk gz **134.65 kB / 180 kB ceiling
+  (74.8%)**, +0.70 kB delta from v1.41.0.
+- `dist/sw.js` correctly rewritten to `ward-v1.42.0` via the swVersionSync
+  Vite plugin.
+
+**Operational notes:**
+- Migration 0008 must be applied to Supabase project `krmlzwwelqvlfslwltol`
+  before users opt in. Without it, the first push fails with a CHECK
+  constraint violation. Apply via the Supabase MCP or the SQL editor.
+- The toggle is OFF by default. Existing users see no behavior change.
+- Per-snapshot wire payload size is ~5–50 KB (encrypted JSON of
+  `Patient[]` × N).
+- **Cap is per-device, not per-user.** The evict RPC scopes by `user_id =
+  auth.uid()` for the security defense (caller can only prune their own
+  device's snapshots), so a multi-device user may accumulate up to N×20
+  cloud day-snapshots across devices. Local stays bounded because
+  `putDaySnapshot` enforces the 20-cap on every write/restore. Acceptable
+  trade-off — tightening would require either widening the evict scope
+  beyond `auth.uid()` (loses the defense) or moving cap enforcement to a
+  cron RPC (more code, deferred).
+
+---
+
 ## 2026-05-10 — audit-only pass on v1.41.0 (no code changes, no version bump)
 
 Routine audit-fix-deploy run on the post-v1.41.0 main HEAD. Zero functional
