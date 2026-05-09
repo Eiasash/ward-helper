@@ -21,6 +21,9 @@ import {
   type NoteType,
 } from '@/storage/indexed';
 import { notifyPatientChanged, notifyNoteTypeChanged } from '../hooks/useGlanceable';
+import { TomorrowBanner } from '@/ui/components/TomorrowBanner';
+import { PatientPlanFields } from '@/ui/components/PatientPlanFields';
+import { TomorrowNotesInput } from '@/ui/components/TomorrowNotesInput';
 
 const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -101,7 +104,10 @@ export function RecentPatientsList({
     };
   }, []);
 
-  const items = useMemo(() => recents.slice(0, 8), [recents]);
+  const items = useMemo(
+    () => recents.filter((rp) => !rp.patient.discharged).slice(0, 8),
+    [recents],
+  );
   if (items.length === 0) return null;
 
   return (
@@ -135,6 +141,9 @@ export function RecentPatientsList({
                 })}
               </span>
             </button>
+            <TomorrowBanner patientId={rp.patient.id} />
+            <PatientPlanFields patientId={rp.patient.id} />
+            <TomorrowNotesInput patientId={rp.patient.id} />
           </li>
         ))}
       </ul>
