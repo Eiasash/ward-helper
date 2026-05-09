@@ -7,6 +7,7 @@ import type { SoapMode } from './soapMode';
 import type { ParseResult } from '@/agent/tools';
 import type { NoteType } from '@/storage/indexed';
 import type { ContinuityContext } from './continuity';
+import type { SeedDecision } from './seedFromYesterdaySoap';
 
 function fmtDate(ts: number): string {
   return new Date(ts).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' });
@@ -103,6 +104,44 @@ Section order (standard SZMC, headers underlined):
 
 Forbidden tokens (Chameleon corrupts these): arrows (→ ← ↑ ↓), ** for bold, double-dash dividers, q8h/q6h/qd/bid notation, trailing "?", "**" anywhere. Use single ">" only for med tapers ("Lantus 22 > 10-12 יח"). Spell out: "כל 8 שעות" not "q8h", "מעל 200" not ">200". Drug names: English UPPERCASE GENERIC ( BRAND ) Route Dose Unit X Freq.
 `.trim();
+
+/**
+ * Builds the optional "Block A (yesterday's SOAP reference) + Block B (durable
+ * patient context)" preamble that prepends the SOAP system prompt when the
+ * caller has decided to seed today's draft from yesterday's note.
+ *
+ * Contract: returns the empty string for any non-prefill seedContext, so
+ * callers can unconditionally concatenate. When prepended ahead of
+ * `CHAMELEON_RULES + SOAP_STYLE`, the printed-output-order invariant from the
+ * szmc-clinical-notes skill is preserved (existing block order is untouched).
+ *
+ * The "do NOT copy verbatim" framing is critical — the model otherwise tends
+ * to regurgitate yesterday's S/vitals/labs as today's, defeating the safety
+ * point of seeding (continuity reference, not a copy-paste shortcut).
+ *
+ * Currently exported for `tests/seededSoapPrompt.test.ts` only — not yet
+ * threaded into `buildSoapPromptPrefix` / `generateNote`. The runtime
+ * "השתמש בהערת אתמול" entry point is deferred (PR 3 Task 3.8 sub-task B)
+ * pending a clean integration point with the existing capture/emit flow.
+ */
+export function buildSeedBlocks(seedContext: SeedDecision): string {
+  if (seedContext.kind !== 'prefill') return '';
+  return [
+    '',
+    "Yesterday's SOAP for this patient is provided below as reference for clinical",
+    "continuity. When drafting today's, the Subjective, vitals, labs, and today's",
+    "chief complaint must reflect TODAY'S data — do not copy from yesterday.",
+    '',
+    "Yesterday's SOAP (reference only, do NOT copy verbatim):",
+    seedContext.bodyContext,
+    '',
+    'Patient durable context (use directly; do not re-derive from yesterday\'s prose):',
+    `- handoverNote: ${seedContext.patientFields.handoverNote}`,
+    `- planLongTerm: ${seedContext.patientFields.planLongTerm}`,
+    `- clinicalMeta: ${JSON.stringify(seedContext.patientFields.clinicalMeta)}`,
+    '',
+  ].join('\n');
+}
 
 /**
  * Admission prompt — anchored to the szmc-clinical-notes printed-output order.
