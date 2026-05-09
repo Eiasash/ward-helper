@@ -5,6 +5,7 @@ import type { NoteType } from '@/storage/indexed';
 import type { ParseFields } from '@/agent/tools';
 import { NOTE_LABEL } from '@/notes/templates';
 import { resolveContinuity } from '@/notes/continuity';
+import { decideSeed, type SeedDecision } from '@/notes/seedFromYesterdaySoap';
 import { auditChameleonRules, sanitizeForChameleon, wrapForChameleon } from '@/i18n/bidi';
 import { useBidiAudit } from '../hooks/useSettings';
 import { snapshot as debugSnapshot } from '@/agent/debugLog';
@@ -122,6 +123,27 @@ export function NoteEditor() {
         const continuityTz = sessionStorage.getItem('continuityTeudatZehut');
         const continuity = continuityTz ? await resolveContinuity(continuityTz) : null;
 
+        // v1.41.0: runtime "השתמש בהערת אתמול" toggle. Review writes
+        // 'seedFromYesterday'='1' to sessionStorage when the doctor
+        // turned the toggle on. We re-resolve the SeedDecision here
+        // (rather than serializing it across the navigation) so the
+        // patient durable-fields are read fresh — the doctor may have
+        // just edited handoverNote/planLongTerm in RecentPatientsList.
+        // Falls back to null when the flag is absent or the patient
+        // disappeared between Review and Edit.
+        let seedContext: SeedDecision | null = null;
+        if (
+          nt === 'soap' &&
+          sessionStorage.getItem('seedFromYesterday') === '1' &&
+          continuity?.patient
+        ) {
+          const decision = await decideSeed(continuity.patient);
+          if (cancelled) return;
+          if (decision.kind === 'prefill') {
+            seedContext = decision;
+          }
+        }
+
         // Resolve the effective mode now that we have continuity + room
         // hint. 'general' is the default fall-through when the SOAP-mode
         // feature flag is off OR the resolver finds no rehab signal.
@@ -135,8 +157,9 @@ export function NoteEditor() {
         // invalidates the cached body and forces a real re-emit. The
         // alternative — keying only on noteType+fields — would silently
         // serve a stale 'general' body when the user switches to a
-        // 'rehab-*' mode.
-        const cacheKey = `${nt}:${hashFields(validated)}:${effectiveMode}`;
+        // 'rehab-*' mode. seedContext flips the prompt prefix too,
+        // so it gates cache reuse the same way the mode does.
+        const cacheKey = `${nt}:${hashFields(validated)}:${effectiveMode}:${seedContext ? 'seed' : 'noseed'}`;
         const cachedBody = sessionStorage.getItem('body');
         const cachedKey = sessionStorage.getItem('bodyKey');
         // regenTick > 0 means the user clicked "Regenerate" — always
@@ -155,6 +178,8 @@ export function NoteEditor() {
           { fields: validated, confidence },
           continuity,
           effectiveMode,
+          undefined, // abortSignal — Phase E batch driver only
+          seedContext,
         );
         if (cancelled) return;
         setBody(text);

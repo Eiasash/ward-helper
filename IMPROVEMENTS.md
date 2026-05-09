@@ -4,6 +4,60 @@ Auto-appended by the audit-fix-deploy pipeline. Most recent run on top.
 
 ---
 
+## 2026-05-10 — v1.41.0 runtime "השתמש בהערת אתמול" toggle (Task 3.8 sub-task B shipped)
+
+Closes the deferred sub-task from the v1.40 brainstorm (see "v1.41+ candidates"
+below). The infrastructure already shipped in v1.40.x (`decideSeed`,
+`buildSeedBlocks`, `SeedDecision`); v1.41.0 threads `seedContext` through
+the prompt-prefix builders and adds a runtime toggle on Review.
+
+Files touched:
+- `src/notes/orchestrate.ts` — added optional `seedContext?: SeedDecision`
+  param to `buildSoapPromptPrefix`, `buildPromptPrefix`, and `generateNote`.
+  Trimmed `buildSeedBlocks` to emit ONLY the durable patient fields
+  (handoverNote / planLongTerm / clinicalMeta) — yesterday's SOAP body is
+  already injected by `buildSoapPromptPrefix` via `MOST RECENT SOAP (date)`,
+  so re-emitting `bodyContext` would duplicate the body in the prompt.
+- `src/ui/screens/Review.tsx` — new `seedAvailable` + `seedFromYesterdayEnabled`
+  state + inline toggle button rendered alongside `ContinuityBanner`. The
+  button only shows when `decideSeed` returns `prefill` for the extracted
+  patient. Default OFF (doctor opts in) — adds tokens, don't spend implicitly.
+  On Proceed, writes `seedFromYesterday=1` to sessionStorage.
+- `src/ui/screens/NoteEditor.tsx` — reads the flag, calls `decideSeed` on
+  the continuity patient, passes the resulting `SeedDecision` into
+  `generateNote`. Cache key extended to include seed-on/off so a flipped
+  toggle invalidates cached body.
+- `tests/seededSoapPrompt.test.ts` — locked test updated for the new
+  contract (no `bodyContext` re-emission, no "do NOT copy verbatim"
+  sentinel inside `buildSeedBlocks`).
+- `tests/seedContextThreading.test.ts` — new (12 cases) — locks the
+  threading through `buildSoapPromptPrefix` + `buildPromptPrefix` for
+  every note type, including "body appears at most once" duplication
+  guard.
+- `tests/reviewSeedToggle.test.tsx` — new (5 cases) — locks the
+  Review-screen UI: button visibility predicate, label-flip on click,
+  sessionStorage flag write on Proceed.
+
+Architecture decision (advisor-flagged): when both continuity AND seed are
+on, we let continuity own the body (`MOST RECENT SOAP (date)` block) and
+seed contributes ONLY the durable patient-fields lines on top. The
+alternative — seed replacing continuity — was rejected as it would mean
+losing the trajectory-tracking instructions in the SOAP follow-up branch.
+
+Verification:
+- `npm run check` clean (tsc --noEmit).
+- `npm test` 986 passed (was 969 baseline; +17 added — 5 reviewSeedToggle
+  + 12 seedContextThreading; locked seededSoapPrompt swapped 1 case for 1).
+- `npm run build` clean. Entry chunk gz 133.95 kB / 180 kB ceiling (74.4%).
+- `dist/sw.js` correctly rewrites to `ward-v1.41.0` via the swVersionSync
+  Vite plugin.
+
+Trinity: package.json `1.40.2 → 1.41.0`, `public/sw.js` line bumped to
+`ward-v1.41.0` (Vite plugin rewrites at build, but the literal must be
+present or the swVersionSync plugin throws).
+
+---
+
 ## 2026-05-05 — v1.33.0 bundle telemetry follow-up
 
 After PR #48 (azma-ui R4 + geriatrics-knowledge skills bundle) and PR #49 (SOAP capsule-in-A v4) both landed in parallel during the deep-audit session, the entry chunk grew. Capturing the new baseline so future audits can delta against it:
