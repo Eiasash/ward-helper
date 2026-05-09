@@ -116,7 +116,7 @@ let dbPromise: Promise<IDBPDatabase> | null = null;
 // backed. Schema invariants live in src/storage/roster.ts. No indexes
 // — daily roster is bounded at <50 rows, full scan is cheaper than
 // a B-tree lookup on a dataset that small.
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 export function getDb(): Promise<IDBPDatabase> {
   if (!dbPromise) {
@@ -161,6 +161,15 @@ export function getDb(): Promise<IDBPDatabase> {
           // 24h TTL, no cloud backup, no indexes (bounded <50 rows).
           if (!db.objectStoreNames.contains('roster')) {
             db.createObjectStore('roster', { keyPath: 'id' });
+          }
+        }
+        if (oldVersion < 6) {
+          // v1.40.0: rounds-prep daySnapshots store. Keyed by date YYYY-MM-DD;
+          // upserts replace prior snapshot for same date (Q5b confirm-allow-replace).
+          // No data backfill here — that runs post-open via runV1_40_0_BackfillIfNeeded
+          // (idb upgrade callback transaction lifetime is finicky; spec § decisions Q5c).
+          if (!db.objectStoreNames.contains('daySnapshots')) {
+            db.createObjectStore('daySnapshots', { keyPath: 'id' });
           }
         }
       },
