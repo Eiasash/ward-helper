@@ -270,3 +270,38 @@ describe('note viewer helpers — getNote / getPatient / deleteNote', () => {
     expect(await getPatient('pv3')).toBeDefined();
   });
 });
+
+describe('v6 daySnapshots store', () => {
+  it('opens DB_VERSION 6 and exposes daySnapshots store', async () => {
+    const { getDb } = await import('@/storage/indexed');
+    const db = await getDb();
+    expect(db.version).toBe(6);
+    expect(db.objectStoreNames.contains('daySnapshots')).toBe(true);
+  });
+});
+
+describe('v1.40.0 Patient field defaults', () => {
+  it('accepts the new optional rounds-prep fields', async () => {
+    const p: Patient = {
+      id: 'p-1',
+      name: 'דוגמה',
+      teudatZehut: '000000018',
+      dob: '1940-01-01',
+      room: '5A',
+      tags: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      discharged: false,
+      tomorrowNotes: ['call ortho'],
+      handoverNote: 'DNR per family conference',
+      planLongTerm: 'continue current meds',
+      planToday: '',
+      clinicalMeta: { pmhSummary: 'HFpEF, AKI' },
+    };
+    await putPatient(p);
+    const back = await getPatient('p-1');
+    expect(back?.handoverNote).toBe('DNR per family conference');
+    expect(back?.tomorrowNotes).toEqual(['call ortho']);
+    expect(back?.clinicalMeta?.pmhSummary).toBe('HFpEF, AKI');
+  });
+});

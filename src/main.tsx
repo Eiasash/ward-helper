@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './ui/App';
+import { runV1_40_0_BackfillIfNeeded } from './storage/rounds';
 import './styles.css';
 
 // First-run defaults. Currently: pre-seed the email target for the
@@ -19,6 +20,10 @@ import './styles.css';
     /* localStorage disabled — nothing to do */
   }
 })();
+
+// v1.40.0 morning-rounds-prep backfill — adds default values to legacy
+// patient records lacking the new optional fields. Idempotent.
+void runV1_40_0_BackfillIfNeeded();
 
 const root = document.getElementById('root');
 if (!root) throw new Error('root element missing');
