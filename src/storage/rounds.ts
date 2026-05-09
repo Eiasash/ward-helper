@@ -258,9 +258,9 @@ export async function dismissTomorrowNote(patientId: string, lineIdx: number): P
  * append it (newline-separated) and remove it from `tomorrowNotes` in the
  * same tx so the line never appears in both places.
  *
- * Out-of-bounds `lineIdx` is a graceful no-op — the tx still commits
- * (releasing IDB locks) but no `notifyPatientsChanged` fires since no state
- * actually changed.
+ * Out-of-bounds `lineIdx` throws explicitly — symmetric with the
+ * patient-not-found branch. Silent no-ops would let UI in PR 3 swallow
+ * stale-state bugs (clinical-safety rule: don't hide confusion).
  *
  * Atomicity: critical here because the operation reads `handoverNote` AND
  * `tomorrowNotes`, mutates both, and writes them together. A non-tx version
@@ -279,7 +279,9 @@ export async function promoteToHandover(patientId: string, lineIdx: number): Pro
   const line = lines[lineIdx];
   if (line === undefined) {
     await tx.done;
-    return; // graceful no-op on out-of-bounds; no state changed, no notify
+    throw new Error(
+      `Patient ${patientId} tomorrowNotes[${lineIdx}] not found (length: ${lines.length})`,
+    );
   }
   const nextHandover = (p.handoverNote ?? '') + (p.handoverNote ? '\n' : '') + line;
   const nextTomorrow = lines.filter((_, i) => i !== lineIdx);
