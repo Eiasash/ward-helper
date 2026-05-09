@@ -31,6 +31,40 @@ Search before answering any clinical, pharmacological, legal, or regulatory ques
 
 ---
 
+## Hazzard 8e Chapter Map (verified by PyMuPDF scan, 2026-05-08)
+
+**Source PDF:** `C:\Users\User\OneDrive\Documents\Claude\Projects\SZMC geriatrics\hazzard marked  (3).pdf` (460 MB single PDF; faster to text-search than the 11-part split at `Geriatrics/.audit_logs/upload_staging/hazzard_marked__partNN.pdf`).
+
+**Verified chapter ranges** (PDF page = book page + 34 offset):
+
+| Ch | Title | PDF p | Book p |
+|---|---|---|---|
+| 33 | LOW VISION: ASSESSMENT AND REHABILITATION | 504–523 | 470–489 |
+| 34 | HEARING LOSS: ASSESSMENT AND MANAGEMENT | 524+ | 490+ |
+
+**Note for q.ref correctness on PWA questions:** the canonical title strings are exactly as they appear in the PDF chapter heading. When constructing or validating a `q.ref` value, match this exact form:
+
+- `Hazzard Ch 33 — LOW VISION: ASSESSMENT AND REHABILITATION`
+- `Hazzard Ch 34 — HEARING LOSS: ASSESSMENT AND MANAGEMENT`
+
+The em-dash `—` (U+2014) is required. Hyphen-minus `-` will fail hazzard_chapters.json schema-guard. Trailing space / trailing colon / abbreviated titles all fail.
+
+**Other verified chapter starts (incidental, from same scan):**
+
+| Ch | Title (head text) | PDF p |
+|---|---|---|
+| 14 | MODELS OF HOSPITAL AND OUTPATIENT CARE | 232 |
+| 15 | EMERGENCY DEPARTMENT CARE | 244 |
+| 27 | (section header — Surgical Management) | 142 |
+| 9 | MENTAL STATUS AND NEUROLOGIC EXAMINATION | 178 |
+| 10 | ASSESSMENT OF DECISIONAL CAPACITY AND COMPETENCIES | 186 |
+
+(Add to this table as future PDF scans verify more chapters.)
+
+**Workflow:** if a future cluster batch needs another Hazzard chapter verified, run `_web_lane_find_hazzard_eye_v2.py` (in `~/repos/.audit_logs/`) with the eye keywords swapped for the new target's keywords. Takes ~6 seconds per scan.
+
+---
+
 ## Search Patterns
 
 Read the inline tables in this file directly. The runtime does not provide search.

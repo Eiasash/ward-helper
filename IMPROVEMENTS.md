@@ -4,6 +4,68 @@ Auto-appended by the audit-fix-deploy pipeline. Most recent run on top.
 
 ---
 
+## 2026-05-10 — audit-only pass on v1.41.0 (no code changes, no version bump)
+
+Routine audit-fix-deploy run on the post-v1.41.0 main HEAD. Zero functional
+issues found — all 8 CI gates green, full verify suite green, bundle 28%
+under entry-chunk ceiling. Deliverable is documentation + telemetry only.
+
+Gates (§ F.1):
+- Gate 1 entry-chunk gz: **133,691 B / 184,320 B (72.5%)** — 50,629 B headroom
+- Gate 1 total assets gz: **203,898 B / 409,600 B (49.8%)**
+- Gate 2 CSP present in `index.html`: PASS
+- Gate 3 no analytics/tracking: PASS
+- Gate 4 no plaintext-PHI grep hits in source: PASS
+- Gate 5 PBKDF2_ITERATIONS = 600_000 in `src/crypto/pbkdf2.ts`: PASS
+- Gate 6 `toranot.netlify.app/api/claude` in `src/agent/client.ts`: PASS
+- Gate 7 NO `@anthropic-ai/sdk` in `package.json`: PASS
+- Gate 8 `compressImage` called in `src/ui/screens/Capture.tsx`: PASS (2 sites)
+
+Verify suite:
+- `npm ci` — 350 packages, 0 vulnerabilities
+- `npm run check` — clean (tsc --noEmit)
+- `npm test` — **986 passed / 1 skipped** across **97 files** (skipped =
+  `tests/extraction/eval.test.ts`, gated on `ANTHROPIC_API_KEY`)
+- `npm run build` — clean, sw rewrites to `ward-v1.41.0`
+
+Skill drift check (§ F.6):
+- `azma-ui`, `szmc-clinical-notes`, `szmc-interesting-cases`,
+  `hebrew-medical-glossary` — all in sync with `~/.claude/skills/` source.
+- `geriatrics-knowledge` — in sync after the `SKILL_PATCHES` rewrite (sync
+  script logs `patched geriatrics-knowledge/SKILL.md`).
+
+Coverage snapshot (vitest --coverage):
+- **Total statements 65.34%, branches 80.96%, functions 63.20%**
+- Lowest-yield uncovered code is in UI screens (`DebugPanel.tsx` 2.2%,
+  `Consult.tsx` 4.2%, `AccountSection.tsx` 17.5%, `Save.tsx` 18.9%,
+  `Census.tsx` 27.8%, `Review.tsx` 33.8%) — UI-only, low cost-benefit
+  for unit tests; better attacked by Playwright in the bot harness.
+- Non-UI code very well covered: `email.ts` 100%, `consult.ts` 90.1%,
+  `regenerate.ts` 86.9%, `orchestrate.ts` 98.0%, `client.ts` 100%.
+- Two largest non-UI files with sub-80% coverage: `agent/loop.ts` (72.6%,
+  207/285) and `notes/save.ts` (73.8%, 76/103). Most of the gap is
+  defensive `postClaude` failure-mode branches already exercised by
+  integration mocks; further unit tests would be redundant harness wiring.
+
+Decision: no test additions this pass. Coverage is healthy where it
+matters; the UI gap is correctly addressed by the ward-helper-bot-v1
+Playwright harness (Phase 7, see `scripts/wardHelperBot/`), not by
+synthetic vitest UI cases.
+
+No skills source edits, no `public/skills/**` hand-edits.
+
+Trinity unchanged (still v1.41.0 / `ward-v1.41.0`).
+
+Open follow-ups carried forward (none new this run):
+- Eyeball-with-DevTools ritual on the morning-rounds-prep flow (v1.40.x +
+  v1.41.0) — already done 2026-05-09 per `project_ward_helper_morning_rounds_prep`
+  memory; no action needed.
+- ward-helper-bot-v1 next campaign (still up to user — Phase 7 cadence).
+- `tests/extraction/eval.test.ts` periodic run with `ANTHROPIC_API_KEY` set
+  to catch `parse_azma_screen` regressions (per § F.6).
+
+---
+
 ## 2026-05-10 — v1.41.0 runtime "השתמש בהערת אתמול" toggle (Task 3.8 sub-task B shipped)
 
 Closes the deferred sub-task from the v1.40 brainstorm (see "v1.41+ candidates"
