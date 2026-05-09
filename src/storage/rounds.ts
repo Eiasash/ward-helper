@@ -1,4 +1,4 @@
-import { getDb } from './indexed';
+import { getDb, getPatient, putPatient } from './indexed';
 import type { Patient } from './indexed';
 import { notifyDayArchived } from '@/ui/hooks/glanceableEvents';
 
@@ -128,4 +128,46 @@ export async function runV1_40_0_BackfillIfNeeded(): Promise<void> {
     // Reads tolerate missing fields via ?? defaults at every read site.
     console.warn('[rounds] v1.40.0 backfill failed; will retry next boot', err);
   }
+}
+
+/**
+ * Mark a patient as discharged. Records `dischargedAt = Date.now()` so the UI
+ * can sort/show discharged-today rosters and so re-admit (`unDischargePatient`)
+ * can compute the gap.
+ */
+export async function dischargePatient(patientId: string): Promise<void> {
+  const p = await getPatient(patientId);
+  if (!p) throw new Error(`Patient ${patientId} not found`);
+  const now = Date.now();
+  await putPatient({
+    ...p,
+    discharged: true,
+    dischargedAt: now,
+    updatedAt: now,
+  });
+}
+
+/**
+ * Reverse a discharge: clear `discharged` + `dischargedAt`, and append a
+ * Hebrew re-admit line to `handoverNote` so the next shift sees context.
+ * Caller passes `gapDays` (days between discharge and re-admit) and a free-text
+ * `reason` (e.g. "re-admission via capture", a complaint, a note from the ER).
+ */
+export async function unDischargePatient(
+  patientId: string,
+  gapDays: number,
+  reason: string,
+): Promise<void> {
+  const p = await getPatient(patientId);
+  if (!p) throw new Error(`Patient ${patientId} not found`);
+  const today = new Date().toLocaleDateString('en-CA');
+  const reAdmitLine = `\nחזר לאשפוז ב-${today} לאחר ${gapDays} ימים: ${reason}`;
+  const newHandoverNote = (p.handoverNote ?? '') + reAdmitLine;
+  await putPatient({
+    ...p,
+    discharged: false,
+    dischargedAt: undefined,
+    handoverNote: newHandoverNote,
+    updatedAt: Date.now(),
+  });
 }
