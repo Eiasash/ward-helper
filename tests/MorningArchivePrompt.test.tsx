@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MorningArchivePrompt } from '@/ui/components/MorningArchivePrompt';
+import { putDaySnapshot } from '@/storage/rounds';
 
 const LAST_KEY = 'ward-helper.lastArchivedDate';
 
@@ -39,5 +40,21 @@ describe('MorningArchivePrompt', () => {
   it('does not render on first launch (no lastArchivedDate)', () => {
     render(<MorningArchivePrompt />);
     expect(screen.queryByText(/יום חדש/)).toBeNull();
+  });
+
+  it('shows confirm-replace banner when today already archived', async () => {
+    const yesterday = new Date(Date.now() - 86400000).toLocaleDateString('en-CA');
+    const today = new Date().toLocaleDateString('en-CA');
+    localStorage.setItem(LAST_KEY, yesterday);
+    await putDaySnapshot({
+      id: today,
+      date: today,
+      archivedAt: Date.now() - 60000,
+      patients: [],
+    });
+    render(<MorningArchivePrompt />);
+    fireEvent.click(screen.getByText('ארכב'));
+    // Wait for async listDaySnapshots + setState
+    expect(await screen.findByText(/לארכב שוב/)).toBeTruthy();
   });
 });
