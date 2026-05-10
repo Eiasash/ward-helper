@@ -282,13 +282,17 @@ async function main() {
   const personaKeys = pickPersonaKeys(CONFIG.personas);
   console.log(`  personas: ${personaKeys.map((k, i) => `${i}=${k}`).join(' ')}`);
 
-  // Status updater — every 60s, print live status.
+  // Status updater — every 60s, print live status. mainStart is set AFTER
+  // scenario generation finishes so the 30-min duration window measures
+  // persona-run wall time, not scenario-gen + persona-run combined.
+  // (Prior bug: timer started before gen, eating ~10 min of persona time
+  // when effort=high made each scenario ~75s.)
+  let mainStart = Date.now();  // tentative — overwritten after gen
   const statusInterval = setInterval(() => {
     const elapsed = Math.round((Date.now() - mainStart) / 1000);
     const remain = Math.round((CONFIG.durationMs - (Date.now() - mainStart)) / 1000);
     console.log(`  [${elapsed}s elapsed, ${remain}s remain] BUGS=${BUGS.length} (${countSev('CRITICAL')}C/${countSev('HIGH')}H/${countSev('MEDIUM')}M/${countSev('LOW')}L)`);
   }, 60_000);
-  const mainStart = Date.now();
 
   // onTick callback — append to timeline + cap memory at 10k events.
   function onTick(ev) {
@@ -332,6 +336,10 @@ async function main() {
     }
     console.log(`  scenarios ready in ${((Date.now() - genStart) / 1000).toFixed(1)}s, cost so far $${costTracker.total().toFixed(2)} (${costTracker.calls} calls)`);
   }
+
+  // Reset mainStart so duration window measures persona-run wall time only.
+  mainStart = Date.now();
+  console.log(`  ── persona run starts now: ${new Date(mainStart).toISOString()} (${(CONFIG.durationMs / 60000).toFixed(0)} min)`);
 
   // Spawn all personas in parallel.
   const promises = personaKeys.map((key, idx) => {
