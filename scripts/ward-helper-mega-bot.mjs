@@ -27,7 +27,7 @@ import process from 'node:process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { chromium } from 'playwright';
-import { PERSONAS, runPersona } from './lib/megaPersona.mjs';
+import { PERSONAS, runPersona, BOT_VERSION } from './lib/megaPersona.mjs';
 import { writePatientGallery } from './lib/patientChart.mjs';
 import { CostTracker, generateScenarioOpus } from './lib/scenarioGen.mjs';
 import { MinCoverageScheduler, DEFAULT_MIN_COVERAGE_TARGETS } from './lib/personasV4.mjs';
@@ -278,7 +278,7 @@ function pickPersonaKeys(n) {
 
 async function main() {
   await fs.mkdir(CONFIG.reportDir, { recursive: true });
-  console.log(`ward-helper-mega-bot — ${RUN_ID}`);
+  console.log(`ward-helper-mega-bot ${BOT_VERSION} — ${RUN_ID}`);
   console.log(`  url=${CONFIG.url}`);
   console.log(`  personas=${CONFIG.personas} duration=${(CONFIG.durationMs / 60000).toFixed(1)}min`);
   console.log(`  cost-cap=$${CONFIG.costCapUsd} fixture=${FIXTURE_MODE}`);
@@ -449,7 +449,7 @@ function aggregateTimelineByScenario() {
 
 async function writeReport(results, costTracker, scheduler) {
   const lines = [];
-  lines.push(`# ward-helper-mega-bot — ${RUN_ID}`);
+  lines.push(`# ward-helper-mega-bot ${BOT_VERSION} — ${RUN_ID}`);
   lines.push('');
   const totalWallSec = results.length > 0 ? Math.round(Math.max(...results.map((r) => r.wallMs)) / 1000) : 0;
   lines.push(`- Wall time: ${totalWallSec}s (${(totalWallSec / 60).toFixed(1)} min)`);
@@ -547,7 +547,11 @@ async function writeReport(results, costTracker, scheduler) {
   for (const b of BUGS) {
     const ev = String(b.evidence || '');
     if (/_provenance:random_click/.test(ev) || /provenance:random_click/.test(b.what || '')) continue;
-    const m = ev.match(/_botSubject:(\w+)/);
+    // V4.1 fix — V4 sub-bots embed `_botSubject:X` inside b.what (their
+    // log line), not b.evidence. Search both so the precision table
+    // self-populates without needing the post-run flow-table fix-up.
+    const search = (b.what || '') + ' ' + ev;
+    const m = search.match(/_botSubject:(\w+)/);
     const subj = m ? m[1] : '_untagged';
     bySubject[subj] = bySubject[subj] || { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, total: 0 };
     bySubject[subj][b.severity]++;
