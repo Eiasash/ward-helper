@@ -24,6 +24,7 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { checkV42Invariant, V4_SUB_BOTS_REQUIRING_WAIT } from './lib/v42Invariant.mjs';
 
 const REPORT_DIR = 'chaos-reports/ward-bot-mega';
 const DEFAULT_BASELINE = 'wm-2026-05-10T17-13-37';
@@ -295,6 +296,38 @@ async function main() {
   out.push('_v5 follow-up: add bug-timestamps to JSONL events to compute Jaccard overlap between chaos types' + ' triggered-flag sets._');
   out.push('');
 
+  // ─── 5.5 V4.2 invariant: per-sub-bot waitForSubject ratchet completeness
+  // Pure check via scripts/lib/v42Invariant.mjs (also unit-tested in
+  // tests/megaBotV42.test.ts). Fails loud — sets process.exitCode = 1 — when
+  // a v4 sub-bot completed an iteration without first calling the helper.
+  // Treats `>=` not `==`: chaos types can legitimately abort an iteration
+  // mid-stream after waitForSubject was called, so wait-count may exceed
+  // completion-count for any given sub-bot.
+  out.push('## V4.2 invariant: per-sub-bot waitForSubject ratchet');
+  out.push('Per `scripts/lib/v42Invariant.mjs`. Each v4 sub-bot must call `waitForSubject` at least once per completed iteration. Allowlist: ' + V4_SUB_BOTS_REQUIRING_WAIT.map((n) => `\`${n}\``).join(', ') + '.');
+  out.push('');
+  const v42 = checkV42Invariant(newTimeline);
+  out.push('| Sub-bot | waitForSubject called | iterations completed | OK |');
+  out.push('|---|---|---|---|');
+  for (const [name, r] of Object.entries(v42.perSubBot).sort()) {
+    const ok = r.waitCalled >= r.iterCompleted;
+    out.push(`| \`${name}\` | ${r.waitCalled} | ${r.iterCompleted} | ${ok ? '✓' : '✗'} |`);
+  }
+  out.push('');
+  if (v42.violators.length > 0) {
+    out.push(`⚠ **V4.2 INVARIANT VIOLATED** — ${v42.violators.length} sub-bot(s) completed iterations without calling waitForSubject:`);
+    for (const [name, r] of v42.violators) {
+      out.push(`- \`${name}\`: ${r.iterCompleted - r.waitCalled} iteration(s) missing the wait ratchet (waitCalled=${r.waitCalled}, iterCompleted=${r.iterCompleted})`);
+    }
+    out.push('');
+    out.push('Action: search the sub-bot body for any path that returns BEFORE the `waitForSubject(...)` call (early returns, schema-changed branches, refactor leftovers). The static schema test in `tests/megaBotV41.test.ts` catches missing calls at PR review; this runtime check catches paths the static check cannot reach (e.g., conditional branches whose `page.evaluate` happens to skip the wait).');
+    out.push('');
+    process.exitCode = 1;
+  } else {
+    out.push('✓ All v4 sub-bots satisfied the ratchet. (Sub-bots showing 0/0 fired but did not complete any iterations — typically chaos-induced abort or scheduler skip; not a violation.)');
+    out.push('');
+  }
+
   // ─── 6. Question 4: Fixture-scenario gap proposals ──────────────────
   out.push('## Q4: Fixture-scenario gap proposals');
   out.push('Two scenarios that current personas + sub-bots would not naturally exercise:');
@@ -383,6 +416,13 @@ async function main() {
   console.log(`  per-sub-bot tagged: ${newSubBots.length} sub-bots`);
   console.log(`  scheduler unmet: ${newCoverage.filter((c) => !c.met).length} of ${newCoverage.length}`);
   console.log(`  bad-value persona: ${personaYield[0]?.persona || '?'} (yield ${personaYield[0]?.yieldPerAction || '?'})`);
+  // V4.2 — surface the invariant outcome on stdout too. process.exitCode is
+  // already set above; this line exists for human-readable CI logs.
+  if (v42.violators.length > 0) {
+    console.log(`  ⚠ V4.2 invariant: ${v42.violators.length} violator(s) — see report (exit code 1)`);
+  } else {
+    console.log(`  ✓ V4.2 invariant: all v4 sub-bots satisfied the ratchet`);
+  }
 }
 
 main().catch((e) => { console.error('fatal:', e); process.exitCode = 1; });

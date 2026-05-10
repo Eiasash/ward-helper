@@ -25,6 +25,22 @@
 
 import { sleep, rand, safeClick, safeFill, findByText, personaSleep, waitForSubject } from './megaPersona.mjs';
 
+// V4.2 — sub-bots that MUST call waitForSubject at the start of each iteration.
+// Source of truth for the per-sub-bot ratchet invariant in v42Invariant.mjs.
+// Co-located with the sub-bot definitions so adding/removing a v4 sub-bot
+// updates this list in the same diff. v1-v3 core sub-bots (admission, soap,
+// ortho, consult, history, settings) use bespoke poll loops and are NOT on
+// this list — they were never v4'd to use the helper. Static allowlist (not
+// "any sub-bot that ever called wait") because the regression we want to
+// catch is "a v4 sub-bot stops calling wait" — under dynamic scoping, that
+// surfaces as the sub-bot vanishing from the tracked set, not as a violation.
+export const V4_SUB_BOTS_REQUIRING_WAIT = Object.freeze([
+  'emailToSelf',
+  'morningRoundsPrep',
+  'resetPasswordLanding',
+  'orthoCalcMath',
+]);
+
 // ─── 1. Email-to-self ──────────────────────────────────────────────────────
 
 export async function scenEmailToSelf(page, _browser, scenario, persona, guard, _reportDir, logBug) {
