@@ -133,6 +133,22 @@ describe('checkCanaryProtection', () => {
     expect(pullAllBlobsMock).toHaveBeenCalledTimes(1);
     expect(pullByUsernameMock).not.toHaveBeenCalled();
   });
+
+  it('treats day-snapshot rows as non-canary data (orphan-protection covers v1.42.0 blobs)', async () => {
+    // Regression for v1.42.0: when only day-snapshot rows exist in the cloud
+    // and the current passphrase doesn't decrypt the canary, orphan-protection
+    // must trigger — otherwise enabling the toggle on a fresh device with the
+    // wrong passphrase would silently overwrite the canary and lock out
+    // everyone else's snapshot history.
+    pullByUsernameMock.mockResolvedValue([
+      { blob_type: 'canary', blob_id: '__canary__', salt: '', iv: '', ciphertext: '' },
+      { blob_type: 'day-snapshot', blob_id: '2026-05-08', salt: '', iv: '', ciphertext: '' },
+      { blob_type: 'day-snapshot', blob_id: '2026-05-09', salt: '', iv: '', ciphertext: '' },
+    ]);
+    verifyCanaryFromRowsMock.mockResolvedValue('wrong-passphrase');
+    const result = await checkCanaryProtection('wrong-pass', 'eiass');
+    expect(result).toBe('orphan');
+  });
 });
 
 describe('getCanaryProtectionState', () => {

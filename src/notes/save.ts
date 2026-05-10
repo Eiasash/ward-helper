@@ -7,6 +7,7 @@ import {
   type NoteType,
 } from '@/storage/indexed';
 import { encryptForCloud, pushBlob, pushCanary, dedupeStaleCanaries } from '@/storage/cloud';
+import { applyDaySnapshotFromCloudRow } from '@/storage/daySnapshotsCloud';
 import { deriveAesKey } from '@/crypto/pbkdf2';
 import {
   pushApiKeyToCloud,
@@ -278,6 +279,13 @@ export interface RestoreResult {
    */
   restoredApiKey: 0 | 1;
   /**
+   * Number of day-snapshot rows successfully decrypted and put into the
+   * local `daySnapshots` IDB store. Existing local snapshots with the
+   * same date (id) are overwritten — putDaySnapshot uses upsert
+   * semantics. The local 20-snapshot cap is enforced by putDaySnapshot.
+   */
+  restoredDaySnapshots: number;
+  /**
    * True when the canary check failed before iterating any rows. The UI uses
    * this to show "wrong passphrase" specifically (instead of generic "N
    * skipped"). Mutually exclusive with restoredPatients/Notes/ApiKey > 0.
@@ -333,6 +341,7 @@ export async function restoreFromCloud(passphrase: string): Promise<RestoreResul
       restoredPatients: 0,
       restoredNotes: 0,
       restoredApiKey: 0,
+      restoredDaySnapshots: 0,
       wrongPassphrase: false,
       skipped: [],
       source: 'anon',
@@ -361,6 +370,7 @@ export async function restoreFromCloud(passphrase: string): Promise<RestoreResul
       restoredPatients: 0,
       restoredNotes: 0,
       restoredApiKey: 0,
+      restoredDaySnapshots: 0,
       wrongPassphrase: true,
       skipped: [],
       source: user ? 'username' : 'anon',
@@ -371,6 +381,7 @@ export async function restoreFromCloud(passphrase: string): Promise<RestoreResul
     restoredPatients: 0,
     restoredNotes: 0,
     restoredApiKey: 0,
+    restoredDaySnapshots: 0,
     wrongPassphrase: false,
     skipped: [],
     source: user ? 'username' : 'anon',
@@ -409,6 +420,15 @@ export async function restoreFromCloud(passphrase: string): Promise<RestoreResul
             reason: 'api-key blob failed v:1 schema check',
           });
         }
+      } else if (row.blob_type === 'day-snapshot') {
+        // The decryptFromCloud<Patient | Note> call above consumed the
+        // PBKDF2 cost on this row, but its decoded value is the wrong
+        // shape for a snapshot. applyDaySnapshotFromCloudRow re-derives
+        // the key + decrypts again with the snapshot's own type — cheap
+        // since deriveAesKey is the dominant cost and tests + production
+        // benchmarks show ~300ms is the PBKDF2 step, not AES-GCM.
+        await applyDaySnapshotFromCloudRow(row, passphrase);
+        result.restoredDaySnapshots++;
       } else {
         result.skipped.push({
           blob_type: row.blob_type,

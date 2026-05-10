@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect } from 'react';
 import { HashRouter, Routes, Route, NavLink } from 'react-router-dom';
 import { loadPersistedLoginPassword, getLastLoginPasswordOrNull } from '@/auth/auth';
 import { ageOutRoster } from '@/storage/roster';
+import { pushLatestDaySnapshotIfEnabled } from '@/storage/daySnapshotsCloud';
 import { pushBreadcrumb } from './components/MobileDebugPanel';
 import { Capture } from './screens/Capture';
 import { Review } from './screens/Review';
@@ -96,6 +97,21 @@ export function App() {
     loadPersistedLoginPassword().then((p) => {
       pushBreadcrumb('boot.loadPersistedPwd', { hadPersisted: p !== null });
     });
+  }, []);
+
+  // v1.42.0: opt-in cloud sync for daySnapshots. The helper itself enforces
+  // the 3-state guard (toggle off / guest / no-password = silent skip), so
+  // this subscriber stays trivial: every archive pings the helper and the
+  // helper decides whether to push. Errors are breadcrumbed by the helper —
+  // never crash the archive flow over a transient network blip.
+  useEffect(() => {
+    function onDayArchived(): void {
+      void pushLatestDaySnapshotIfEnabled();
+    }
+    window.addEventListener('ward-helper:day-archived', onDayArchived);
+    return () => {
+      window.removeEventListener('ward-helper:day-archived', onDayArchived);
+    };
   }, []);
 
   return (

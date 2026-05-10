@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { hasApiKey, loadApiKey, saveApiKey, clearApiKey } from '@/crypto/keystore';
+import {
+  getDaySnapshotCloudSyncEnabled,
+  setDaySnapshotCloudSyncEnabled,
+} from '@/storage/daySnapshotsCloud';
 
 // Passphrase lives in memory only. Cleared on explicit `clearPassphrase()`
 // (logout, "נקה סיסמה" button) or on page reload — never time-based.
@@ -130,6 +134,25 @@ export function useDebugPanel(): [boolean, (v: boolean) => void] {
   const [on, setOn] = useState<boolean>(() => getDebugPanelEnabled());
   const set = useCallback((v: boolean) => {
     setDebugPanelEnabled(v);
+    setOn(v);
+  }, []);
+  return [on, set];
+}
+
+/**
+ * Opt-in cloud sync for daySnapshots (morning-rounds-prep frozen rosters).
+ * When OFF, archiveDay still writes locally — the toggle gates the cloud
+ * push hook only, not the local archive. When ON, the App-level subscriber
+ * to `ward-helper:day-archived` calls pushLatestDaySnapshotIfEnabled, which
+ * pushes the new snapshot AND mirrors the local 20-snapshot cap to cloud.
+ *
+ * Default OFF — opting in opts the user into ~5-50 KB of additional cloud
+ * storage per archived day, capped at 20 days of history per user.
+ */
+export function useDaySnapshotCloudSync(): [boolean, (v: boolean) => void] {
+  const [on, setOn] = useState<boolean>(() => getDaySnapshotCloudSyncEnabled());
+  const set = useCallback((v: boolean) => {
+    setDaySnapshotCloudSyncEnabled(v);
     setOn(v);
   }, []);
   return [on, set];

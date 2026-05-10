@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   useBidiAudit,
   useDebugPanel,
+  useDaySnapshotCloudSync,
   useEmailTarget,
 } from '../hooks/useSettings';
 import { load as loadCosts, reset as resetCosts } from '@/agent/costs';
@@ -27,6 +28,7 @@ export function Settings() {
   const [msg, setMsg] = useState('');
   const [bidiAuditOn, setBidiAuditOn] = useBidiAudit();
   const [debugOn, setDebugOn] = useDebugPanel();
+  const [daySnapCloudOn, setDaySnapCloudOn] = useDaySnapshotCloudSync();
   const [emailTarget, setEmailTargetValue] = useEmailTarget();
   const [emailDraft, setEmailDraft] = useState(emailTarget);
   const [restoring, setRestoring] = useState(false);
@@ -544,6 +546,19 @@ export function Settings() {
           {snippetMsg}
         </p>
       )}
+
+      <h2>סנכרון ענן</h2>
+      <label className="toggle-row" style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14 }}>
+        <input
+          type="checkbox"
+          checked={daySnapCloudOn}
+          onChange={(e) => setDaySnapCloudOn(e.target.checked)}
+        />
+        <span>סנכרן היסטוריה לענן (סנאפשוטים יומיים)</span>
+      </label>
+      <p style={{ color: 'var(--muted)', fontSize: 12, marginTop: 4 }}>
+        כשמופעל, כל ארכוב יומי נדחף לענן ומסונכרן בין מכשירים. מוצפן עם סיסמת הכניסה. שמור בענן עד 20 ימים אחרונים בלבד. כשכבוי, ארכובים נשמרים מקומית בלבד. הפעלה לא דוחפת ארכובים ישנים — רק את הבאים.
+      </p>
 
       <h2>אבחון מפתחים</h2>
       <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14 }}>
