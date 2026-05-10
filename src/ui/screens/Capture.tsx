@@ -757,7 +757,12 @@ function readAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
     r.onload = () => resolve(r.result as string);
-    r.onerror = () => reject(r.error);
+    // Fall back to a real Error when FileReader.error is null/undefined
+    // (some browsers leave it null on abort or quota errors). Sibling
+    // helpers in compress.ts / rosterImport.ts / BatchFlow.tsx already
+    // use this pattern; mega-bot 2026-05-10 reproduced ~5/min unhandled
+    // rejections with reason=undefined originating here.
+    r.onerror = () => reject(r.error ?? new Error('FileReader read failed'));
     r.readAsDataURL(file);
   });
 }

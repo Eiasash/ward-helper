@@ -1,33 +1,49 @@
 #!/usr/bin/env node
 /**
- * ward-helper-bot-v1 — synthetic-patient + upload-stress harness.
+ * ward-helper-bot-v1 — synthetic-patient + upload-stress + admission-emit harness.
  *
- * Phase 7 implementation 2026-05-08. MVP scope:
- *   1. Scenario generator (Opus 4.7 + adaptive thinking) — real call.
- *   2. Persistence to public.synthetic_patients (schema applied 2026-05-08).
- *   3. Playwright login + register synthetic user + draft a SOAP note.
- *   4. Adversarial 50MB upload — single sub-bot of the planned 5.
- *   5. Bug-capture markdown report.
+ * v2 additions (2026-05-10):
+ *   - iPhone 13 device emulation (was 380×800 desktop viewport).
+ *   - clipboard-read/write permissions on context for wrapForChameleon verify.
+ *   - 4 diagnostic hooks (CSP / unhandledrejection / page.crash / slow-ack).
+ *   - runAdmissionEmit       — full /capture → /review → /edit → 📋 העתק → clipboard RLM/LRM check.
+ *   - runSoapDailyRound      — /today + roster paste + per-patient card click.
+ *   - runChoppyAzmaUpload    — distorted JPEG (rotate 0-15°, q=0.35-0.6) tests compress.ts path.
+ *   - runDischargeNote       — discharge-type variant of admission-emit.
+ *   - WARD_BOT_FIXTURE=1     — skip Opus, use hardcoded synthetic scenario (free harness validation).
+ *   - WARD_BOT_LEGACY=1      — also run v1's older sub-bots (50MB / minimal-PDF / 1×1-PNG / census / roster).
+ *   - cost-cap default: $60 → $20 (smoke first, expand consciously).
+ *   - bug report grouped by flow + severity matrix.
  *
- * NOT in MVP (deferred — port the Sub-Bot 1 pattern):
- *   - labReportPDF (synthetic CBC/CMP PDF generator)
- *   - medicalImagePNG (overlay-text image upload)
- *   - censusPhoto (OCR roundtrip with extracted-rows validation)
- *   - rosterImport (CSV ingest)
- *   - 4 of 5 adversarial upload variants (0-byte / wrong-MIME / corrupted-PDF / broken-EXIF)
+ * v1 baseline (2026-05-08):
+ *   - Scenario generator (Opus 4.7 + adaptive thinking) — real call.
+ *   - Persistence to local jsonl (Supabase RLS denies anon writes by design).
+ *   - Adversarial 50MB upload, minimal PDF, 1×1 PNG, synthetic census, roster paste.
  *
- * To run:
+ * To run (smoke, harness validation, free):
+ *   WARD_BOT_RUN_AUTHORIZED=yes-i-reviewed WARD_BOT_FIXTURE=1 \
+ *     node scripts/ward-helper-bot-v1.mjs
+ *
+ * To run (real Opus scenarios — needs CLAUDE_API_KEY):
  *   WARD_BOT_RUN_AUTHORIZED=yes-i-reviewed CLAUDE_API_KEY=$key \
  *     WARD_BOT_SCENARIOS=1 node scripts/ward-helper-bot-v1.mjs
  *
- * Cost-cap: $60 default. Single scenario ≈ $1.50 (Opus 4.7 + thinking).
+ * Cost-cap: $20 default. Single scenario ≈ $1.50 (Opus 4.7 + thinking).
  */
 
 import process from 'node:process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { chromium } from 'playwright';
+import { chromium, devices } from 'playwright';
 import { createClient } from '@supabase/supabase-js';
+import { attachDiagnostics } from './lib/diagnostics.mjs';
+import { generatePatientChart, generateLabReportPng } from './lib/azmaImage.mjs';
+import { distortImage } from './lib/distortImage.mjs';
+
+// iPhone 13: viewport 390x844, isMobile, hasTouch, deviceScaleFactor 3.
+// Real ward usage is mobile-first; the v1 380x800 desktop viewport missed
+// touch + scroll-then-tap timing bugs and the PWA standalone mode.
+const MOBILE_DEVICE = devices['iPhone 13'];
 
 // ============================================================================
 // LAUNCH-LATER GATE — must be set explicitly to authorize a run.
@@ -48,10 +64,13 @@ if (process.env.WARD_BOT_RUN_AUTHORIZED !== 'yes-i-reviewed') {
 // ============================================================================
 
 const KEY = process.env.CLAUDE_API_KEY;
-if (!KEY) { console.error('CLAUDE_API_KEY not set'); process.exit(2); }
-if (KEY.length !== 108) {
-  console.error(`CLAUDE_API_KEY length=${KEY.length}, expected 108 — fix env, retry.`);
-  process.exit(2);
+const FIXTURE_MODE = process.env.WARD_BOT_FIXTURE === '1';
+if (!FIXTURE_MODE) {
+  if (!KEY) { console.error('CLAUDE_API_KEY not set (or pass WARD_BOT_FIXTURE=1 to skip Opus)'); process.exit(2); }
+  if (KEY.length !== 108) {
+    console.error(`CLAUDE_API_KEY length=${KEY.length}, expected 108 — fix env, retry.`);
+    process.exit(2);
+  }
 }
 
 const SUPA_URL = process.env.SUPABASE_URL || 'https://krmlzwwelqvlfslwltol.supabase.co';
@@ -60,13 +79,21 @@ const SUPA_ANON = process.env.SUPABASE_ANON || 'sb_publishable_tUuqQQ8RKMvLDwTz5
 const CONFIG = {
   url: process.env.WARD_BOT_URL || 'https://eiasash.github.io/ward-helper/',
   scenarios: Math.max(1, Number(process.env.WARD_BOT_SCENARIOS || 1)),
-  costCapUsd: Number(process.env.CHAOS_COST_CAP_USD || 60),
+  // Default $20 (was $60) — first promotion is N=1 smoke; expand consciously.
+  costCapUsd: Number(process.env.CHAOS_COST_CAP_USD || 20),
   model: process.env.CHAOS_MODEL || 'claude-opus-4-7',
   thinkingBudget: Number(process.env.CHAOS_THINKING_BUDGET || 16000),
   reportDir: process.env.CHAOS_REPORT_DIR || 'chaos-reports/ward-bot-v1',
   headless: process.env.CHAOS_HEADLESS !== '0',
   navigationTimeoutMs: Number(process.env.WARD_BOT_NAV_TIMEOUT_MS || 30_000),
   actionTimeoutMs: Number(process.env.WARD_BOT_ACTION_TIMEOUT_MS || 5_000),
+  // WARD_BOT_FIXTURE=1 → use fixture scenario instead of Opus generation.
+  // Lets the harness be validated without burning credits.
+  useFixture: process.env.WARD_BOT_FIXTURE === '1',
+  // WARD_BOT_LEGACY=1 → also run v1's older sub-bots
+  // (50MB upload, minimal PDF, 1×1 PNG, census, roster). Off by default
+  // so v2 smokes are fast.
+  runLegacy: process.env.WARD_BOT_LEGACY === '1',
 };
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -394,8 +421,26 @@ async function navigateToCapture(page) {
   return fileInputs.length > 0;
 }
 
+async function newMobileContext(browser) {
+  // iPhone 13 device descriptor + clipboard permissions for Chameleon-copy
+  // verification. permissions are granted on the production origin only.
+  const ctx = await browser.newContext({
+    ...MOBILE_DEVICE,
+    permissions: ['clipboard-read', 'clipboard-write'],
+    locale: 'he-IL',
+  });
+  // Seed the SOAP-mode UI feature flag (`batch_features=1` in localStorage).
+  // Without this, /today doesn't render "ייבא רשומה" / patient-list import.
+  // See src/notes/soapMode.ts::isSoapModeUiEnabled. addInitScript runs
+  // before the SPA mounts so React reads the flag on first paint.
+  await ctx.addInitScript(() => {
+    try { localStorage.setItem('batch_features', '1'); } catch (_) {}
+  });
+  return ctx;
+}
+
 async function runPlaywrightFlow(scenario, browser) {
-  const ctx = await browser.newContext({ viewport: { width: 380, height: 800 } });
+  const ctx = await newMobileContext(browser);
   const page = await ctx.newPage();
   const consoleErrors = [];
   const networkErrors = [];
@@ -445,13 +490,17 @@ async function runPlaywrightFlow(scenario, browser) {
  * in Settings, not on landing. Reverting to v1's direct-navigate strategy.)
  */
 async function captureContext(scenario, browser) {
-  const ctx = await browser.newContext({ viewport: { width: 380, height: 800 } });
+  const ctx = await newMobileContext(browser);
   const page = await ctx.newPage();
   let crashed = false;
   page.on('pageerror', (err) => {
     crashed = true;
     logBug('CRITICAL', scenario.scenario_id, 'capture-context-pageerror', err.message);
   });
+  // Wire the 4 new diagnostic hooks (csp / unhandledrejection / crash /
+  // console.warning / slow-ack) onto every page that we drive. Cheap hooks,
+  // no Anthropic cost; catches a class of failures vitest can't see.
+  const diag = attachDiagnostics(page, scenario.scenario_id, logBug);
   await page.goto(CONFIG.url, { timeout: CONFIG.navigationTimeoutMs, waitUntil: 'domcontentloaded' });
   await sleep(800);
 
@@ -459,7 +508,7 @@ async function captureContext(scenario, browser) {
   if (fileInputs.length === 0) {
     logBug('MEDIUM', scenario.scenario_id, 'capture-context', 'no file inputs on landing — UI may have shifted');
   }
-  return { ok: true, ctx, page, crashed: () => crashed };
+  return { ok: true, ctx, page, crashed: () => crashed, diag };
 }
 
 // Legacy auth-context kept for the Settings-flow tests (later sub-bots may
@@ -883,6 +932,645 @@ async function runRosterImport(scenario, browser) {
 }
 
 // ============================================================================
+// FIXTURE scenario — used when WARD_BOT_FIXTURE=1. Skips Opus generation
+// and lets the harness be exercised end-to-end without API cost. The
+// content is hand-written synthetic Hebrew with an INVALID-checksum tz.
+// ============================================================================
+
+function fixtureScenario(seedIdx) {
+  const seed = SCENARIOS_SEEDS[seedIdx % SCENARIOS_SEEDS.length];
+  // Verified: "111111118" tz fails Israeli MOH checksum. 1+2+1+2+1+2+1+2+8 = 20, mod 10 = 0
+  // Hmm 20 mod 10 = 0 — so this is VALID. Use 111111111: digits w/weights = 1+2+1+2+1+2+1+2+1 = 13 — invalid.
+  return {
+    scenario_id: `fix-${seedIdx}-${Date.now()}`,
+    _seed: seed,
+    _dayCount: 3,
+    demographics: { name_he: 'אסתר כהן-לוי', tz: '111111111', age: 84, sex: 'F', room: '12', bed: 'A' },
+    chief_complaint: 'מטופלת בת 84 התקבלה עם ירידה בתפקוד וחום נמוך, חשד ל-UTI עם דליריום.',
+    admission_note: {
+      S: 'בת 84, גרה עם בעלה בדירת 2 חדרים, עצמאית בעבר ב-ADL. בני המשפחה מדווחים על ירידה בערנות מ-48 שעות, חוסר תיאבון, חולשה כללית. ללא כאבי חזה, ללא קוצר נשימה. שתן עכור לפי הבעל.',
+      O: 'BP 132/74, HR 98, T 37.9, SpO2 96% RA. ערה אך מבולבלת לזמן. ריאות נקיות. בטן רכה. CVA tenderness שמאל. WBC 14.7, CRP 112, Cr 1.6, urinalysis: leukocytes 3+, nitrites positive.',
+      A: '1) UTI עם דליריום ב-84yo. 2) AKI על רקע התייבשות. 3) חולשה כללית.',
+      P: 'Ceftriaxone 1g IV q24h. Hydration NS 1.5L/day. Reassess Cr daily. CAM-screening q-shift. PT consult.',
+    },
+    soap_rounds: [
+      { day: 2, S: 'יותר ערה בבוקר, אכלה ארוחת בוקר בשלמותה.', O: 'T 37.2, BP 124/70. WBC 11.8.', A: 'משפר.', P: 'המשך antibiotics, יום 2/7.' },
+      { day: 3, S: 'דליריום נמוג. שמח לראות נכדה.', O: 'T 36.8, ערנות מלאה. Cr 1.2.', A: 'משופר משמעותית.', P: 'PO step-down ל-Cefuroxime 500mg bid x5d. תכנון שחרור.' },
+    ],
+    consult_letters: [
+      { from: 'Geriatrics', to: 'Urology', body: 'בת 84 עם UTI חוזר, מבקשים הערכה לחסימה תחתונה.' },
+    ],
+    discharge_letter: {
+      summary: 'אשפוז של 4 ימים בשל UTI עם דליריום, AKI טרום-כלייתי. השתפרה לחלוטין.',
+      meds_at_discharge: 'Cefuroxime 500mg bid x3 ימים נוספים. Pantoprazole 20mg PO qd. Atorvastatin 20mg PO qhs.',
+      follow_up: 'מרפאת גריאטריה 2 שבועות. תרבית שתן ביקורת.',
+    },
+  };
+}
+
+// ============================================================================
+// Sub-bot 5: ADMISSION-EMIT FLOW
+// Synthetic AZMA → upload on /capture → wait for extract → continue to
+// /review → /edit → click "📋 העתק הכל" → read clipboard → verify the
+// wrapForChameleon RLM/LRM markers are present.
+//
+// This is the headline ward-helper journey. v1 never exercised it.
+// ============================================================================
+
+async function runAdmissionEmit(scenario, browser) {
+  const session = await captureContext(scenario, browser);
+  if (!session.ok) return { skipped: session.error };
+  const { ctx, page, diag } = session;
+  try {
+    // Generate a synthetic AZMA-style chart PNG of THIS scenario's patient.
+    let azmaPng;
+    try {
+      azmaPng = await generatePatientChart(scenario, browser);
+    } catch (err) {
+      logBug('HIGH', scenario.scenario_id, 'admission-emit/azma-gen', `synth-image failed: ${err.message.slice(0, 100)}`);
+      await ctx.close();
+      return { error: 'azma_gen' };
+    }
+    const tmpPath = path.resolve(CONFIG.reportDir, `_azma_${scenario.scenario_id}.png`);
+    await fs.writeFile(tmpPath, azmaPng);
+
+    // Find image input on /capture (default route).
+    const fileInputs = await page.locator('input[type="file"]').all();
+    let imageInput = null;
+    for (const inp of fileInputs) {
+      const accept = await inp.getAttribute('accept').catch(() => '');
+      if (!accept || accept.startsWith('image')) { imageInput = inp; break; }
+    }
+    if (!imageInput) {
+      logBug('LOW', scenario.scenario_id, 'admission-emit/no-input', 'no image input on /capture landing');
+      await fs.unlink(tmpPath).catch(() => {});
+      await ctx.close();
+      return { skipped: 'no_input' };
+    }
+
+    const tUpload = Date.now();
+    await imageInput.setInputFiles(tmpPath, { timeout: 15_000 }).catch((err) => {
+      logBug('MEDIUM', scenario.scenario_id, 'admission-emit/upload', `setInputFiles failed: ${err.message.slice(0, 100)}`);
+    });
+    diag.markAck('image-upload', tUpload);
+
+    // Click "המשך לבדיקה ←" — this is the navigate-to-review button on
+    // Capture.tsx. Without this click the extract pipeline doesn't fire.
+    await sleep(rand(800, 1500));
+    const proceedBtn = page.getByRole('button', { name: /המשך לבדיקה|continue|next/i }).first();
+    if ((await proceedBtn.count().catch(() => 0)) > 0) {
+      const tProceed = Date.now();
+      await proceedBtn.click({ timeout: CONFIG.actionTimeoutMs }).catch(() => {});
+      diag.markAck('proceed-to-review', tProceed);
+    } else {
+      logBug('MEDIUM', scenario.scenario_id, 'admission-emit/no-proceed', '"המשך לבדיקה" button not found after upload');
+    }
+
+    // Two-phase wait: (a) URL navigates to /review, (b) extract finishes
+    // (signaled by FieldRow rendering — confirm buttons or forward button
+    // appear). Polling URL alone is insufficient because /review shows a
+    // loading state ("מחכה ל-AI") while extract runs server-side.
+    const tExtract = Date.now();
+    let landed = null;
+    // Phase A: wait up to 30s for hash change.
+    for (let i = 0; i < 30; i++) {
+      await sleep(1000);
+      const hash = await page.evaluate(() => location.hash).catch(() => '');
+      if (hash.includes('/review') || hash.includes('/edit') || hash.includes('/save')) {
+        landed = hash;
+        break;
+      }
+    }
+    if (!landed) {
+      logBug('HIGH', scenario.scenario_id, 'admission-emit/no-nav', `30s after upload, still on ${await page.evaluate(() => location.hash)} — Capture didn't transition`);
+      await fs.unlink(tmpPath).catch(() => {});
+      await ctx.close();
+      return { error: 'no_nav' };
+    }
+    diag.markAck('navigate-to-review', tExtract);
+
+    // Phase B: if landed on /review, wait up to 90s for extract to finish.
+    // Readiness = either FieldRow confirm button is rendered OR the "צור
+    // טיוטת רשימה" forward button is rendered (regardless of disabled state).
+    if (landed.includes('/review')) {
+      const tFinish = Date.now();
+      let extractReady = false;
+      for (let i = 0; i < 90; i++) {
+        await sleep(1000);
+        const sig = await page.evaluate(() => {
+          const btns = Array.from(document.querySelectorAll('button'))
+            .map((b) => (b.textContent || '').trim());
+          return {
+            hasConfirm: btns.some((t) => /אישור ידני נדרש/.test(t)),
+            hasForward: btns.some((t) => /צור טיוטת רשימה/.test(t)),
+            isError: btns.some((t) => /חזרה לצילום/.test(t)) && document.body.innerText.includes('שגיאה'),
+          };
+        }).catch(() => ({ hasConfirm: false, hasForward: false, isError: false }));
+        if (sig.hasConfirm || sig.hasForward || sig.isError) {
+          extractReady = true;
+          if (sig.isError) {
+            logBug('LOW', scenario.scenario_id, 'admission-emit/extract-error',
+              'extract returned an error state on /review (synthetic chart not recognized) — confirms graceful handling');
+            await fs.unlink(tmpPath).catch(() => {});
+            await ctx.close();
+            return { ok: true, landedAt: landed, extractError: true };
+          }
+          break;
+        }
+      }
+      if (!extractReady) {
+        logBug('HIGH', scenario.scenario_id, 'admission-emit/extract-stall',
+          '90s on /review with neither confirm nor forward button — extract turn stalled mid-flight');
+        await fs.unlink(tmpPath).catch(() => {});
+        await ctx.close();
+        return { error: 'extract_stall' };
+      }
+      diag.markAck('extract-finish', tFinish);
+    }
+
+    // Drive forward to /edit if currently on /review.
+    if (landed.includes('/review')) {
+      // /review has FieldRow per-critical-field manual-confirm buttons that
+      // gate the forward button. When the extract returns low confidence
+      // (which is always the case for our synthetic chart), each row shows
+      // "אישור ידני נדרש" — click them all before searching forward.
+      const confirmBtns = page.getByRole('button', { name: /אישור ידני נדרש/ });
+      const confirmCount = await confirmBtns.count().catch(() => 0);
+      for (let c = 0; c < confirmCount; c++) {
+        await confirmBtns.nth(c).click({ timeout: CONFIG.actionTimeoutMs }).catch(() => {});
+        await sleep(rand(150, 350));
+      }
+      if (confirmCount > 0) {
+        console.log(`  admission-emit: clicked ${confirmCount} per-field confirm buttons`);
+      }
+
+      // Forward button on /review is "צור טיוטת רשימה ←" (Review.tsx:819).
+      // It enables only after all critical fields are confirmed.
+      const reviewProceed = page.getByRole('button', { name: /צור טיוטת רשימה|המשך|generate|emit/i }).first();
+      if ((await reviewProceed.count().catch(() => 0)) > 0) {
+        const isDisabled = await reviewProceed.isDisabled().catch(() => false);
+        if (isDisabled) {
+          logBug('LOW', scenario.scenario_id, 'admission-emit/review-blocked',
+            'forward button "צור טיוטת רשימה" still disabled after clicking all confirm buttons — extract may have flagged extra critical fields');
+        }
+        const tEmit = Date.now();
+        await reviewProceed.click({ timeout: CONFIG.actionTimeoutMs }).catch(() => {});
+        // Poll for /edit.
+        for (let i = 0; i < 60; i++) {
+          await sleep(1000);
+          const hash = await page.evaluate(() => location.hash).catch(() => '');
+          if (hash.includes('/edit') || hash.includes('/save')) { landed = hash; break; }
+        }
+        diag.markAck('emit-turn', tEmit);
+      }
+    }
+
+    if (!landed.includes('/edit') && !landed.includes('/save')) {
+      // Dump diagnostic info: visible buttons + first 400 chars of page text
+      // so the operator can see what UI state the bot is actually facing.
+      const stuckInfo = await page.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll('button'))
+          .map((b) => ({
+            text: (b.textContent || '').trim().slice(0, 60),
+            disabled: b.disabled,
+            ariaLabel: b.getAttribute('aria-label')?.slice(0, 60) || null,
+          }))
+          .filter((b) => b.text.length > 0);
+        const bodyText = (document.body.innerText || '').slice(0, 400);
+        return { btns, bodyText };
+      }).catch(() => null);
+      const evidence = stuckInfo
+        ? `buttons=${JSON.stringify(stuckInfo.btns).slice(0, 350)} | body="${stuckInfo.bodyText.replace(/\s+/g, ' ').slice(0, 200)}"`
+        : 'eval-failed';
+      logBug('MEDIUM', scenario.scenario_id, 'admission-emit/no-edit',
+        `did not reach /edit; stuck at ${landed}`, evidence);
+    }
+
+    // CLIPBOARD VERIFICATION — this is the headline new check.
+    // Find any "📋 העתק" button (full or per-section) and click it.
+    const copyBtn = page.getByRole('button', { name: /העתק|copy/i }).first();
+    if ((await copyBtn.count().catch(() => 0)) === 0) {
+      logBug('MEDIUM', scenario.scenario_id, 'admission-emit/no-copy-btn', 'no "📋 העתק" button found after emit');
+    } else {
+      await copyBtn.click({ timeout: CONFIG.actionTimeoutMs }).catch(() => {});
+      await sleep(600);
+      const clipText = await page.evaluate(async () => {
+        try { return await navigator.clipboard.readText(); } catch (_) { return null; }
+      }).catch(() => null);
+      if (!clipText) {
+        logBug('HIGH', scenario.scenario_id, 'admission-emit/clipboard-empty', 'clipboard.readText returned null/empty after copy');
+      } else {
+        const hasRlm = clipText.includes('‏');
+        const hasLrm = clipText.includes('‎');
+        if (!hasRlm && !hasLrm) {
+          logBug('HIGH', scenario.scenario_id, 'admission-emit/clipboard-no-bidi',
+            'wrapForChameleon regression: copied note has neither RLM nor LRM markers ' +
+            '— Chameleon paste will corrupt mixed Hebrew/English text');
+        } else {
+          console.log(`  admission-emit: clipboard ✓ ${clipText.length} chars, RLM=${hasRlm} LRM=${hasLrm}`);
+        }
+        // Also flag if the text contains the dangerous chars sanitizer should remove.
+        const arrows = clipText.match(/[→←↑↓]/g);
+        const bold = clipText.match(/\*\*[^*]/);
+        if (arrows) {
+          logBug('MEDIUM', scenario.scenario_id, 'admission-emit/sanitizer-leak',
+            `arrow chars (${arrows.length}) survived sanitizeForChameleon → will corrupt Chameleon`);
+        }
+        if (bold) {
+          logBug('MEDIUM', scenario.scenario_id, 'admission-emit/sanitizer-leak',
+            '**bold** markdown survived sanitizeForChameleon');
+        }
+      }
+    }
+
+    if (session.crashed()) logBug('CRITICAL', scenario.scenario_id, 'admission-emit', 'page crashed during admission emit');
+    await fs.unlink(tmpPath).catch(() => {});
+    await ctx.close();
+    return { ok: true, landedAt: landed };
+  } catch (err) {
+    logBug('HIGH', scenario.scenario_id, 'admission-emit', `harness error: ${err.message}`);
+    await ctx.close().catch(() => {});
+    return { error: err.message };
+  }
+}
+
+// ============================================================================
+// Sub-bot 6: SOAP DAILY ROUND on /today
+// Use the roster paste flow to seed patients, navigate to /today, click the
+// first patient card, simulate a per-patient interaction. Tests the multi-
+// patient hand-off that didn't exist in v1.
+// ============================================================================
+
+async function runSoapDailyRound(scenario, browser) {
+  const session = await captureContext(scenario, browser);
+  if (!session.ok) return { skipped: session.error };
+  const { ctx, page, diag } = session;
+  try {
+    await page.evaluate(() => { window.location.hash = '#/today'; });
+    await sleep(1200);
+
+    // Seed roster via paste flow (reuses the runRosterImport pattern but
+    // doesn't gate on its outcome).
+    const openBtn = page.getByRole('button', { name: /ייבא רשומה/ }).first();
+    if ((await openBtn.count().catch(() => 0)) === 0) {
+      logBug('LOW', scenario.scenario_id, 'soap-round/no-roster-import', '"ייבא רשומה" button not found on /today — feature flag off?');
+    } else {
+      await openBtn.click().catch(() => {});
+      await sleep(800);
+      const ta = page.locator('#roster-paste').first();
+      if ((await ta.count().catch(() => 0)) > 0) {
+        const d = scenario.demographics || {};
+        const lines = [
+          `1 | ${d.name_he || 'מטופלת א'} | ${d.age || 84} | ${d.room || '12'} | ${d.bed || 'A'} | 4 | UTI + delirium`,
+          '2 | יעקב כהן | 75 | 15 | B | 3 | CHF exacerbation',
+          '3 | שרה לוי | 88 | 20 | A | 7 | post-stroke rehab',
+        ];
+        await ta.fill(lines.join('\n'));
+        await sleep(400);
+        const previewBtn = page.getByRole('button', { name: /תצוגה מקדימה/ }).first();
+        if ((await previewBtn.count().catch(() => 0)) > 0 && !(await previewBtn.isDisabled().catch(() => false))) {
+          await previewBtn.click().catch(() => {});
+          await sleep(1200);
+          // Confirm import — common pattern is "ייבא X חולים" or similar.
+          const importBtn = page.getByRole('button', { name: /^ייבא\s|^שמור|^אישור|^הוסף|confirm/i }).first();
+          if ((await importBtn.count().catch(() => 0)) > 0) {
+            await importBtn.click().catch(() => {});
+            await sleep(1200);
+          } else {
+            logBug('LOW', scenario.scenario_id, 'soap-round/no-import-confirm', 'no confirm button found in roster preview');
+          }
+        }
+      }
+    }
+
+    // Now /today should show patient cards. Find the first one and click it.
+    await sleep(800);
+    const pageText = await page.evaluate(() => document.body.innerText).catch(() => '');
+    const seenName = (scenario.demographics?.name_he && pageText.includes(scenario.demographics.name_he)) ||
+                     pageText.includes('יעקב כהן') ||
+                     pageText.includes('שרה לוי');
+    if (!seenName) {
+      logBug('MEDIUM', scenario.scenario_id, 'soap-round/no-patients-rendered',
+        'after roster import, no patient names visible on /today — import or render failed silently');
+      await ctx.close();
+      return { skipped: 'no_patients_rendered' };
+    }
+
+    // Click the first card by Hebrew name. The patient name is the most
+    // robust selector — card class names change.
+    const firstName = scenario.demographics?.name_he || 'מטופלת א';
+    const card = page.getByText(new RegExp(firstName)).first();
+    if ((await card.count().catch(() => 0)) > 0) {
+      const tClick = Date.now();
+      await card.click({ timeout: CONFIG.actionTimeoutMs }).catch(() => {});
+      diag.markAck('patient-card-click', tClick);
+      await sleep(1500);
+      // After click, expect navigation to /capture or some patient-detail
+      // mode. Just check we didn't crash and that the URL changed or a new
+      // section rendered.
+      const hash = await page.evaluate(() => location.hash).catch(() => '');
+      if (hash.includes('/today')) {
+        // Some flows keep us on /today but expand a card. That's also OK
+        // — just confirm the patient is in some "active" state.
+        const expanded = await page.evaluate(
+          (n) => Array.from(document.querySelectorAll('[aria-expanded="true"]')).length > 0 || document.body.innerText.includes(n),
+          firstName,
+        ).catch(() => false);
+        if (!expanded) {
+          logBug('LOW', scenario.scenario_id, 'soap-round/click-no-effect',
+            `patient card click did not navigate or expand — still on ${hash}`);
+        }
+      }
+    } else {
+      logBug('MEDIUM', scenario.scenario_id, 'soap-round/no-card', `could not find clickable patient card for "${firstName}"`);
+    }
+
+    if (session.crashed()) logBug('CRITICAL', scenario.scenario_id, 'soap-round', 'page crashed during SOAP round');
+    await ctx.close();
+    return { ok: true };
+  } catch (err) {
+    logBug('HIGH', scenario.scenario_id, 'soap-round', `harness error: ${err.message}`);
+    await ctx.close().catch(() => {});
+    return { error: err.message };
+  }
+}
+
+// ============================================================================
+// Sub-bot 7: CHOPPY-SCREENSHOT (rotated/blurred/JPEG-compressed AZMA)
+// Real ward photos are taken at 5-15° angles, low light, JPEG quality 30-60.
+// This sub-bot exercises that code path; v1 only ever uploaded clean PNGs.
+// ============================================================================
+
+async function runChoppyAzmaUpload(scenario, browser) {
+  const session = await captureContext(scenario, browser);
+  if (!session.ok) return { skipped: session.error };
+  const { ctx, page, diag } = session;
+  try {
+    let cleanPng;
+    try {
+      cleanPng = await generatePatientChart(scenario, browser);
+    } catch (err) {
+      logBug('MEDIUM', scenario.scenario_id, 'choppy/azma-gen', err.message.slice(0, 100));
+      await ctx.close();
+      return { error: 'azma_gen' };
+    }
+    let choppyJpg;
+    try {
+      choppyJpg = await distortImage(cleanPng, browser);
+    } catch (err) {
+      logBug('MEDIUM', scenario.scenario_id, 'choppy/distort', err.message.slice(0, 120));
+      await ctx.close();
+      return { error: 'distort' };
+    }
+    const tmpPath = path.resolve(CONFIG.reportDir, `_choppy_${scenario.scenario_id}.jpg`);
+    await fs.writeFile(tmpPath, choppyJpg);
+
+    const fileInputs = await page.locator('input[type="file"]').all();
+    let imgInput = null;
+    for (const inp of fileInputs) {
+      const accept = await inp.getAttribute('accept').catch(() => '');
+      if (!accept || accept.startsWith('image')) { imgInput = inp; break; }
+    }
+    if (!imgInput) {
+      logBug('LOW', scenario.scenario_id, 'choppy/no-input', 'no image input on /capture');
+      await fs.unlink(tmpPath).catch(() => {});
+      await ctx.close();
+      return { skipped: 'no_input' };
+    }
+
+    const t0 = Date.now();
+    await imgInput.setInputFiles(tmpPath, { timeout: 15_000 }).catch((err) => {
+      logBug('MEDIUM', scenario.scenario_id, 'choppy/upload', `setInputFiles failed: ${err.message.slice(0, 100)}`);
+    });
+    diag.markAck('choppy-upload', t0);
+
+    // The compress.ts utility should auto-downsize. Confirm the page didn't
+    // crash and a thumbnail or status indicator appeared.
+    await sleep(2500);
+    if (session.crashed()) {
+      logBug('CRITICAL', scenario.scenario_id, 'choppy/crash', `page crashed on choppy JPEG (${(choppyJpg.length / 1024).toFixed(0)} KB)`);
+    } else {
+      // Check for an error banner; absence + non-crash = handled gracefully.
+      const errBanner = await page.locator('[class*="warn"], [class*="error"]').count().catch(() => 0);
+      if (errBanner > 0) {
+        const errText = await page.locator('[class*="warn"], [class*="error"]').first().textContent().catch(() => '');
+        if (errText && /error|שגיאה|invalid/i.test(errText)) {
+          logBug('LOW', scenario.scenario_id, 'choppy/error-banner',
+            `choppy JPEG triggered an error banner: "${errText.slice(0, 100)}" — should be tolerated by compress.ts`);
+        }
+      }
+      console.log(`  choppy-upload: ✓ ${(choppyJpg.length / 1024).toFixed(0)} KB JPEG handled without crash`);
+    }
+
+    await fs.unlink(tmpPath).catch(() => {});
+    await ctx.close();
+    return { ok: true, sizeKb: Math.round(choppyJpg.length / 1024) };
+  } catch (err) {
+    logBug('HIGH', scenario.scenario_id, 'choppy', `harness error: ${err.message}`);
+    await ctx.close().catch(() => {});
+    return { error: err.message };
+  }
+}
+
+// ============================================================================
+// Sub-bot 8: DISCHARGE NOTE FLOW
+// Like admission-emit but with discharge note type. Tests the per-note-type
+// prompt prefix path (orchestrate.ts:prefixForType).
+// ============================================================================
+
+async function runDischargeNote(scenario, browser) {
+  const session = await captureContext(scenario, browser);
+  if (!session.ok) return { skipped: session.error };
+  const { ctx, page, diag } = session;
+  try {
+    let azmaPng;
+    try {
+      azmaPng = await generatePatientChart(scenario, browser);
+    } catch (err) {
+      logBug('LOW', scenario.scenario_id, 'discharge/azma-gen', err.message.slice(0, 100));
+      await ctx.close();
+      return { error: 'azma_gen' };
+    }
+    const tmpPath = path.resolve(CONFIG.reportDir, `_discharge_${scenario.scenario_id}.png`);
+    await fs.writeFile(tmpPath, azmaPng);
+
+    const fileInputs = await page.locator('input[type="file"]').all();
+    let imageInput = null;
+    for (const inp of fileInputs) {
+      const accept = await inp.getAttribute('accept').catch(() => '');
+      if (!accept || accept.startsWith('image')) { imageInput = inp; break; }
+    }
+    if (!imageInput) {
+      await fs.unlink(tmpPath).catch(() => {});
+      await ctx.close();
+      return { skipped: 'no_input' };
+    }
+    await imageInput.setInputFiles(tmpPath, { timeout: 15_000 }).catch(() => {});
+
+    // Look for a "type" picker that includes "סיכום שחרור" / "discharge".
+    // If not found, fall back to whatever default — capture surfaces the
+    // type via a select or radio group. This intentionally probes the UI.
+    await sleep(1200);
+    const typePicker = page.getByRole('combobox').first();
+    let dischargeSelected = false;
+    if ((await typePicker.count().catch(() => 0)) > 0) {
+      const options = await page.locator('option').allTextContents().catch(() => []);
+      const dischargeOpt = options.find((t) => /שחרור|discharge/.test(t));
+      if (dischargeOpt) {
+        await typePicker.selectOption({ label: dischargeOpt }).catch(() => {});
+        dischargeSelected = true;
+      }
+    }
+    if (!dischargeSelected) {
+      // Try a button or radio matching discharge.
+      const dischargeBtn = page.getByRole('radio', { name: /שחרור|discharge/i }).first();
+      if ((await dischargeBtn.count().catch(() => 0)) > 0) {
+        await dischargeBtn.click().catch(() => {});
+        dischargeSelected = true;
+      }
+    }
+    if (!dischargeSelected) {
+      logBug('LOW', scenario.scenario_id, 'discharge/no-type-picker',
+        'could not find a discharge-type selector on /capture — note-type may be inferred elsewhere');
+    }
+
+    // Continue.
+    const proceedBtn = page.getByRole('button', { name: /המשך|continue/i }).first();
+    if ((await proceedBtn.count().catch(() => 0)) > 0) {
+      const t0 = Date.now();
+      await proceedBtn.click().catch(() => {});
+      diag.markAck('discharge-proceed', t0);
+    }
+    await sleep(2000);
+
+    if (session.crashed()) logBug('CRITICAL', scenario.scenario_id, 'discharge', 'page crashed during discharge flow');
+    await fs.unlink(tmpPath).catch(() => {});
+    await ctx.close();
+    return { ok: true, dischargeSelected };
+  } catch (err) {
+    logBug('HIGH', scenario.scenario_id, 'discharge', `harness error: ${err.message}`);
+    await ctx.close().catch(() => {});
+    return { error: err.message };
+  }
+}
+
+// ============================================================================
+// Sub-bot 9: MOBILE LAYOUT AUDIT
+// Visits each top-level route on iPhone 13 (390×844 viewport) and flags any
+// element extending past viewport edges or causing horizontal body scroll.
+// Caught the bottom-nav-vs-6-items overflow user reported 2026-05-10.
+// ============================================================================
+
+const ROUTES_TO_AUDIT = ['/', '/today', '/consult', '/history', '/ortho', '/settings'];
+
+async function runMobileLayoutAudit(scenario, browser) {
+  const session = await captureContext(scenario, browser);
+  if (!session.ok) return { skipped: session.error };
+  const { ctx, page } = session;
+  try {
+    const findings = [];
+    // Seed roster so /today shows non-empty cards (also exposes cascading
+    // overflow from card width). Long Hebrew names + long dxShort exercise
+    // RTL truncation/overflow paths the empty state hides.
+    await page.evaluate(async () => {
+      try {
+        const open = (n) => new Promise((res, rej) => {
+          const r = indexedDB.open(n);
+          r.onsuccess = () => res(r.result);
+          r.onerror = () => rej(r.error);
+        });
+        const db = await open('ward-helper').catch(() => null);
+        if (db && db.objectStoreNames.contains('roster')) {
+          const tx = db.transaction('roster', 'readwrite');
+          const store = tx.objectStore('roster');
+          store.clear();
+          const rows = [
+            { id: 'ml1', name: 'מטופל ארוך-שם-לבדיקת-עומס-RTL', age: 84, room: '12', bed: 'A', losDays: 4, dxShort: 'UTI עם דליריום + AKI prerenal', sourceMode: 'paste', addedAt: Date.now(), tz: null, sex: null },
+            { id: 'ml2', name: 'יעקב כהן', age: 75, room: '15', bed: 'B', losDays: 3, dxShort: 'CHF NYHA III, fluid overload, hypoxia, dyspnea on exertion', sourceMode: 'paste', addedAt: Date.now(), tz: null, sex: null },
+            { id: 'ml3', name: 'שרה לוי', age: 88, room: '20', bed: 'A', losDays: 7, dxShort: 'post-stroke rehab dysphagia aspiration risk significantly impaired ADL function', sourceMode: 'paste', addedAt: Date.now(), tz: null, sex: null },
+          ];
+          for (const r of rows) store.put(r);
+          await new Promise((res) => { tx.oncomplete = res; tx.onerror = res; });
+        }
+      } catch (_) {}
+    });
+    // /today reads roster from IDB on mount via useEffect; without a reload
+    // the freshly-seeded rows aren't reflected in React state. Reload now
+    // so the rest of the audit visits a populated /today, exposing
+    // patient-card / header-strip overflow.
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await sleep(1200);
+
+    for (const route of ROUTES_TO_AUDIT) {
+      await page.evaluate((r) => { window.location.hash = '#' + r; }, route);
+      await sleep(rand(900, 1400));
+      const result = await page.evaluate(() => {
+        // Always compare against the device viewport, NOT window.innerWidth
+        // — when content forces body wider than viewport, innerWidth grows.
+        const VW = 390;
+        const overs = [];
+        for (const el of document.querySelectorAll('*')) {
+          const r = el.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0) continue;
+          // Skip the host html/body/outermost wrappers — their offset is a
+          // SYMPTOM of inner overflow; reporting them noisifies.
+          if (el === document.documentElement || el === document.body) continue;
+          // Only report tagged candidates: buttons, nav, cards, headers,
+          // anchors. The whole-tree dump is too noisy.
+          const tag = el.tagName;
+          const cls = String(el.className || '');
+          const role = el.getAttribute('role') || '';
+          const interesting =
+            tag === 'BUTTON' || tag === 'A' || tag === 'NAV' || tag === 'HEADER' ||
+            /\b(card|toolbar|bottom-nav|today-meta|today-soap|empty)\b/i.test(cls) ||
+            /toolbar|navigation|alert/i.test(role);
+          if (!interesting) continue;
+          const overR = r.right > VW + 1;
+          const overL = r.left < -1;
+          if (overR || overL) {
+            overs.push({
+              tag, cls: cls.slice(0, 50),
+              text: (el.innerText || '').slice(0, 40).replace(/\s+/g, ' '),
+              left: Math.round(r.left), right: Math.round(r.right), width: Math.round(r.width),
+              over: overR ? 'right' : 'left',
+            });
+          }
+        }
+        return {
+          bodyHorizontalScroll: document.body.scrollWidth > document.body.clientWidth,
+          bodyScrollWidth: document.body.scrollWidth,
+          overflowingElements: overs,
+        };
+      }).catch(() => null);
+
+      if (result && result.bodyHorizontalScroll) {
+        // The whole page has horizontal scroll — first-class layout bug.
+        // Report the wider element (likely the cause).
+        const widest = (result.overflowingElements || [])
+          .sort((a, b) => b.width - a.width)[0];
+        logBug('MEDIUM', scenario.scenario_id, `mobile-layout/${route}/h-scroll`,
+          `body scrollWidth ${result.bodyScrollWidth}px > 390px viewport. ${result.overflowingElements.length} interesting elements overflow. Widest: ${widest ? `<${widest.tag} class="${widest.cls}"> ${widest.width}px ("${widest.text}")` : 'none'}`);
+        findings.push({ route, body: result.bodyScrollWidth, overflows: result.overflowingElements.length });
+      } else if (result && result.overflowingElements?.length) {
+        // No body-wide scroll but individual elements still spill out.
+        for (const o of result.overflowingElements.slice(0, 3)) {
+          logBug('LOW', scenario.scenario_id, `mobile-layout/${route}/element-clip`,
+            `<${o.tag} class="${o.cls}"> overflows ${o.over} edge: x=[${o.left}, ${o.right}], width=${o.width} (text: "${o.text}")`);
+        }
+        findings.push({ route, body: 0, overflows: result.overflowingElements.length });
+      }
+    }
+    if (session.crashed()) logBug('CRITICAL', scenario.scenario_id, 'mobile-layout', 'page crashed during route audit');
+    await ctx.close();
+    return { ok: true, findings };
+  } catch (err) {
+    logBug('HIGH', scenario.scenario_id, 'mobile-layout', `harness error: ${err.message}`);
+    await ctx.close().catch(() => {});
+    return { error: err.message };
+  }
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
@@ -893,31 +1581,57 @@ async function main() {
   console.log(`  cost-cap=$${CONFIG.costCapUsd} effort=${process.env.CHAOS_EFFORT || 'medium'}`);
   console.log(`  report=${REPORT_PATH}`);
 
-  const browser = await chromium.launch({ headless: CONFIG.headless });
+  // CHAOS_EXECUTABLE_PATH lets us fall back to a system-installed Chrome on
+  // Windows when Playwright's bundled chromium hasn't been downloaded
+  // (`npx playwright install` not run). Standard path on Windows is
+  // C:\Program Files\Google\Chrome\Application\chrome.exe.
+  const launchOpts = { headless: CONFIG.headless };
+  if (process.env.CHAOS_EXECUTABLE_PATH) {
+    launchOpts.executablePath = process.env.CHAOS_EXECUTABLE_PATH;
+    launchOpts.channel = undefined;  // override default chromium channel
+  }
+  const browser = await chromium.launch(launchOpts);
 
   for (let i = 0; i < CONFIG.scenarios; i++) {
     if (totalUsd() >= CONFIG.costCapUsd) { console.warn('cost-cap hit, stopping early'); break; }
     let scenario;
     try {
-      scenario = await generateScenario(i);
+      scenario = CONFIG.useFixture ? fixtureScenario(i) : await generateScenario(i);
     } catch (err) {
       logBug('HIGH', `seed-${i}`, 'scenario-generate', err.message);
       continue;
     }
     await persistScenario(scenario);
 
+    // ────────── v2 sub-bots (default — these are the new headline flows) ──────────
     const journey = await runPlaywrightFlow(scenario, browser);
-    const adversarial = await runAdversarialUpload(scenario, browser);
-    const labPdf = await runLabReportPDF(scenario, browser);
-    const imagePng = await runMedicalImagePNG(scenario, browser);
-    const census = await runCensusPhoto(scenario, browser);
-    const roster = await runRosterImport(scenario, browser);
+    const layout = await runMobileLayoutAudit(scenario, browser);
+    const admission = await runAdmissionEmit(scenario, browser);
+    const soap = await runSoapDailyRound(scenario, browser);
+    const choppy = await runChoppyAzmaUpload(scenario, browser);
+    const discharge = await runDischargeNote(scenario, browser);
+
+    // ────────── v1 legacy sub-bots — opt-in via WARD_BOT_LEGACY=1 ──────────
+    let adversarial, labPdf, imagePng, census, roster;
+    if (CONFIG.runLegacy) {
+      adversarial = await runAdversarialUpload(scenario, browser);
+      labPdf = await runLabReportPDF(scenario, browser);
+      imagePng = await runMedicalImagePNG(scenario, browser);
+      census = await runCensusPhoto(scenario, browser);
+      roster = await runRosterImport(scenario, browser);
+    }
 
     const sBugs = BUGS.filter((b) => b.scenario_id === scenario.scenario_id).length;
     console.log(
-      `  scenario ${i + 1} done — bugs: ${sBugs}, journey=${journey?.success}, adv-crashed=${adversarial?.crashed || false}, ` +
-      `lab=${labPdf?.ok || labPdf?.skipped}, img=${imagePng?.ok || imagePng?.skipped}, ` +
-      `census=${census?.skipped || 'ok'}, roster=${roster?.ok || roster?.skipped}`
+      `  scenario ${i + 1} done — bugs: ${sBugs}, journey=${journey?.success}, ` +
+      `layout=${layout?.ok ? `${layout.findings.length} routes-w-overflow` : (layout?.error || layout?.skipped)}, ` +
+      `admission=${admission?.ok ? 'ok' : (admission?.error || admission?.skipped)}, ` +
+      `soap=${soap?.ok ? 'ok' : (soap?.error || soap?.skipped)}, ` +
+      `choppy=${choppy?.ok ? `ok-${choppy.sizeKb}KB` : (choppy?.error || choppy?.skipped)}, ` +
+      `discharge=${discharge?.ok ? 'ok' : (discharge?.error || discharge?.skipped)}` +
+      (CONFIG.runLegacy
+        ? ` | legacy: adv-crashed=${adversarial?.crashed || false}, lab=${labPdf?.ok || labPdf?.skipped}, img=${imagePng?.ok || imagePng?.skipped}, census=${census?.skipped || 'ok'}, roster=${roster?.ok || roster?.skipped}`
+        : '')
     );
   }
 
@@ -934,14 +1648,31 @@ async function writeReport() {
   lines.push(`# ward-helper-bot-v1 report — ${RUN_ID}`);
   lines.push('');
   lines.push(`- Model: ${CONFIG.model}, effort: ${process.env.CHAOS_EFFORT || 'medium'}`);
-  lines.push(`- Scenarios: ${CONFIG.scenarios}`);
+  lines.push(`- Scenarios: ${CONFIG.scenarios}${CONFIG.useFixture ? ' (FIXTURE — Opus skipped)' : ''}`);
+  lines.push(`- Mobile device: ${MOBILE_DEVICE.name || 'iPhone 13'} (${MOBILE_DEVICE.viewport.width}×${MOBILE_DEVICE.viewport.height}, isMobile=${MOBILE_DEVICE.isMobile}, hasTouch=${MOBILE_DEVICE.hasTouch})`);
+  lines.push(`- Legacy sub-bots: ${CONFIG.runLegacy ? 'enabled (WARD_BOT_LEGACY=1)' : 'disabled'}`);
   lines.push(`- Cost: $${totalUsd().toFixed(2)} (${COST.calls} calls, ${COST.inTok}/${COST.outTok} tokens)`);
   lines.push(`- Bugs: ${BUGS.length}`);
   lines.push('');
-  lines.push('## Bug summary');
+  lines.push('## Bug summary by severity');
   const sevCounts = BUGS.reduce((a, b) => { a[b.severity] = (a[b.severity] || 0) + 1; return a; }, {});
   for (const sev of ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']) {
     if (sevCounts[sev]) lines.push(`- **${sev}**: ${sevCounts[sev]}`);
+  }
+  lines.push('');
+  lines.push('## Bug summary by flow');
+  // Group by the prefix of `where` (e.g. "admission-emit/...", "soap-round/...").
+  const byFlow = {};
+  for (const b of BUGS) {
+    const flow = b.where.split('/')[0];
+    byFlow[flow] = byFlow[flow] || { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+    byFlow[flow][b.severity] += 1;
+  }
+  lines.push('| flow | CRIT | HIGH | MED | LOW |');
+  lines.push('|---|---|---|---|---|');
+  for (const flow of Object.keys(byFlow).sort()) {
+    const c = byFlow[flow];
+    lines.push(`| ${flow} | ${c.CRITICAL} | ${c.HIGH} | ${c.MEDIUM} | ${c.LOW} |`);
   }
   lines.push('');
   lines.push('## Bug details');
