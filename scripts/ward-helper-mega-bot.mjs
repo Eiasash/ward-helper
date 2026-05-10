@@ -30,6 +30,7 @@ import { chromium } from 'playwright';
 import { PERSONAS, runPersona } from './lib/megaPersona.mjs';
 import { writePatientGallery } from './lib/patientChart.mjs';
 import { CostTracker, generateScenarioOpus } from './lib/scenarioGen.mjs';
+import { MinCoverageScheduler, DEFAULT_MIN_COVERAGE_TARGETS } from './lib/personasV4.mjs';
 
 // ============================================================================
 // Authorization gate
@@ -63,11 +64,15 @@ const CONFIG = {
   url: process.env.WARD_BOT_URL || 'https://eiasash.github.io/ward-helper/',
   personas: Math.min(10, Math.max(1, Number(process.env.WARD_BOT_PERSONAS || 5))),
   durationMs: Number(process.env.WARD_BOT_DURATION_MS || 1800000),
-  costCapUsd: Number(process.env.CHAOS_COST_CAP_USD || 50),
+  // V4: default cost cap raised 50→80 per user spec. Real expected spend is
+  // ~$15 (10 scenarios at ~$1.50 each via Opus 4.7 high-effort). Cap stays
+  // as a safety ceiling, NOT a target — see costItemization in report.
+  costCapUsd: Number(process.env.CHAOS_COST_CAP_USD || 80),
   reportDir: process.env.CHAOS_REPORT_DIR || 'chaos-reports/ward-bot-mega',
   headless: process.env.CHAOS_HEADLESS !== '0',
   executablePath: process.env.CHAOS_EXECUTABLE_PATH || undefined,
   personaList: (process.env.WARD_BOT_PERSONA_LIST || '').split(',').filter(Boolean),
+  emailTarget: process.env.WARD_BOT_EMAIL_TARGET || 'bot+test@example.com',
 };
 
 const RUN_ID = `wm-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`;
@@ -244,10 +249,16 @@ function fixtureScenarioFor(personaIdx, personaKey) {
 // Default persona rotation
 // ============================================================================
 
+// V4: dropped the 3 duplicates (speedrunner-2/misclicker-2/multitasker-2)
+// per L4 ("diversity > count"). Replaced with 3 new archetypes:
+//   - postCallResident — 30hrs awake, fatigue-class bugs
+//   - dictatingAttending — voice-input + undo/redo, paste-stress
+//   - intermittentConnection — user behavior under flaky network (distinct
+//     from chaosNetworkRamped which models the network itself)
 const DEFAULT_PERSONA_ROTATION = [
   'speedrunner', 'methodical', 'misclicker', 'multitasker',
   'keyboardWarrior', 'batterySaver', 'unicodeChaos',
-  'speedrunner', 'misclicker', 'multitasker',  // repeat top 3 for 8-10 count
+  'postCallResident', 'dictatingAttending', 'intermittentConnection',
 ];
 
 function pickPersonaKeys(n) {
@@ -341,6 +352,16 @@ async function main() {
   mainStart = Date.now();
   console.log(`  ── persona run starts now: ${new Date(mainStart).toISOString()} (${(CONFIG.durationMs / 60000).toFixed(0)} min)`);
 
+  // V4: shared MinCoverageScheduler — biases pickAction toward under-fired
+  // sub-bots after 50% wall-time. Reset clock so it tracks persona-run, not
+  // scenario-gen + persona-run combined.
+  const scheduler = new MinCoverageScheduler({
+    targets: DEFAULT_MIN_COVERAGE_TARGETS,
+    durationMs: CONFIG.durationMs,
+  });
+  scheduler.reset();
+  console.log(`  scheduler targets: ${JSON.stringify(DEFAULT_MIN_COVERAGE_TARGETS)} (bias active after t=${(CONFIG.durationMs / 2000).toFixed(0)}s)`);
+
   // Spawn all personas in parallel.
   const promises = personaKeys.map((key, idx) => {
     const scenario = allScenarios[idx];
@@ -353,6 +374,8 @@ async function main() {
       url: CONFIG.url,
       logBug,
       onTick,
+      scheduler,                          // V4
+      emailTarget: CONFIG.emailTarget,    // V4
     }).catch((err) => {
       logBug('CRITICAL', scenario.scenario_id, `persona-${key}/fatal`,
         `persona crashed: ${err.message?.slice(0, 200)}`);
@@ -365,14 +388,22 @@ async function main() {
   await browser.close();
 
   await writeTimeline();
-  await writeReport(results);
+  await writeReport(results, costTracker, scheduler);
 
   // Patient gallery — synthetic charts the user can browse like real patients.
+  // V4: pass per-persona action timeline + chaos-event counts so the gallery
+  // can render an action-timeline overlay + chaos badges + persona attribution.
   const galleryDir = path.resolve(CONFIG.reportDir, `${RUN_ID}-patients`);
   const galleryMeta = {
     runId: RUN_ID,
     duration: `${((Date.now() - mainStart) / 60000).toFixed(1)} min`,
     generatedBy: FIXTURE_MODE ? 'fixture' : 'Opus 4.7',
+    // V4: per-scenario timeline + chaos summary for the action-timeline overlay
+    timelineByScenario: aggregateTimelineByScenario(),
+    perPersonaTally: results.reduce((acc, r) => {
+      if (r.tally) acc[r.persona] = r.tally;
+      return acc;
+    }, {}),
   };
   const gallery = await writePatientGallery(allScenarios, galleryDir, galleryMeta);
 
@@ -393,25 +424,79 @@ async function writeTimeline() {
   await fs.writeFile(TIMELINE_PATH, lines, 'utf8');
 }
 
-async function writeReport(results) {
+// V4: aggregate raw TIMELINE events into a per-scenario timeline for the
+// gallery's action-timeline overlay. Each event has scenario_id implicit
+// via the persona index → we reverse-look-up via the global TIMELINE.
+function aggregateTimelineByScenario() {
+  // The TIMELINE events have { persona, action, botSubject, isChaos, isUseful, elapsed, result }.
+  // The scenario_id isn't in the event today — but each persona owns one scenario,
+  // so we'd need persona→scenario_id mapping. For now group by persona and let
+  // the gallery match persona name to scenario._persona.
+  const out = {};
+  for (const ev of TIMELINE) {
+    const k = ev.persona;
+    if (!out[k]) out[k] = [];
+    out[k].push({
+      tSec: Math.round(ev.elapsed / 1000),
+      action: ev.action,
+      isChaos: !!ev.isChaos,
+      isUseful: !!ev.isUseful,
+      ok: ev.result?.ok === true,
+    });
+  }
+  return out;
+}
+
+async function writeReport(results, costTracker, scheduler) {
   const lines = [];
   lines.push(`# ward-helper-mega-bot — ${RUN_ID}`);
   lines.push('');
-  lines.push(`- Wall time: ${results.length > 0 ? Math.round(Math.max(...results.map((r) => r.wallMs)) / 1000) : 0}s`);
+  const totalWallSec = results.length > 0 ? Math.round(Math.max(...results.map((r) => r.wallMs)) / 1000) : 0;
+  lines.push(`- Wall time: ${totalWallSec}s (${(totalWallSec / 60).toFixed(1)} min)`);
   lines.push(`- Personas: ${results.length}`);
   lines.push(`- Total bugs: ${BUGS.length}`);
   lines.push(`- Fixture mode: ${FIXTURE_MODE}`);
   lines.push('');
 
+  // V4: cost itemization (Web-Claude challenge #2 — itemize so $80 isn't theater).
+  if (costTracker) {
+    lines.push('## Cost itemization');
+    const total = costTracker.total();
+    lines.push(`- Scenario gen: $${total.toFixed(2)} (${costTracker.calls} Opus calls, ${costTracker.inTok} in / ${costTracker.outTok} out tokens)`);
+    lines.push(`- In-loop Opus: $0.00 (no in-loop calls in v4 — all generation is pre-spawn)`);
+    lines.push(`- Proxy overhead: $0.00 (no proxy calls in v4)`);
+    lines.push(`- **Cap:** $${costTracker.capUsd} | **Spent:** $${total.toFixed(2)} | **Headroom:** $${(costTracker.capUsd - total).toFixed(2)}`);
+    lines.push('');
+  }
+
   lines.push('## Per-persona summary');
-  lines.push('| Persona | Wall | Actions | Chaos | Errors | Recoveries |');
-  lines.push('|---|---|---|---|---|---|');
+  lines.push('| Persona | Wall | Actions | Chaos | Useful | Useful/min | Errors | Recoveries |');
+  lines.push('|---|---|---|---|---|---|---|---|');
   for (const r of results) {
     const t = r.tally;
-    if (!t) { lines.push(`| ${r.persona} | crashed | — | — | — | — |`); continue; }
-    lines.push(`| ${r.persona} | ${Math.round(r.wallMs / 1000)}s | ${t.actions} | ${t.chaos} | ${t.errors} | ${r.recoveries} |`);
+    if (!t) { lines.push(`| ${r.persona} | crashed | — | — | — | — | — | — |`); continue; }
+    const wallMin = r.wallMs / 60000;
+    const usefulPerMin = wallMin > 0 ? (t.usefulActions / wallMin).toFixed(2) : '0';
+    lines.push(`| ${r.persona} | ${Math.round(r.wallMs / 1000)}s | ${t.actions} | ${t.chaos} | ${t.usefulActions ?? 0} | ${usefulPerMin} | ${t.errors} | ${r.recoveries} |`);
   }
+  // Aggregate useful-actions/min across the run.
+  const totalUseful = results.reduce((a, r) => a + (r.tally?.usefulActions || 0), 0);
+  const totalPersonaMin = results.reduce((a, r) => a + r.wallMs / 60000, 0);
+  const aggUsefulPerMin = totalPersonaMin > 0 ? (totalUseful / totalPersonaMin).toFixed(2) : '0';
   lines.push('');
+  lines.push(`**Aggregate useful-actions/min: ${aggUsefulPerMin}** ${Number(aggUsefulPerMin) < 2 ? '🚨 below 2/min red-flag (Web-Claude challenge #1 — bot may be fighting the app)' : '✓ healthy'}`);
+  lines.push('');
+
+  // V4: min-coverage scheduler status.
+  if (scheduler) {
+    lines.push('## Min-coverage scheduler status');
+    lines.push('| Sub-bot | Fired | Target | Met |');
+    lines.push('|---|---|---|---|');
+    for (const s of scheduler.status()) {
+      lines.push(`| ${s.name} | ${s.fired} | ${s.target} | ${s.met ? '✓' : '✗'} |`);
+    }
+    lines.push('');
+  }
 
   lines.push('## Action coverage');
   const allByAction = {};
@@ -447,6 +532,32 @@ async function writeReport(results) {
   lines.push('|---|---|---|---|---|---|');
   for (const [flow, c] of Object.entries(byFlow).sort((a, b) => b[1].total - a[1].total)) {
     lines.push(`| \`${flow}\` | ${c.CRITICAL} | ${c.HIGH} | ${c.MEDIUM} | ${c.LOW} | ${c.total} |`);
+  }
+  lines.push('');
+
+  // V4: per-sub-bot precision (heuristic = (CRIT + HIGH) / total flags).
+  // Sub-bots tag their flags with `_botSubject:<name>` in the evidence
+  // string. We extract and group. random_click flags are excluded
+  // (provenance:'random_click').
+  lines.push('## Per-sub-bot precision (heuristic)');
+  lines.push('Web-Claude design-feedback metric: `(CRIT + HIGH) / total flags` per sub-bot.');
+  lines.push('Excludes `provenance:random_click` flags. Aim ≥0.5 for well-targeted sub-bots.');
+  lines.push('');
+  const bySubject = {};
+  for (const b of BUGS) {
+    const ev = String(b.evidence || '');
+    if (/_provenance:random_click/.test(ev) || /provenance:random_click/.test(b.what || '')) continue;
+    const m = ev.match(/_botSubject:(\w+)/);
+    const subj = m ? m[1] : '_untagged';
+    bySubject[subj] = bySubject[subj] || { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, total: 0 };
+    bySubject[subj][b.severity]++;
+    bySubject[subj].total++;
+  }
+  lines.push('| Sub-bot | Total | CRIT | HIGH | MED | LOW | Precision |');
+  lines.push('|---|---|---|---|---|---|---|');
+  for (const [subj, c] of Object.entries(bySubject).sort((a, b) => b[1].total - a[1].total)) {
+    const precision = c.total > 0 ? ((c.CRITICAL + c.HIGH) / c.total).toFixed(2) : '0';
+    lines.push(`| ${subj} | ${c.total} | ${c.CRITICAL} | ${c.HIGH} | ${c.MEDIUM} | ${c.LOW} | ${precision} |`);
   }
   lines.push('');
 
