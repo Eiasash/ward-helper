@@ -4,6 +4,57 @@ Auto-appended by the audit-fix-deploy pipeline. Most recent run on top.
 
 ---
 
+## 2026-05-10 — Ortho-rehab quickref data + calculators (additive content drop)
+
+Adds the SZMC ortho-rehab reference card content + Hebrew SOAP templates +
+3 TZ-safe pure date calculators. No version bump (purely additive content;
+no behavior change to existing app surfaces).
+
+**Files added:**
+- `src/data/orthoReference.ts` — TS `as const` export with full hip-fracture
+  procedure table, ASA classes, ORIF vs CRIF, IM-nail brands, suture timing
+  (7 sites + 6 modifiers), DVT prophylaxis presets (default + 2 renal
+  adjustments), Vancouver periprosthetic types, post-op imaging differential,
+  bedside imaging rules. All Hebrew strings preserved as-is UTF-8. Source-of-
+  truth: `~/.claude/skills/rehab-quickref/` v4.1 + `ortho-reference/` skills.
+- `src/data/orthoTemplates.ts` — TS `as const` export with day-1 ortho
+  capsule, FIRST-DAY SOAP for hip and spine, daily STABLE templates (gym +
+  bedside), and `domainPrefixes` lookup mirror of `rehabPrompts.ts`
+  REHAB_UNIVERSAL (UI-only; LLM-directive copy in rehabPrompts.ts is
+  canonical).
+- `src/notes/orthoCalc.ts` — three pure functions: `calculatePOD`,
+  `suggestSutureRemovalDate`, `suggestDvtProphylaxis`. **TZ-safe by
+  construction**: uses local-zone `getFullYear/getMonth/getDate` rather
+  than `toISOString().slice(0,10)` (the v1 brief had this bug; silent
+  one-day-west drift in any UTC-positive zone like Asia/Jerusalem).
+- `src/notes/__tests__/orthoCalc.test.ts` — 22 cases including the
+  "regression: dates are computed in local TZ, not UTC" block that pins
+  the local-calendar-day behavior. Without this guard, a future
+  "simplification" back to `toISOString` would silently corrupt suture
+  removal and DVT-end dates by one day.
+
+**Package changes:**
+- `cross-env` added to devDependencies; `test` / `test:watch` / `test:coverage`
+  scripts now prefix `cross-env TZ=Asia/Jerusalem` so the regression test
+  pins the right zone on Windows CI as well as Linux CI.
+
+**No UI in this PR.** Follow-up PR will add `pages/Rehab/OrthoQuickref.tsx`
+(collapsible accordion) + bedside POD widget on the patient-detail surface.
+
+**Acceptance:**
+- `npm run check` green (TypeScript strict)
+- `npm test`: 1020 passed | 1 skipped (Δ +34 vs v1.41.0 audit snapshot;
+  22 are this drop's orthoCalc cases, the rest accumulated through v1.42.0).
+- `npm run build` green; entry chunk 134.65 kB gz (74.8% of 180 kB ceiling,
+  Δ ~ +1 kB vs v1.42.0 baseline 133.69 kB; well within budget).
+- Encoding hygiene grep (`\*\*\w`, Unicode arrows, `^--$`) clean across
+  all 4 new files.
+- Out of scope (deliberate): NO Supabase migrations, NO RLS changes, NO
+  cohort examples, NO AI-generated narrative paragraphs, NO decision-tree
+  autopicker. See § 8 of WARD_HELPER_ORTHO_REHAB_BRIEF for rationale.
+
+---
+
 ## 2026-05-10 — v1.42.0 daySnapshots cloud sync (v1.41+ candidate from #122 brainstorm)
 
 Closes the deferred "Cloud sync for `daySnapshots`" item listed under "v1.41+
