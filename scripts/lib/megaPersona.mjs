@@ -42,6 +42,14 @@ import {
   PersonaMemory,
 } from './personasV4.mjs';
 
+// V4.1 — bot internal version. Bumped because the waitForSubject ratchets
+// change the bug-stream characteristics (eliminate ~195 race-induced HIGH
+// false-positives per future run); future v4-vs-v4.1 baseline comparisons
+// need the version delta to attribute the drop to the bot, not to an app
+// regression. NOT tied to the app version trinity (package.json/sw.js/
+// APP_VERSION are unchanged — this PR ships bot tooling only).
+export const BOT_VERSION = 'v4.1.0';
+
 // ============================================================================
 // Persona definitions — timing + tolerance + action-menu weights
 // ============================================================================
@@ -220,6 +228,51 @@ export async function safeClick(page, persona, locator, label, guard) {
   } catch (err) {
     if (guard) guard.failed();
     return { ok: false, error: err.message?.slice(0, 100) };
+  }
+}
+
+/**
+ * V4.1 — wait for at least one of the given selectors to be present in the
+ * DOM before reading. THE canonical pattern for any sub-bot doing
+ * `page.evaluate(() => document.body.innerText)` immediately after a hash
+ * navigation. Without this, sub-bots race the React mount and produce
+ * 1.00-precision-but-bot-side-FP flags (the v4 lesson — see L1 in the bot
+ * working notes).
+ *
+ * @param {Page} page
+ * @param {Array<string|RegExp>} selectors — array of CSS selectors or text
+ *   regexes. Returns as soon as ANY one matches (race-to-first).
+ * @param {number} timeout — ms; defaults 5000.
+ * @returns {Promise<{ok:boolean, matched?:string, waitMs:number}>}
+ */
+export async function waitForSubject(page, selectors, timeout = 5000) {
+  const t0 = Date.now();
+  const promises = selectors.map((sel) => {
+    if (sel instanceof RegExp) {
+      // Text-pattern wait — poll body innerText for match.
+      return new Promise((resolve, reject) => {
+        const deadline = t0 + timeout;
+        const tick = async () => {
+          if (Date.now() > deadline) return reject(new Error(`text timeout: ${sel}`));
+          const found = await page.evaluate((src) => {
+            try { return new RegExp(src).test(document.body.innerText || ''); }
+            catch (_) { return false; }
+          }, sel.source).catch(() => false);
+          if (found) return resolve({ ok: true, matched: String(sel), waitMs: Date.now() - t0 });
+          setTimeout(tick, 100);
+        };
+        tick();
+      });
+    }
+    // CSS selector wait via Playwright native.
+    return page.waitForSelector(sel, { timeout, state: 'attached' })
+      .then(() => ({ ok: true, matched: sel, waitMs: Date.now() - t0 }));
+  });
+  try {
+    const result = await Promise.any(promises);
+    return result;
+  } catch (_err) {
+    return { ok: false, waitMs: Date.now() - t0 };
   }
 }
 

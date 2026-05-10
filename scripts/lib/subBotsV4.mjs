@@ -23,7 +23,7 @@
  * post-run precision analyzer.
  */
 
-import { sleep, rand, safeClick, safeFill, findByText, personaSleep } from './megaPersona.mjs';
+import { sleep, rand, safeClick, safeFill, findByText, personaSleep, waitForSubject } from './megaPersona.mjs';
 
 // ─── 1. Email-to-self ──────────────────────────────────────────────────────
 
@@ -47,6 +47,19 @@ export async function scenEmailToSelf(page, _browser, scenario, persona, guard, 
 
   await page.evaluate(() => { window.location.hash = '#/save'; });
   await personaSleep(persona);
+
+  // V4.1 — wait for Save screen to mount before any innerText reads.
+  // Without this, evaluate() races React render and finds nothing useful.
+  const wait = await waitForSubject(page, [
+    /^שמירה$/,        // section heading on /save
+    /^שמור$/,         // Save button
+    /^נשמר ✓$/,       // already-done state
+  ], 5000);
+  if (!wait.ok) {
+    logBug('MEDIUM', scenario.scenario_id, `${persona.name}/emailToSelf/mount-timeout`,
+      `Save screen did not render in 5s | _botSubject:${subject}`);
+    return { ok: false };
+  }
 
   // Click Save (text "שמור").
   const saveBtn = await findByText(page, [/^שמור$/, /^שומר/]);
@@ -146,6 +159,27 @@ export async function scenMorningRoundsPrep(page, _browser, scenario, persona, g
   await page.evaluate(() => { window.location.hash = '#/today'; });
   await sleep(rand(800, 1500));
 
+  // V4.1 — wait for /today to mount AND the banner effect to fire (the
+  // MorningArchivePrompt useEffect runs on mount and checks lastArchivedDate;
+  // we set yesterday above, so the banner should appear). Without this
+  // ratchet, evaluate races useEffect and reports banner-missing falsely.
+  const wait = await waitForSubject(page, [
+    /זוהה יום חדש/,        // banner text
+    /כבר ארכבת היום/,      // confirm-replace state
+    /^ארכב$/,              // archive button
+    /^דחה$/,              // dismiss button
+    /היום אין מטופלים/,   // empty-roster fallback (banner WILL render but list-section text)
+  ], 5000);
+  // Note: a no-banner result is itself a valid signal — don't bail on
+  // wait failure here; let the next check distinguish "banner truly missing"
+  // from "wait helper timed out".
+  if (!wait.ok) {
+    // page didn't render anything in 5s — different bug class than missing banner
+    logBug('MEDIUM', scenario.scenario_id, `${persona.name}/morningRounds/mount-timeout`,
+      `/today did not render any expected content in 5s | _botSubject:${subject}`);
+    return { ok: false };
+  }
+
   // Look for the banner — text "זוהה יום חדש" or button "ארכב".
   const bannerVisible = await page.evaluate(() => {
     return /זוהה יום חדש|כבר ארכבת היום/.test(document.body.innerText || '');
@@ -217,6 +251,22 @@ export async function scenResetPasswordLanding(page, _browser, scenario, persona
   await page.evaluate((h) => { window.location.hash = h.replace(/^#/, ''); window.location.hash = h; }, pick.hash);
   await sleep(rand(800, 1500));
 
+  // V4.1 — wait for React to mount the page before reading body text.
+  // Without this ratchet the v4 run produced 88 HIGH false-positives
+  // (`empty-msg-missing`) because the evaluate ran before <PasswordReset>
+  // rendered. Wait for any of: form (token cases), empty-token banner
+  // (no-token cases), or the back-to-login button (also empty cases).
+  const wait = await waitForSubject(page, [
+    'input[type="password"]',
+    /הקישור לא תקין/,
+    /חזרה להתחברות/,
+  ], 5000);
+  if (!wait.ok) {
+    logBug('MEDIUM', scenario.scenario_id, `${persona.name}/resetPassword/mount-timeout`,
+      `${pick.label}: PasswordReset did not render in 5s | _botSubject:${subject}`);
+    return { ok: false };
+  }
+
   // For the empty-token cases: assert the documented error message + button.
   if (pick.expectMsg) {
     const surfaced = await page.evaluate((re) => {
@@ -277,6 +327,19 @@ export async function scenOrthoCalcMath(page, _browser, scenario, persona, guard
 
   await page.evaluate(() => { window.location.hash = '#/ortho'; });
   await personaSleep(persona);
+
+  // V4.1 — wait for OrthoQuickref to mount before reading. Without this
+  // ratchet the v4 run produced 107 HIGH false-positives (`no-date-input`)
+  // because the evaluate ran before React rendered the <input type=date>.
+  const wait = await waitForSubject(page, [
+    'input[type="date"][aria-label*="תאריך ניתוח"]',
+    /אורתו - מדריך מהיר/,
+  ], 5000);
+  if (!wait.ok) {
+    logBug('MEDIUM', scenario.scenario_id, `${persona.name}/orthoCalcMath/mount-timeout`,
+      `OrthoQuickref did not render in 5s | _botSubject:${subject}`);
+    return { ok: false };
+  }
 
   // Compute today - 7 days as YYYY-MM-DD.
   const sevenAgo = new Date(Date.now() - 7 * 86400_000);
