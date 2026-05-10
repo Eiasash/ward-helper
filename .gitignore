@@ -20,3 +20,7 @@ scripts/scenarios/latest.txt
 # 2026-05-10: chaos-bot output + test coverage (prevent git add -A near-misses)
 chaos-reports/
 coverage/
+
+# 2026-05-10: relocated /remote-control session transcript — personal reference,
+# not a project artifact. Lives on disk for retrieval but not tracked in repo.
+docs/2026-05-10-remote-control-session.txt
