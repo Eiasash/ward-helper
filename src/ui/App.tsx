@@ -11,6 +11,7 @@ import { Save } from './screens/Save';
 import { Settings } from './screens/Settings';
 import { Today } from './screens/Today';
 import { Consult } from './screens/Consult';
+import OrthoQuickref from './screens/OrthoQuickref';
 import { HeaderStrip } from './components/HeaderStrip';
 import { PostLoginRestorePrompt } from './components/PostLoginRestorePrompt';
 import { MobileDebugPanel } from './components/MobileDebugPanel';
@@ -141,6 +142,7 @@ export function App() {
             <Route path="/history" element={<History />} />
             <Route path="/census" element={<Census />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/ortho" element={<OrthoQuickref />} />
             <Route path="/reset-password" element={<PasswordReset />} />
             <Route path="*" element={<Capture />} />
           </Routes>
@@ -154,6 +156,7 @@ export function App() {
         <NavLink to="/today">היום</NavLink>
         <NavLink to="/consult">ייעוץ</NavLink>
         <NavLink to="/history">היסטוריה</NavLink>
+        <NavLink to="/ortho">אורתו</NavLink>
         <NavLink to="/settings">הגדרות</NavLink>
       </nav>
       {/* Surfaces a one-shot cloud-restore offer when a fresh-device login
