@@ -488,31 +488,45 @@ export async function scenSoapRound(page, browser, scenario, persona, guard, rep
 }
 
 export async function scenOrthoCalc(page, persona, guard, logBug, scenario) {
+  // Tuned 2026-05-10: targeted clicks on named ortho buttons instead of
+  // random index spam. Mega-bot v1 produced 567 LOW false-positives on
+  // /ortho because random-index clicking compounds with misclicker's 20%
+  // off-center rate. Now we click DVT prophylaxis copy + the first SOAP
+  // template copy by aria-label, then verify clipboard markers.
   await page.evaluate(() => { window.location.hash = '#/ortho'; });
   await personaSleep(persona);
-  // Click any button on the ortho page — POD/suture/DVT calcs all expose copy buttons.
-  const allBtns = page.locator('button');
-  const N = await allBtns.count().catch(() => 0);
-  if (N === 0) {
-    logBug('LOW', scenario.scenario_id, `${persona.name}/ortho/no-buttons`, '/ortho has no buttons');
-    return { ok: false };
+
+  // Click DVT prophylaxis copy button (aria-label="העתק פרופילקסיס DVT").
+  const dvtBtn = page.locator('button[aria-label*="פרופילקסיס DVT"]').first();
+  if ((await dvtBtn.count().catch(() => 0)) > 0) {
+    const result = await safeClick(page, persona, dvtBtn, 'ortho-dvt-copy', guard);
+    if (result.ok) {
+      await sleep(300);
+      const clip = await page.evaluate(async () => {
+        try { return await navigator.clipboard.readText(); } catch (_) { return null; }
+      }).catch(() => null);
+      if (clip && clip.length > 0 && !clip.includes('‏') && !clip.includes('‎')) {
+        logBug('HIGH', scenario.scenario_id, `${persona.name}/ortho/no-bidi`,
+          `DVT copy missing RLM/LRM — Chameleon will corrupt. Got ${clip.length} chars: "${clip.slice(0, 60)}"`);
+      }
+    }
   }
-  // Click 3 random buttons on /ortho — exercises calcs + accordions.
-  for (let i = 0; i < 3; i++) {
-    const idx = Math.floor(Math.random() * N);
-    await safeClick(page, persona, allBtns.nth(idx), `ortho-btn-${idx}`, guard);
-  }
-  // Try copy.
-  const copyBtn = await findByText(page, SEL.copyOrthoSection);
-  if (copyBtn) {
-    await safeClick(page, persona, copyBtn, 'ortho-copy', guard);
-    await sleep(400);
-    const clip = await page.evaluate(async () => {
-      try { return await navigator.clipboard.readText(); } catch (_) { return null; }
-    }).catch(() => null);
-    if (clip && clip.length > 0 && !clip.includes('‏') && !clip.includes('‎')) {
-      logBug('HIGH', scenario.scenario_id, `${persona.name}/ortho/no-bidi`,
-        'ortho copy missing RLM/LRM markers — Chameleon paste will corrupt');
+
+  // Click first SOAP-template copy button (aria-label starts with "העתק תבנית").
+  const tplBtns = page.locator('button[aria-label^="העתק תבנית"]');
+  const tN = await tplBtns.count().catch(() => 0);
+  if (tN > 0) {
+    const idx = Math.floor(Math.random() * tN);
+    const result = await safeClick(page, persona, tplBtns.nth(idx), `ortho-tpl-${idx}`, guard);
+    if (result.ok) {
+      await sleep(300);
+      const clip = await page.evaluate(async () => {
+        try { return await navigator.clipboard.readText(); } catch (_) { return null; }
+      }).catch(() => null);
+      if (clip && clip.length > 0 && !clip.includes('‏') && !clip.includes('‎')) {
+        logBug('HIGH', scenario.scenario_id, `${persona.name}/ortho/template-no-bidi`,
+          `template copy missing RLM/LRM markers`);
+      }
     }
   }
   return { ok: true };
