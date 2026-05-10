@@ -13,14 +13,15 @@ These four rules are the floor. They override any conflicting guidance later in 
 
 Mobile-first Hebrew-RTL PWA for SZMC ward rounds. Camera an AZMA screen → reviewed Hebrew note → paste to Chameleon. Single-user, proxy-based Claude access (no BYO key), local-first IndexedDB, encrypted Supabase backup.
 
-## Snapshot (last audit 2026-05-10, v1.42.0 + ortho-rehab content drop)
+## Snapshot (last audit 2026-05-10, v1.42.0 + ortho-rehab content drop + ortho-rehab UI at #/ortho)
 
-- **1020 vitest cases passing across 99 files** (+ 1 skipped live-eval gated on `ANTHROPIC_API_KEY`)
-- Entry chunk **~134.65 kB** gzipped (74.8% of 180 kB CI ceiling)
-- Total assets gz ~199 kB (~49.8% of 400 kB CI ceiling)
+- **1026 vitest cases passing across 100 files** (+ 1 skipped live-eval gated on `ANTHROPIC_API_KEY`)
+- Entry chunk **~145.08 kB** gzipped (80.6% of 180 kB CI ceiling)
+- Total assets gz ~210 kB (~52.5% of 400 kB CI ceiling)
 - All 8 CI gates green; skill drift between `~/.claude/skills/` and `public/skills/` = none (5 skills synced incl. `geriatrics-knowledge`)
 - Coverage: total statements 65.34%, branches 80.96% (UI gap by design — covered by Playwright `ward-helper-bot-v1`)
 - Tests pinned to `TZ=Asia/Jerusalem` via `cross-env` (added 2026-05-10 alongside the orthoCalc TZ-regression block)
+- Ortho-rehab UI live at `#/ortho` — calculators (POD / suture / DVT) + 8 reference accordions + 5 SOAP templates, all clipboard writes through `wrapForChameleon`
 - See [IMPROVEMENTS.md](IMPROVEMENTS.md) for the full audit log
 
 ## Commands

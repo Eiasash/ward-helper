@@ -4,6 +4,67 @@ Auto-appended by the audit-fix-deploy pipeline. Most recent run on top.
 
 ---
 
+## 2026-05-10 — Ortho-rehab quickref UI at #/ortho (follow-up to PR #127)
+
+Wires the ortho-rehab content drop (PR #127) into a single-screen UI exposed at
+`#/ortho`. No version bump (purely additive route; no SW behavior change, no
+existing-feature change).
+
+**Files added:**
+- `src/ui/screens/OrthoQuickref.tsx` - single React functional component, three
+  sections top-to-bottom:
+  - **A. Live calculators** - date input drives reactive POD, suture removal
+    date (site select + 6 modifier checkboxes), DVT prophylaxis line (renal-state
+    radio group). Single "Copy" button on the DVT line routes through
+    `wrapForChameleon` before `navigator.clipboard.writeText`.
+  - **B. Reference accordions** (8 native `<details>`, all collapsed by default):
+    hip-fracture procedures, suture timing, ASA classes, DVT presets, Vancouver
+    types, post-op imaging differential + bedside rules, ORIF vs CRIF, IM-nail
+    brands. Tables use `dir="rtl"` headers + per-cell `dir="auto"` for mixed
+    Hebrew/English content.
+  - **C. SOAP templates** (5 native `<details>`): day-1 ortho capsule, day-1 SOAP
+    post-hip, day-1 SOAP post-spine, daily STABLE gym, daily STABLE bedside.
+    Each template has a "העתק" button using `wrapForChameleon`. Domain
+    prefixes appended as a `<ul>` at the bottom.
+
+**Files edited:**
+- `src/ui/App.tsx` - `import OrthoQuickref`, add `<Route path="/ortho">`, add
+  6th `NavLink to="/ortho"` labeled "אורתו". Eager-imported (small enough not
+  to need lazy-loading; matches Today/Settings pattern).
+
+**Tests added:**
+- `src/ui/screens/__tests__/OrthoQuickref.test.tsx` - 6 happy-path cases:
+  renders without crashing, empty-state hint visible until date picked, POD=17
+  for surgery 2026-04-23 with system clock pinned to 2026-05-10, suture-removal
+  output reflects hip default (POD 14, date 07/05/26), 13 `<details>` elements
+  present (8 reference + 5 templates), copy button calls
+  `navigator.clipboard.writeText` with the Hebrew DVT line preserved. Uses
+  `vi.useFakeTimers({ toFake: ['Date'] })` so async setTimeout cleanup in the
+  copy handler doesn't deadlock `vi.waitFor`.
+
+**No new dependencies.** Native `<details>/<summary>` for accordion (no
+@radix-ui/accordion or similar). No new component CSS - reuses existing
+`.card`, `.btn-like`, `.toggle-row`, `.cloud-banner`, `.empty-sub` from
+`src/styles.css`.
+
+**Acceptance:**
+- `npm run check` green (TypeScript strict)
+- `npm test`: 1026 passed | 1 skipped (Δ +6 vs PR #127's 1020 baseline)
+- `npm run build` green; entry chunk **145.08 kB gz** (80.6% of 180 kB ceiling,
+  Δ +10.43 kB vs 134.65 kB PR #127 baseline - 3 ortho modules now bundled into
+  the entry chunk via the eager import; consumed 21% of the 49.95 kB headroom).
+- Encoding hygiene grep (Unicode arrows, `**bold**`, `^--$`) clean across both
+  new files.
+- `verify-deploy.sh`: PASS (no version bump, cache marker `ward-v1.42.0` unchanged).
+
+**Out of scope (deferred, per brief):**
+- Auto-audit drift probe for ortho-rehab content drift.
+- Patient-card-level POD widget on Today/History (this PR ships the standalone
+  quickref only).
+- Decision-tree autopicker for procedure selection.
+
+---
+
 ## 2026-05-10 — Ortho-rehab quickref data + calculators (additive content drop)
 
 Adds the SZMC ortho-rehab reference card content + Hebrew SOAP templates +
