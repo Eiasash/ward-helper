@@ -16,7 +16,7 @@
  * non-canary blobs) is locked separately in tests/canaryProtection.test.ts.
  */
 import 'fake-indexeddb/auto';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const upsertSpy = vi.fn();
 const rpcSpy = vi.fn();
@@ -137,10 +137,21 @@ describe('pushLatestDaySnapshotIfEnabled — 3-state guard', () => {
 });
 
 describe('pushLatestDaySnapshotIfEnabled — happy path payload contract', () => {
+  // archiveDay() derives its blob_id from new Date().toLocaleDateString('en-CA'),
+  // which is TZ-dependent. Without a pinned clock the cap-mirror test below
+  // collides with the hardcoded '2026-05-09' fixture whenever CI runs late
+  // UTC evening. 2026-05-10T12:00:00Z lands on '2026-05-10' in any timezone.
   beforeEach(async () => {
+    // Fake Date only — leaving setTimeout/setInterval real because
+    // fake-indexeddb and Web Crypto async ops route through setTimeout.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-05-10T12:00:00Z'));
     setDaySnapshotCloudSyncEnabled(true);
     getCurrentUserMock.mockReturnValue({ username: 'eias' });
     getLastLoginPasswordOrNullMock.mockReturnValue('correct horse battery staple');
+  });
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('pushes one day-snapshot blob with the correct schema and no plaintext PHI on the wire', async () => {
