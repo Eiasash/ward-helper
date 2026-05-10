@@ -19,6 +19,28 @@ import { devices } from 'playwright';
 import { generatePatientChart, generateLabReportPng } from './azmaImage.mjs';
 import { distortImage } from './distortImage.mjs';
 import { attachDiagnostics } from './diagnostics.mjs';
+// V4 modules — six new chaos types, four new sub-bots, three new personas,
+// persona memory + min-coverage scheduler. Web-Claude pushback shaped the
+// final selection (deferred exifRotation; replaced flat-throttle with ramped;
+// dropped tabHopper for intermittentConnection; etc.).
+import {
+  chaosNetworkRamped,
+  chaosIdbQuotaStress,
+  chaosEdgeSwipeBack,
+  chaosMidnightRollover,
+  chaosMemoryPressure,
+  chaosRandomClick,
+} from './chaosV4.mjs';
+import {
+  scenEmailToSelf,
+  scenMorningRoundsPrep,
+  scenResetPasswordLanding,
+  scenOrthoCalcMath,
+} from './subBotsV4.mjs';
+import {
+  PERSONAS_V4,
+  PersonaMemory,
+} from './personasV4.mjs';
 
 // ============================================================================
 // Persona definitions — timing + tolerance + action-menu weights
@@ -79,6 +101,8 @@ export const PERSONAS = {
     description: 'types every kind of Hebrew + English + emoji + RLM/LRM mix',
     chaosTextRate: 0.50,
   },
+  // V4 personas — replace the 3 duplicates in DEFAULT_PERSONA_ROTATION.
+  ...PERSONAS_V4,
 };
 
 // ============================================================================
@@ -569,17 +593,36 @@ export async function scenHistory(page, persona, guard) {
 }
 
 export async function scenSettingsTour(page, persona, guard) {
+  // V4 hardening per L5: replaced `interactives.nth(random)` with named
+  // toggles. Random-index clicking compounds with misclicker's 20% miss
+  // rate and produces zero signal on the settings surface (no error
+  // states are reachable by random clicks here). Test the *real*
+  // configurable surfaces by aria/text instead.
   await page.evaluate(() => { window.location.hash = '#/settings'; });
   await personaSleep(persona);
-  // Click first 3 visible buttons or details/summary toggles to exercise
-  // settings sub-sections.
-  const interactives = page.locator('button:visible, summary:visible');
-  const N = await interactives.count().catch(() => 0);
-  for (let i = 0; i < Math.min(3, N); i++) {
-    const idx = Math.floor(Math.random() * N);
-    await safeClick(page, persona, interactives.nth(idx), `settings-${idx}`, guard);
+
+  // Named toggles — use text/role lookup, NOT random index.
+  const targets = [
+    [/^שמור|^עדכן/, 'settings-save'],
+    [/proxy|פרוקסי/i, 'settings-proxy-toggle'],
+    [/exam|מבחן/i, 'settings-exam-toggle'],
+    [/^כתובת/, 'settings-email-input'],
+    [/^גיבוי|^שחזר/, 'settings-backup'],
+    [/^שכחת סיסמה/, 'settings-forgot-password'],
+  ];
+  // Click up to 2 named targets per visit.
+  const tried = new Set();
+  for (let attempt = 0; attempt < 4 && tried.size < 2; attempt++) {
+    const pick = targets[Math.floor(Math.random() * targets.length)];
+    if (tried.has(pick[1])) continue;
+    tried.add(pick[1]);
+    const btn = await findByText(page, [pick[0]]);
+    if (btn) {
+      await safeClick(page, persona, btn, pick[1], guard);
+      await sleep(rand(400, 900));
+    }
   }
-  return { ok: true };
+  return { ok: true, _botSubject: 'settings' };
 }
 
 // ============================================================================
@@ -587,20 +630,39 @@ export async function scenSettingsTour(page, persona, guard) {
 // ============================================================================
 
 export const ACTION_MENU = [
-  { weight: 18, name: 'admission', fn: scenAdmissionEmit },
-  { weight: 14, name: 'soap',      fn: scenSoapRound },
-  { weight: 8,  name: 'ortho',     fn: scenOrthoCalc },
-  { weight: 6,  name: 'consult',   fn: scenConsult },
-  { weight: 6,  name: 'history',   fn: scenHistory },
-  { weight: 5,  name: 'settings',  fn: scenSettingsTour },
+  // Core flows — uniform weights as before.
+  { weight: 16, name: 'admission', fn: scenAdmissionEmit, botSubject: 'admission' },
+  { weight: 12, name: 'soap',      fn: scenSoapRound,     botSubject: 'soap' },
+  { weight: 8,  name: 'ortho',     fn: scenOrthoCalc,     botSubject: 'ortho' },
+  { weight: 6,  name: 'consult',   fn: scenConsult,       botSubject: 'consult' },
+  { weight: 6,  name: 'history',   fn: scenHistory,       botSubject: 'history' },
+  { weight: 5,  name: 'settings',  fn: scenSettingsTour,  botSubject: 'settings' },
+  // V4 sub-bots — lower weights since they're rarer flows. Min-coverage
+  // scheduler ensures they fire at least N times per run regardless.
+  { weight: 4,  name: 'emailToSelf',          fn: scenEmailToSelf,          botSubject: 'emailToSelf' },
+  { weight: 4,  name: 'morningRoundsPrep',    fn: scenMorningRoundsPrep,    botSubject: 'morningRoundsPrep' },
+  { weight: 3,  name: 'orthoCalcMath',        fn: scenOrthoCalcMath,        botSubject: 'orthoCalcMath' },
+  { weight: 2,  name: 'resetPasswordLanding', fn: scenResetPasswordLanding, botSubject: 'resetPasswordLanding' },
 ];
 
 export const CHAOS_MENU = [
-  { weight: 8, name: 'chaos-back-mash',      fn: (p, _b, _s, persona) => chaosBackButtonMash(p, persona) },
-  { weight: 6, name: 'chaos-visibility',     fn: (p) => chaosVisibilityCycle(p) },
-  { weight: 5, name: 'chaos-keyboard-spam',  fn: (p) => chaosKeyboardSpam(p) },
-  { weight: 5, name: 'chaos-text-input',     fn: (p, _b, _s, persona) => chaosTypeIntoVisibleInput(p, persona) },
-  { weight: 3, name: 'chaos-clear-storage',  fn: (p) => chaosClearStorage(p) },
+  // v1-v3 chaos — kept as-is.
+  { weight: 7, name: 'chaos-back-mash',      fn: (p, _b, _s, persona) => chaosBackButtonMash(p, persona) },
+  { weight: 5, name: 'chaos-visibility',     fn: (p) => chaosVisibilityCycle(p) },
+  { weight: 4, name: 'chaos-keyboard-spam',  fn: (p) => chaosKeyboardSpam(p) },
+  { weight: 4, name: 'chaos-text-input',     fn: (p, _b, _s, persona) => chaosTypeIntoVisibleInput(p, persona) },
+  { weight: 2, name: 'chaos-clear-storage',  fn: (p) => chaosClearStorage(p) },
+  // V4 chaos — six new types. Lower weights for the slow ones (network
+  // ramped takes 30s, midnight rollover holds 4s) so they fire less often.
+  { weight: 3, name: 'chaos-network-ramped', fn: (p) => chaosNetworkRamped(p) },
+  { weight: 2, name: 'chaos-idb-quota',      fn: (p) => chaosIdbQuotaStress(p) },
+  { weight: 4, name: 'chaos-edge-swipe',     fn: (p) => chaosEdgeSwipeBack(p) },
+  { weight: 2, name: 'chaos-midnight',       fn: (p) => chaosMidnightRollover(p) },
+  { weight: 2, name: 'chaos-memory-pressure', fn: (p) => chaosMemoryPressure(p) },
+  // chaosRandomClick has a different signature — needs scenarioId + logBug
+  // so the random-click telemetry can carry the provenance tag. Wrapped at
+  // the call site in runPersona.
+  { weight: 5, name: 'chaos-random-click',   fn: '__needs_scenario_logBug__', _meta: 'random-click' },
 ];
 
 export function pickWeighted(menu) {
@@ -626,6 +688,8 @@ export async function runPersona({
   url,
   logBug,
   onTick,
+  scheduler,         // V4: shared MinCoverageScheduler (optional; null = no biasing)
+  emailTarget,       // V4: bot-injected email setting so emailToSelf flow has a target
 }) {
   const persona = PERSONAS[personaKey];
   if (!persona) throw new Error(`unknown persona: ${personaKey}`);
@@ -635,14 +699,33 @@ export async function runPersona({
     permissions: ['clipboard-read', 'clipboard-write'],
     locale: 'he-IL',
   });
-  await ctx.addInitScript(() => {
+  await ctx.addInitScript((cfg) => {
     try { localStorage.setItem('batch_features', '1'); } catch (_) {}
-  });
+    // V4: pre-set email target so emailToSelf flow has somewhere to send.
+    if (cfg.emailTarget) {
+      try { localStorage.setItem('ward-helper.emailTo', cfg.emailTarget); } catch (_) {}
+    }
+    // V4: pre-set lastArchivedDate to yesterday so MorningArchivePrompt fires.
+    try {
+      const yesterday = new Date(Date.now() - 86400_000).toLocaleDateString('en-CA');
+      localStorage.setItem('ward-helper.lastArchivedDate', yesterday);
+    } catch (_) {}
+  }, { emailTarget: emailTarget || 'bot+test@example.com' });
   const page = await ctx.newPage();
   attachDiagnostics(page, scenario.scenario_id, logBug);
 
   const guard = new RecoveryGuard(page, persona, scenario.scenario_id, logBug);
-  const tally = { actions: 0, chaos: 0, recoveries: 0, errors: 0, byAction: {} };
+  const memory = new PersonaMemory();  // V4: per-persona click memory
+  const tally = {
+    actions: 0,
+    chaos: 0,
+    recoveries: 0,
+    errors: 0,
+    byAction: {},
+    byBotSubject: {},  // V4: per-sub-bot fire counts
+    usefulActions: 0,  // V4: actions that returned ok:true (not skipped, not error)
+    longtaskCount: 0,  // V4: from diagnostics counts
+  };
 
   const t0 = Date.now();
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 }).catch(() => {});
@@ -669,19 +752,40 @@ export async function runPersona({
       continue;
     }
 
-    // Pick action: 70% scenario, 30% chaos (or persona's extraChaosRate).
-    const chaosRate = persona.extraChaosRate ?? 0.3;
-    const isChaos = Math.random() < chaosRate;
-    const menu = isChaos ? CHAOS_MENU : ACTION_MENU;
-    const picked = pickWeighted(menu);
+    // V4: scheduler can force-pick under-fired sub-bots after 50% wall-time.
+    // If scheduler returns a forced action, override the menu pick with it.
+    const forced = scheduler ? scheduler.forcedPick() : null;
+    let picked, isChaos;
+    if (forced) {
+      picked = ACTION_MENU.find((m) => m.name === forced);
+      isChaos = false;
+    } else {
+      const chaosRate = persona.extraChaosRate ?? 0.3;
+      isChaos = Math.random() < chaosRate;
+      const menu = isChaos ? CHAOS_MENU : ACTION_MENU;
+      picked = pickWeighted(menu);
+    }
 
     try {
-      const result = await picked.fn(page, browser, scenario, persona, guard, reportDir, logBug);
+      // chaosRandomClick has a different signature — wrap at call site.
+      let result;
+      if (picked.fn === '__needs_scenario_logBug__') {
+        result = await chaosRandomClick(page, persona, scenario.scenario_id, logBug);
+      } else {
+        result = await picked.fn(page, browser, scenario, persona, guard, reportDir, logBug);
+      }
       tally.actions++;
       if (isChaos) tally.chaos++;
       tally.byAction[picked.name] = (tally.byAction[picked.name] || 0) + 1;
+      // V4: track per-sub-bot fire count + register with scheduler.
+      const subj = picked.botSubject || result?._botSubject || picked.name;
+      tally.byBotSubject[subj] = (tally.byBotSubject[subj] || 0) + 1;
+      if (scheduler && !isChaos) scheduler.recordFire(picked.name);
+      // V4: usefulActions = ok-returning core actions (not chaos, not skips, not errors).
+      const isUseful = !isChaos && result?.ok === true;
+      if (isUseful) tally.usefulActions++;
       if (result?.error) tally.errors++;
-      if (onTick) onTick({ persona: persona.name, action: picked.name, elapsed: Date.now() - t0, result });
+      if (onTick) onTick({ persona: persona.name, action: picked.name, botSubject: subj, isChaos, isUseful, elapsed: Date.now() - t0, result });
     } catch (err) {
       tally.errors++;
       logBug('LOW', scenario.scenario_id, `${persona.name}/${picked.name}/exception`,
@@ -698,6 +802,15 @@ export async function runPersona({
   }
 
   const wallMs = Date.now() - t0;
+  // V4: pull longtask count from the diag closure if exposed via window.
+  const memSummary = memory.summary();
   await ctx.close().catch(() => {});
-  return { persona: persona.name, wallMs, tally, recoveries: guard.recoveryCount };
+  return {
+    persona: persona.name,
+    personaKey,
+    wallMs,
+    tally,
+    recoveries: guard.recoveryCount,
+    memorySummary: memSummary,
+  };
 }

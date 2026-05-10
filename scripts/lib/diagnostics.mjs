@@ -1,5 +1,5 @@
 /**
- * attachDiagnostics(page, scenarioId, logBug) — 4 bug-detection hooks
+ * attachDiagnostics(page, scenarioId, logBug) — 5 bug-detection hooks
  * that catch failure modes vitest can't see.
  *
  * Hooks attached:
@@ -10,6 +10,9 @@
  *      See memory feedback_react_setauthsession_unmount_race.md.
  *   4. securitypolicyviolation — CSP hash drift after CACHE_VERSION bump.
  *      See memory feedback_csp_inline_script_hash_drift.md.
+ *   5. PerformanceObserver(longtask) — tasks >100ms during user interaction.
+ *      Catches the iPhone-jank class neither vitest nor the previous 4
+ *      hooks see. Added in mega-bot v4 per Web-Claude design pushback.
  *
  * The CSP listener and unhandledrejection are injected via addInitScript
  * so they wire up before the SPA mounts, then forward to console.error
@@ -24,8 +27,8 @@
 const SLOW_ACK_BUDGET_MS = 5000;
 
 export function attachDiagnostics(page, scenarioId, logBug) {
-  const counts = { warning: 0, crash: 0, rejection: 0, csp: 0, slowAcks: 0 };
-  const samples = { warnings: [], crashes: [], rejections: [], csps: [], slow: [] };
+  const counts = { warning: 0, crash: 0, rejection: 0, csp: 0, slowAcks: 0, longtask: 0 };
+  const samples = { warnings: [], crashes: [], rejections: [], csps: [], slow: [], longtasks: [] };
 
   // Hook 1: console warning (in addition to existing error capture)
   page.on('console', (msg) => {
@@ -55,6 +58,16 @@ export function attachDiagnostics(page, scenarioId, logBug) {
       counts.rejection++;
       samples.rejections.push(t.slice(0, 240));
       logBug('HIGH', scenarioId, 'unhandled-rejection', t.replace('__UNHANDLED__:', '').slice(0, 200));
+    } else if (t.startsWith('__LONGTASK__:')) {
+      counts.longtask++;
+      samples.longtasks.push(t.slice(0, 240));
+      // Only log >300ms tasks as bugs — 100-300ms is jank but common; 300+ is stall.
+      const m = t.match(/duration=(\d+)/);
+      const dur = m ? Number(m[1]) : 0;
+      if (dur >= 300) {
+        logBug('MEDIUM', scenarioId, 'longtask',
+          t.replace('__LONGTASK__:', '').slice(0, 200) + ' | _botSubject:diagnostics-longtask');
+      }
     }
   });
 
@@ -99,6 +112,26 @@ export function attachDiagnostics(page, scenarioId, logBug) {
           `__CSP__: ${ev.violatedDirective || 'unknown'} blocked ${ev.blockedURI || ev.sourceFile || 'inline'}`,
         );
       });
+      // Hook 5: PerformanceObserver longtask. Only fires for tasks >50ms
+      // (browser default). We forward duration so the Node side can decide
+      // severity. Sample at most every 1000 ms to avoid console flood under
+      // sustained jank (e.g. during a heavy chart render).
+      try {
+        let lastFwd = 0;
+        const po = new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            if (entry.duration < 100) continue;
+            const now = Date.now();
+            if (now - lastFwd < 1000) continue;
+            lastFwd = now;
+            // eslint-disable-next-line no-console
+            console.error(
+              `__LONGTASK__: duration=${Math.round(entry.duration)} name=${entry.name || 'unknown'} startTime=${Math.round(entry.startTime)}`,
+            );
+          }
+        });
+        po.observe({ type: 'longtask', buffered: false });
+      } catch (_) { /* longtask not supported in some envs */ }
     })
     .catch(() => {});
 

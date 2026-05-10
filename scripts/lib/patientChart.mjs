@@ -46,6 +46,37 @@ const CSS = `
   }
   header.chart-head h1 { margin: 0 0 6px; font-size: 24px; }
   header.chart-head .meta { font-size: 14px; opacity: 0.92; }
+  /* V4: action-timeline strip — compact tick visualization. */
+  .action-timeline {
+    background: white; border-radius: 8px; padding: 12px 16px;
+    margin: 12px 0; box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+  }
+  .action-timeline h3 { font-size: 14px; margin: 0 0 8px; color: #1e3a8a; }
+  .timeline-strip {
+    display: flex; flex-wrap: wrap; gap: 2px; align-items: center;
+    direction: ltr;
+  }
+  .timeline-strip .tick {
+    display: inline-block; width: 6px; height: 18px;
+    border-radius: 1px;
+  }
+  .timeline-strip .tick.useful { background: #10b981; }
+  .timeline-strip .tick.action { background: #94a3b8; }
+  .timeline-strip .tick.chaos { background: #f59e0b; }
+  .timeline-strip .tick.fail { background: #ef4444; }
+  .timeline-legend {
+    font-size: 11px; color: #64748b; margin-top: 6px; display: flex;
+    flex-wrap: wrap; gap: 12px;
+  }
+  .timeline-legend span { display: inline-flex; align-items: center; gap: 4px; }
+  .timeline-legend i {
+    display: inline-block; width: 8px; height: 8px; border-radius: 1px;
+  }
+  .chaos-badges { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
+  .chaos-badges .b {
+    background: #fef3c7; color: #92400e; padding: 2px 6px;
+    border-radius: 6px; font-size: 11px;
+  }
   main { max-width: 920px; margin: 0 auto; padding: 16px; }
   .demographics {
     background: white; border-radius: 8px; padding: 14px 18px;
@@ -98,6 +129,35 @@ export function renderPatientChartHtml(scenario, meta = {}) {
   const personaTag = meta.persona ? `<span class="badge">${esc(meta.persona)}</span>` : '';
   const synthTag = '<span class="badge" style="background:#fee2e2;color:#991b1b">SYNTHETIC — not a real patient</span>';
 
+  // V4: action-timeline strip — compact tick visualization showing what
+  // the persona did to this patient's chart over the run wall-time.
+  // meta.timeline = [{ tSec, action, isChaos, isUseful, ok }, ...]
+  const timeline = Array.isArray(meta.timeline) ? meta.timeline : [];
+  const chaosEvents = timeline.filter((e) => e.isChaos);
+  const chaosCounts = {};
+  for (const c of chaosEvents) chaosCounts[c.action] = (chaosCounts[c.action] || 0) + 1;
+  const chaosBadgeHtml = Object.entries(chaosCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => `<span class="b">${esc(k)} ×${v}</span>`)
+    .join('');
+  const ticksHtml = timeline.slice(0, 240).map((e) => {
+    const cls = e.isChaos ? 'chaos' : (e.ok === false ? 'fail' : (e.isUseful ? 'useful' : 'action'));
+    return `<span class="tick ${cls}" title="t+${e.tSec}s ${esc(e.action)}"></span>`;
+  }).join('');
+  const timelineSection = timeline.length > 0 ? `
+    <div class="action-timeline">
+      <h3>פעולות הבוט על המטופל הזה (${timeline.length} בסה"כ)</h3>
+      <div class="timeline-strip">${ticksHtml}</div>
+      <div class="timeline-legend">
+        <span><i style="background:#10b981"></i> פעולה מועילה</span>
+        <span><i style="background:#94a3b8"></i> פעולה</span>
+        <span><i style="background:#f59e0b"></i> chaos</span>
+        <span><i style="background:#ef4444"></i> כשל</span>
+      </div>
+      ${chaosBadgeHtml ? `<div class="chaos-badges">${chaosBadgeHtml}</div>` : ''}
+    </div>
+  ` : '';
+
   const html = `<!doctype html>
 <html dir="rtl" lang="he">
 <head>
@@ -122,6 +182,7 @@ export function renderPatientChartHtml(scenario, meta = {}) {
     <div class="field"><div class="lbl">חדר</div><div class="val">${esc(d.room || '—')}-${esc(d.bed || '')}</div></div>
   </div>
   <main>
+    ${timelineSection}
     ${renderSection('תלונה עיקרית', `<div>${esc(scenario.chief_complaint || '—')}</div>`)}
     ${renderSection('סיכום קבלה', renderSOAP(adm))}
     ${soap.length > 0 ? renderSection('מעקב יומי (SOAP)',
@@ -214,8 +275,17 @@ export function renderGalleryIndex(scenarios, meta = {}) {
 export async function writePatientGallery(scenarios, outDir, meta = {}) {
   await fs.mkdir(outDir, { recursive: true });
   const written = [];
+  // V4: per-persona timeline lookup. Each scenario was driven by exactly one
+  // persona — keyed by scenario._persona (e.g. "Dr. Speedrunner").
+  const tl = meta.timelineByScenario || {};
   for (const s of scenarios) {
-    const html = renderPatientChartHtml(s, { persona: s._persona, scenarioId: s.scenario_id, ...meta });
+    const personaTimeline = tl[s._persona] || [];
+    const html = renderPatientChartHtml(s, {
+      persona: s._persona,
+      scenarioId: s.scenario_id,
+      timeline: personaTimeline,
+      ...meta,
+    });
     const fname = `${s.scenario_id}.html`;
     await fs.writeFile(path.resolve(outDir, fname), html, 'utf8');
     written.push(fname);
