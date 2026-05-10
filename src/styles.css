@@ -78,15 +78,20 @@ main.shell {
 
 /* Skip-to-content link — hidden off-screen until focused, then becomes
    a high-contrast button that lets keyboard users bypass the fixed
-   header-strip and jump into <main>. WCAG 2.4.1. */
+   header-strip and jump into <main>. WCAG 2.4.1.
+
+   a11y 2026-05-10: bg var(--accent) (#1aa9b3) gave white-on-teal 2.85:1
+   (sub-AA). Switched to var(--bg) (deep navy #1a2438) for white-on-navy
+   ~15.5:1 AAA, with accent border to keep the visual identity. */
 .skip-link {
   position: absolute;
   inset-inline-start: 8px;
   top: -100px;
   z-index: 100;
   padding: 8px 16px;
-  background: var(--accent);
+  background: var(--bg);
   color: white;
+  border: 2px solid var(--accent);
   border-radius: var(--radius-sm);
   text-decoration: none;
   font-weight: 600;
@@ -157,6 +162,13 @@ main.shell:focus { outline: none; }
   max-width: 100%;
 }
 .header-strip-name.muted { color: var(--muted); font-weight: 400; font-style: italic; }
+/* a11y 2026-05-10: in light-mode the header-strip flips to ~white bg
+   (rgba(255,255,255,0.94)). --muted (#8a8678) on white is 3.64:1 — sub-AA
+   for body text. Override with slate-600 (#475569) which gives 7.58:1 AAA
+   while staying visually muted relative to the live patient name. */
+@media (prefers-color-scheme: light) {
+  .header-strip-name.muted { color: #475569; }
+}
 .header-strip-type-badge {
   display: inline-flex;
   align-items: center;
@@ -228,11 +240,17 @@ main.shell:focus { outline: none; }
 .pill-muted { background: var(--surface-3); color: var(--muted); border-color: var(--border); }
 
 /* --- Buttons --- */
+/* a11y 2026-05-10: original gradient #1aa9b3 → #128088 averaged 3.63:1
+   white-on-bg (sub-AA). Bumped to start at --accent-strong (#128088,
+   4.70:1) and end at the deeper #0d6e75 (5.99:1), avg ~5.30:1 AA+. The
+   visual change is subtle (slightly deeper teal); the brighter --accent
+   is still used for borders, focus rings, and text-on-surface contexts
+   where it already passes contrast on its own. */
 button, .btn {
   appearance: none; border: none; cursor: pointer;
   padding: 10px 16px; border-radius: var(--radius-sm);
   font: inherit; font-weight: 500;
-  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+  background: linear-gradient(180deg, var(--accent-strong), #0d6e75);
   color: white;
   min-height: 44px;
   transition: filter 120ms, transform 80ms;
@@ -248,13 +266,14 @@ button.ghost:hover { background: var(--surface-3); }
 button:disabled, .btn:disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
 
 /* --- Label-styled-as-button (for label-wrapped file inputs on mobile) --- */
+/* a11y 2026-05-10: see button rule above for gradient rationale. */
 .btn-like {
   display: inline-flex; align-items: center; justify-content: center;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
   padding: 10px 16px; border-radius: var(--radius-sm);
   font: inherit; font-weight: 500; min-height: 44px;
-  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+  background: linear-gradient(180deg, var(--accent-strong), #0d6e75);
   color: white;
   cursor: pointer;
 }
@@ -629,13 +648,17 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 
 /* Version footer. Muted, doesn't compete with content.
    No opacity — composited onto --bg it dropped contrast below 4.5:1.
-   --muted (#7c828f) on --bg (#0e1014) is ~4.78:1 which passes AA at 11px. */
+   a11y 2026-05-10: after the warm-slate-navy palette migration --muted
+   (#8a8678) on --bg (#1a2438) became 4.26:1, narrowly sub-AA at 11px.
+   Bumped to --fg-2 (#c5c2b9, ~8.71:1 AAA) — still visually subordinate
+   to body --fg (#ecebe6) so it doesn't compete with content, but no
+   longer fails AA. */
 .app-version {
   margin-top: 24px;
   padding: 12px 0 4px;
   text-align: center;
   font-size: 11px;
-  color: var(--muted);
+  color: var(--fg-2);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
   user-select: text;
