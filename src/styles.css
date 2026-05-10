@@ -149,6 +149,35 @@ main.shell:focus { outline: none; }
 .header-strip-pill.offline { color: var(--err); border-color: var(--err); }
 .header-strip-pill.battery.low { color: var(--err); border-color: var(--err); }
 .header-strip-pill.sync { color: var(--info); }
+
+/* Narrow-viewport adjustment: at iPhone 13's 390px width, the 3 header-strip
+ * sections (status / patient / sync) sum past viewport when the active patient
+ * has a long Hebrew name. Mega-bot 2026-05-10 reproduced this — body
+ * scrollWidth 484px > 390px viewport with Widest <header.header-strip> 485px.
+ * Tightening padding + font-size + truncating the patient label keeps the
+ * strip within viewport. The strip is `unicode-bidi: plaintext` already so
+ * truncation respects RTL semantics. */
+@media (max-width: 420px) {
+  .header-strip {
+    padding: 0 6px;
+    gap: 4px;
+    font-size: 11px;
+  }
+  .header-strip-section { gap: 4px; }
+  .header-strip-pill {
+    padding: 1px 6px;
+    font-size: 10px;
+  }
+  .header-strip-patient {
+    /* Constrain the patient label so a long Hebrew name doesn't push the
+     * sync section off the viewport edge. White-space + ellipsis are
+     * applied via the existing overflow:hidden + min-width:0 rules above. */
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    min-width: 0;
+    max-width: 50vw;
+  }
+}
 .header-strip-pill.queue {
   color: var(--warn);
   border-color: rgba(230, 181, 92, 0.4);
