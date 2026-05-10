@@ -29,6 +29,7 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 import { PERSONAS, runPersona } from './lib/megaPersona.mjs';
 import { writePatientGallery } from './lib/patientChart.mjs';
+import { CostTracker, generateScenarioOpus } from './lib/scenarioGen.mjs';
 
 // ============================================================================
 // Authorization gate
@@ -294,11 +295,47 @@ async function main() {
     if (TIMELINE.length < 10_000) TIMELINE.push(ev);
   }
 
-  // Spawn all personas in parallel.
+  // ──────────── Pre-spawn scenario generation ────────────
+  // Fixture mode: instant hardcoded scenarios. Real-Opus mode: generate one
+  // rich scenario per persona via Opus 4.7 + adaptive thinking. Generation
+  // happens BEFORE spawning so all personas have a real chart up-front; if
+  // Opus fails for one, the remaining personas still proceed.
   const allScenarios = [];
+  const costTracker = new CostTracker(CONFIG.costCapUsd);
+  if (FIXTURE_MODE) {
+    for (let i = 0; i < personaKeys.length; i++) {
+      allScenarios.push(fixtureScenarioFor(i, PERSONAS[personaKeys[i]]?.name || personaKeys[i]));
+    }
+  } else {
+    console.log(`  generating ${personaKeys.length} scenarios via Opus 4.7 (effort=${process.env.CHAOS_EFFORT || 'medium'}) ...`);
+    const genStart = Date.now();
+    // Sequential generation — Anthropic rate limits prefer this and the
+    // total time (~3-5s × N) is well under the 30-min run budget.
+    for (let i = 0; i < personaKeys.length; i++) {
+      try {
+        const scen = await generateScenarioOpus({
+          apiKey: KEY,
+          model: process.env.CHAOS_MODEL || 'claude-opus-4-7',
+          effort: process.env.CHAOS_EFFORT || 'high',
+          seedIdx: i,
+          runId: RUN_ID,
+          costTracker,
+          onLog: (m) => console.log(m),
+        });
+        scen._persona = PERSONAS[personaKeys[i]]?.name || personaKeys[i];
+        scen._persona_idx = i;
+        allScenarios.push(scen);
+      } catch (err) {
+        console.warn(`  scenario ${i} gen failed (${err.message?.slice(0, 80)}) — falling back to fixture`);
+        allScenarios.push(fixtureScenarioFor(i, PERSONAS[personaKeys[i]]?.name || personaKeys[i]));
+      }
+    }
+    console.log(`  scenarios ready in ${((Date.now() - genStart) / 1000).toFixed(1)}s, cost so far $${costTracker.total().toFixed(2)} (${costTracker.calls} calls)`);
+  }
+
+  // Spawn all personas in parallel.
   const promises = personaKeys.map((key, idx) => {
-    const scenario = fixtureScenarioFor(idx, PERSONAS[key]?.name || key);
-    allScenarios.push(scenario);
+    const scenario = allScenarios[idx];
     return runPersona({
       browser,
       personaKey: key,
@@ -333,6 +370,7 @@ async function main() {
 
   console.log(`\n=== ward-helper-mega-bot complete ===`);
   console.log(`Wall: ${((Date.now() - mainStart) / 60000).toFixed(2)} min`);
+  console.log(`Cost: $${costTracker.total().toFixed(2)} (${costTracker.calls} Opus calls)`);
   console.log(`Bugs: ${BUGS.length} (${countSev('CRITICAL')}C/${countSev('HIGH')}H/${countSev('MEDIUM')}M/${countSev('LOW')}L)`);
   console.log(`Report:  ${REPORT_PATH}`);
   console.log(`Patient gallery (${gallery.count} charts):`);
