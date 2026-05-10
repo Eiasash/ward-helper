@@ -71,7 +71,24 @@ export function attachDiagnostics(page, scenarioId, logBug) {
       // eslint-disable-next-line no-undef
       window.addEventListener('unhandledrejection', (ev) => {
         const reason = ev?.reason;
-        const msg = reason?.message || String(reason);
+        // Capture richer info: message, stack head, type, and a JSON tail.
+        let msg = '';
+        if (reason instanceof Error) {
+          msg = `${reason.name}: ${reason.message}`;
+          if (reason.stack) {
+            const top = reason.stack.split('\n').slice(0, 3).join(' | ');
+            msg += ` @ ${top}`;
+          }
+        } else if (reason === undefined) {
+          msg = 'reason=undefined (Promise.reject() called with no value or void return)';
+        } else if (reason === null) {
+          msg = 'reason=null';
+        } else if (typeof reason === 'object') {
+          try { msg = `obj: ${JSON.stringify(reason).slice(0, 200)}`; }
+          catch (_) { msg = `obj: [unserializable] keys=${Object.keys(reason).join(',')}`; }
+        } else {
+          msg = `${typeof reason}: ${String(reason).slice(0, 200)}`;
+        }
         // eslint-disable-next-line no-console
         console.error(`__UNHANDLED__: ${msg}`);
       });
