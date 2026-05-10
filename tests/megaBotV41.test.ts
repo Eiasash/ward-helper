@@ -32,7 +32,7 @@ import { resolve } from 'node:path';
 function extractBotSubject(b: { what?: string; evidence?: string }): string | null {
   const search = (b.what || '') + ' ' + String(b.evidence || '');
   const m = search.match(/_botSubject:(\w+)/);
-  return m ? m[1] : null;
+  return m?.[1] ?? null;
 }
 
 describe('mega-bot v4.1 — bySubject extractor pins _botSubject in either field', () => {
@@ -97,6 +97,7 @@ function parseExportedSubBots(src: string): Array<{ name: string; body: string }
   let m: RegExpExecArray | null;
   while ((m = exportRe.exec(src)) !== null) {
     const name = m[1];
+    if (!name) continue;  // tsc strict — capture group could be undefined
     // Find the opening brace after the parameter list.
     let i = m.index + m[0].length;
     while (i < src.length && src[i] !== '{') i++;
