@@ -9,9 +9,9 @@
     "prebuild": "node scripts/sync-skills.mjs",
     "preview": "vite preview",
     "check": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test": "cross-env TZ=Asia/Jerusalem vitest run",
+    "test:watch": "cross-env TZ=Asia/Jerusalem vitest",
+    "test:coverage": "cross-env TZ=Asia/Jerusalem vitest run --coverage"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
@@ -28,6 +28,7 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^5.2.0",
     "@vitest/coverage-v8": "^4.1.5",
+    "cross-env": "^7.0.3",
     "fake-indexeddb": "^6.0.0",
     "happy-dom": "^20.9.0",
     "lighthouse": "^13.1.0",
