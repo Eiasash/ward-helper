@@ -42,13 +42,19 @@ import {
   PersonaMemory,
 } from './personasV4.mjs';
 
-// V4.1 — bot internal version. Bumped because the waitForSubject ratchets
-// change the bug-stream characteristics (eliminate ~195 race-induced HIGH
-// false-positives per future run); future v4-vs-v4.1 baseline comparisons
-// need the version delta to attribute the drop to the bot, not to an app
-// regression. NOT tied to the app version trinity (package.json/sw.js/
+// V4.2 — bumped from v4.1.0 because the JSONL timeline now carries two new
+// per-tick booleans (`waitForSubjectCalled`, `iterationCompleted`) and the
+// analyzer asserts a per-sub-bot ratchet on top of them. This is a bug-stream
+// characteristic change (a v4.2-against-v4.1 baseline comparison would
+// otherwise mis-attribute the analyzer's new fail-loud exit code to an app
+// regression). NOT tied to the app version trinity (package.json/sw.js/
 // APP_VERSION are unchanged — this PR ships bot tooling only).
-export const BOT_VERSION = 'v4.1.0';
+//
+// V4.1 was: regex extractor + waitForSubject static ratchets + invariant test.
+// V4.2 adds: runtime per-tick wait counter via page._v42WaitCount (reset at
+// the top of each runPersona iteration; incremented by waitForSubject; read
+// into the onTick payload) + analyzer assertion gated to V4_SUB_BOTS_REQUIRING_WAIT.
+export const BOT_VERSION = 'v4.2.0';
 
 // ============================================================================
 // Persona definitions — timing + tolerance + action-menu weights
@@ -246,6 +252,11 @@ export async function safeClick(page, persona, locator, label, guard) {
  * @returns {Promise<{ok:boolean, matched?:string, waitMs:number}>}
  */
 export async function waitForSubject(page, selectors, timeout = 5000) {
+  // V4.2 — record-call into per-tick context. runPersona resets `page._v42WaitCount`
+  // to 0 at the top of every action iteration; we increment here. The analyzer
+  // (scripts/lib/v42Invariant.mjs) reads the resulting per-tick boolean to assert
+  // every completed iteration of a v4 sub-bot was preceded by at least one wait.
+  try { page._v42WaitCount = (page._v42WaitCount || 0) + 1; } catch (_) {}
   const t0 = Date.now();
   const promises = selectors.map((sel) => {
     if (sel instanceof RegExp) {
@@ -819,6 +830,16 @@ export async function runPersona({
       picked = pickWeighted(menu);
     }
 
+    // V4.2 — reset per-tick wait counter BEFORE the action runs, so this
+    // iteration's count starts at 0. waitForSubject() increments
+    // page._v42WaitCount each time it's called inside the action. The
+    // post-action read (below, inside the try) records whether the helper
+    // fired this tick; resetting after instead of before would let iteration
+    // N inherit N-1's count and silently collapse the ratchet's discriminating
+    // power. (Per-page scoping is automatic — `page` is created once per
+    // runPersona via ctx.newPage() and never reassigned.)
+    page._v42WaitCount = 0;
+
     try {
       // chaosRandomClick has a different signature — wrap at call site.
       let result;
@@ -827,6 +848,17 @@ export async function runPersona({
       } else {
         result = await picked.fn(page, browser, scenario, persona, guard, reportDir, logBug);
       }
+      // V4.2 — once we get here, the action returned without throwing.
+      // iterationCompleted = "did not throw", NOT "result.ok === true". The
+      // distinction matters: v4 sub-bots return {ok:false} after a logged-bug
+      // path (e.g., wait timed out → logBug → return {ok:false}), and they DID
+      // call waitForSubject first. The strict-completion reading would silently
+      // miss the regression class "new sub-bot path productively runs without
+      // calling wait and returns {ok:false}" — which is exactly what the
+      // ratchet exists to catch.
+      const iterationCompleted = true;
+      const waitForSubjectCalled = (page._v42WaitCount || 0) > 0;
+
       tally.actions++;
       if (isChaos) tally.chaos++;
       tally.byAction[picked.name] = (tally.byAction[picked.name] || 0) + 1;
@@ -838,7 +870,12 @@ export async function runPersona({
       const isUseful = !isChaos && result?.ok === true;
       if (isUseful) tally.usefulActions++;
       if (result?.error) tally.errors++;
-      if (onTick) onTick({ persona: persona.name, action: picked.name, botSubject: subj, isChaos, isUseful, elapsed: Date.now() - t0, result });
+      if (onTick) onTick({
+        persona: persona.name, action: picked.name, botSubject: subj,
+        isChaos, isUseful, elapsed: Date.now() - t0, result,
+        // V4.2 telemetry — analyzer (v42Invariant.mjs) gates on these.
+        waitForSubjectCalled, iterationCompleted,
+      });
     } catch (err) {
       tally.errors++;
       logBug('LOW', scenario.scenario_id, `${persona.name}/${picked.name}/exception`,
