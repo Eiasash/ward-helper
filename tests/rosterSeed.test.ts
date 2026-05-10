@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { applyRosterSeedFromStorage } from '@/notes/rosterSeed';
-import type { ParseFields } from '@/agent/tools';
+import {
+  applyRosterSeedFromStorage,
+  applyRosterSeedFromStorageWithConfidence,
+} from '@/notes/rosterSeed';
+import type { ParseFields, Confidence } from '@/agent/tools';
 import type { RosterPatient } from '@/storage/roster';
 
 function makeRoster(opts: Partial<RosterPatient> & { name: string }): RosterPatient {
@@ -109,6 +112,57 @@ describe('applyRosterSeedFromStorage', () => {
     // Storage cleaned even on bad JSON — defensive against stale
     // schema versions or manual tampering blocking future merges.
     expect(sessionStorage.getItem('rosterSeed')).toBeNull();
+  });
+
+  it('WithConfidence variant: marks roster-sourced identity as high confidence', () => {
+    // Regression for the SOAP "re-prompt for ID" bug. When user clicks
+    // +SOAP on a roster card, identity flows from the (curator-confirmed)
+    // roster — Review.tsx must NOT show "אישור ידני נדרש" on those fields.
+    const seed = makeRoster({
+      name: 'אסתר כהן-לוי',
+      tz: '111111111',
+      age: 84,
+      sex: 'F',
+      room: '12',
+    });
+    sessionStorage.setItem('rosterSeed', JSON.stringify(seed));
+    const extract: ParseFields = { meds: [{ name: 'Ceftriaxone', dose: '1g' }] };
+    const baseConfidence: Record<string, Confidence> = {
+      // Extract observed nothing for identity — would be undefined for these keys
+      // in real flow. Here we set 'low' to verify the override truly upgrades.
+      name: 'low', teudatZehut: 'low', age: 'low',
+    };
+    const out = applyRosterSeedFromStorageWithConfidence(extract, baseConfidence);
+    expect(out.fields.name).toBe('אסתר כהן-לוי');
+    expect(out.fields.teudatZehut).toBe('111111111');
+    expect(out.confidence.name).toBe('high');
+    expect(out.confidence.teudatZehut).toBe('high');
+    expect(out.confidence.age).toBe('high');
+    expect(out.confidence.sex).toBe('high');
+    expect(out.confidence.room).toBe('high');
+  });
+
+  it('WithConfidence variant: skips override for fields the roster lacks', () => {
+    // If roster row had no tz (sourceMode=paste often does), extract's
+    // own confidence for tz must NOT be clobbered to 'high'.
+    const seed = makeRoster({ name: 'מטופל', tz: null, age: null });
+    sessionStorage.setItem('rosterSeed', JSON.stringify(seed));
+    const extract: ParseFields = { teudatZehut: '999999998', age: 80 };
+    const baseConfidence: Record<string, Confidence> = {
+      name: 'low', teudatZehut: 'low', age: 'low',
+    };
+    const out = applyRosterSeedFromStorageWithConfidence(extract, baseConfidence);
+    expect(out.confidence.name).toBe('high'); // roster supplied name
+    expect(out.confidence.teudatZehut).toBe('low'); // roster lacked tz, extract's confidence stands
+    expect(out.confidence.age).toBe('low'); // roster lacked age
+  });
+
+  it('WithConfidence variant: passes through when no seed', () => {
+    const extract: ParseFields = { meds: [] };
+    const baseConfidence: Record<string, Confidence> = { name: 'med' };
+    const out = applyRosterSeedFromStorageWithConfidence(extract, baseConfidence);
+    expect(out.fields).toEqual(extract);
+    expect(out.confidence).toEqual(baseConfidence);
   });
 
   it('is one-shot: a second call returns extract unchanged', () => {
