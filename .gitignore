@@ -16,3 +16,7 @@ tests/**/*.js.map
 # baseline.txt is the frozen reference — diff against it on every change.
 # latest.txt is the most recent local run; never committed.
 scripts/scenarios/latest.txt
+
+# 2026-05-10: chaos-bot output + test coverage (prevent git add -A near-misses)
+chaos-reports/
+coverage/
