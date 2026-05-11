@@ -54,7 +54,7 @@ import {
 // V4.2 adds: runtime per-tick wait counter via page._v42WaitCount (reset at
 // the top of each runPersona iteration; incremented by waitForSubject; read
 // into the onTick payload) + analyzer assertion gated to V4_SUB_BOTS_REQUIRING_WAIT.
-export const BOT_VERSION = 'v4.2.0';
+export const BOT_VERSION = 'v5.0.0';
 
 // ============================================================================
 // Persona definitions — timing + tolerance + action-menu weights
@@ -415,6 +415,55 @@ export async function chaosRapidFireUploads(page, browser, scenario, reportDir) 
   return { ok: true };
 }
 
+export async function chaosSwapServiceWorker(page, tally, logBug) {
+  // v5 — SW-swap chaos. Models the production failure mode where a
+  // deploy lands mid-shift and the SW lifecycle (install → activate →
+  // controllerchange) fires under the clinician's feet.
+  //
+  // page.route is correct HERE because mutation IS the chaos — NOT in
+  // conflict with the encrypted-blob-smoke principle of 'use
+  // waitForResponse, not route'. Different intent: observe vs mutate.
+  //
+  // Spec: docs/superpowers/specs/2026-05-11-mega-bot-v5-sw-swap-chaos-design.md
+  await page.route('**/sw.js', async (route) => {
+    const r = await route.fetch();
+    const body = await r.text();
+    await route.fulfill({
+      response: r,
+      body: body + `\n// chaos-${Date.now()}\n`,
+      headers: { ...r.headers(), 'cache-control': 'no-cache' },
+    });
+  });
+
+  // NOTE: no reg.waiting.postMessage({type:'SKIP_WAITING'}) —
+  // ward-helper's sw.js calls self.skipWaiting() unconditionally in
+  // install handler (public/sw.js:6 as of v1.44.0), so postMessage is
+  // dead code. Don't re-add it without re-verifying sw.js.
+  const result = await page.evaluate(() => new Promise((resolve) => {
+    navigator.serviceWorker.addEventListener('controllerchange',
+      () => resolve('swapped'), { once: true });
+    navigator.serviceWorker.getRegistration().then((reg) => {
+      if (!reg) return resolve('no-registration');
+      reg.update();
+    });
+    setTimeout(() => resolve('timeout-8s'), 8000);
+  }));
+
+  await page.unroute('**/sw.js');
+
+  // Telemetry on the per-persona tally object — end-of-run alarm reads these.
+  tally.chaosSwapAttempts = (tally.chaosSwapAttempts || 0) + 1;
+  if (result !== 'swapped') {
+    tally.chaosSwapTimeouts = (tally.chaosSwapTimeouts || 0) + 1;
+  }
+  // Per-tick log entry for triage. LOW severity because a single miss
+  // is informational; the threshold-based teardown alarm catches surges.
+  if (result !== 'swapped' && result !== 'no-registration') {
+    logBug('LOW', 'chaos-infra', 'chaos-sw-swap/result', `chaos-sw-swap: ${result}`);
+  }
+  return { ok: result === 'swapped', _botSubject: 'chaos-sw-swap', result };
+}
+
 // ============================================================================
 // Scenarios — each is a high-level user-flow; persona picks weighted-random
 // ============================================================================
@@ -727,6 +776,12 @@ export const CHAOS_MENU = [
   // so the random-click telemetry can carry the provenance tag. Wrapped at
   // the call site in runPersona.
   { weight: 5, name: 'chaos-random-click',   fn: '__needs_scenario_logBug__', _meta: 'random-click' },
+  // v5 — SW-swap. Weight 1 because it's slow (up to 8s) and invasive
+  // (the swapped SW persists across subsequent ticks). Mirrors
+  // chaos-midnight w:2 / chaos-network-ramped w:3 — low weight for
+  // slow chaos. Wrapped at call site like chaos-random-click because
+  // it needs `tally` + `logBug`, not the standard signature.
+  { weight: 1, name: 'chaos-sw-swap',         fn: '__needs_swap_telemetry__', _meta: 'sw-swap' },
 ];
 
 export function pickWeighted(menu) {
@@ -841,10 +896,13 @@ export async function runPersona({
     page._v42WaitCount = 0;
 
     try {
-      // chaosRandomClick has a different signature — wrap at call site.
+      // chaosRandomClick + chaosSwapServiceWorker have different signatures —
+      // wrap at call site.
       let result;
       if (picked.fn === '__needs_scenario_logBug__') {
         result = await chaosRandomClick(page, persona, scenario.scenario_id, logBug);
+      } else if (picked.fn === '__needs_swap_telemetry__') {
+        result = await chaosSwapServiceWorker(page, tally, logBug);
       } else {
         result = await picked.fn(page, browser, scenario, persona, guard, reportDir, logBug);
       }
@@ -892,6 +950,21 @@ export async function runPersona({
   }
 
   const wallMs = Date.now() - t0;
+
+  // v5 — chaos-infra alarm. If SW-swap fired ≥10 times and missed more
+  // than 20%, that's a coverage gap, not an app bug. Surface as
+  // 'chaos-infra' so triage routes it to the bot, not ward-helper.
+  // Threshold rationale: N≥10 floor avoids false-alarms on smoke runs;
+  // 20% magic number replaces with rolling baseline after 1-2 weeks of
+  // JSONL data (separate ticket).
+  const swapTotal = tally.chaosSwapAttempts || 0;
+  const swapMiss = tally.chaosSwapTimeouts || 0;
+  if (swapTotal >= 10 && swapMiss / swapTotal > 0.20) {
+    const firedPct = Math.round((1 - swapMiss / swapTotal) * 100);
+    logBug('LOW', 'chaos-infra', `${persona.name}/chaos-sw-swap/coverage`,
+      `SW-swap fired ${swapTotal - swapMiss}/${swapTotal} (${firedPct}%) — coverage gap, not app bug`);
+  }
+
   // V4: pull longtask count from the diag closure if exposed via window.
   const memSummary = memory.summary();
   await ctx.close().catch(() => {});
