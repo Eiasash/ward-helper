@@ -11,7 +11,9 @@
     "check": "tsc --noEmit",
     "test": "cross-env TZ=Asia/Jerusalem vitest run",
     "test:watch": "cross-env TZ=Asia/Jerusalem vitest",
-    "test:coverage": "cross-env TZ=Asia/Jerusalem vitest run --coverage"
+    "test:coverage": "cross-env TZ=Asia/Jerusalem vitest run --coverage",
+    "smoke:blob-runtime": "tsx scripts/smoke-blob-runtime.mjs",
+    "smoke:blob-runtime:dry-fail-all": "tsx scripts/smoke-blob-runtime-dry-fail-all.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
@@ -32,6 +34,7 @@
     "fake-indexeddb": "^6.0.0",
     "happy-dom": "^20.9.0",
     "lighthouse": "^13.1.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.5.4",
     "vite": "^8.0.11",
     "vitest": "^4.1.5"
