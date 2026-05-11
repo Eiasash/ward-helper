@@ -4,6 +4,30 @@
 **Status:** approved (brainstorming gate); ready for implementation plan
 **Predecessors:** PR #56 (api-key cloud sync), PR #208 (Geri runtime smoke template), `feedback_invariant_triad.md` (canonical 3-layer invariant pattern)
 
+## Edits
+
+> **EDIT 2026-05-11 (post-merge, during implementation-plan writing):** four substantive technical corrections discovered while writing the implementation plan. Original text below is preserved unchanged; corrected facts live here. Per `feedback_spec_provenance_append_only.md`, corrections get dated edit markers, not stealth rewrites.
+>
+> **Correction 1 — §C obs-1 URL pattern.** The spec writes:
+> ```
+> const response = await page.waitForResponse(r =>
+>   r.url().includes('/rest/v1/ward_helper_backup') && r.request().method() === 'GET'
+> );
+> ```
+> Actual: a logged-in restore (which the smoke uses, since the burner is registered in `app_users`) goes via `pullByUsername(username)` → `/rest/v1/rpc/ward_helper_pull_by_username` POST. Verified `src/notes/save.ts:358-359`, `src/storage/cloud.ts:177-185`. The correct predicate is:
+> ```
+> r.url().includes('/rest/v1/rpc/ward_helper_pull_by_username') && r.request().method() === 'POST'
+> ```
+> Generic backup-table SELECT is the legacy per-anon-user path (`pullAllBlobs`, used only when no `app_users` session is active).
+>
+> **Correction 2 — §A scope omits canary as a precondition.** Canary IS correctly excluded from the parameterized test loop (different subsystem). But the spec doesn't note that `restoreFromCloud` line 367 fast-fails on `canaryStatus === 'wrong-passphrase'` BEFORE any user-data row applies. Without a valid canary seeded for the burner, every smoke run would exit with `wrongPassphrase: true` and obs 3 would time out for the wrong reason. Mitigation: seedAll seeds a canary blob alongside the 4 user-data fixtures. The parameterized assertion loop still runs only over the 4 user-data types — canary is a system precondition, not a fixture under test. Canary plaintext shape: `{ v:1, marker:'ward-helper-canary', createdAt:number }`, blob_id `'__canary__'` (see `src/storage/canary.ts:25,32-41`).
+>
+> **Correction 3 — §B api-key persistence location.** The spec writes `idbAssertion: /* function reading IDB settings.apiKeyXor */` for the api-key fixture. Actual: api-key storage moved from IDB-XOR to `localStorage` in v1.39.0 (see `tests/apiKeyCloudSync.test.ts:16-17,46-51`). The api-key obs-3 reads `localStorage.getItem('wardhelper_apikey')`, not IDB. The other 3 fixtures (patient/note/day-snapshot) DO land in IDB stores per `src/storage/indexed.ts` and `src/storage/rounds.ts`; only api-key forks to localStorage.
+>
+> **Correction 4 — "shape mirrors Geri's PR #208" was cited but not verified.** Spec §A says "Shape mirrors Geri's `scripts/smoke-api-key-restore.mjs` from PR #208." The implementation-plan-writing pass discovered Geri's actual smoke shape only after an advisor-prompted verification: bare Node script using raw `playwright` (not `@playwright/test` framework), no `playwright.config.ts`, no `test()` blocks, single pre-seeded burner via manual SQL paste (no bcrypt or programmatic provisioning), runs against the live URL by default. The spec's harness selection ("Playwright (already in devDependencies)") is unchanged in essence — but means raw `playwright`, not the test framework. The implementation plan reflects this Geri-actual shape; the original spec text did not narrow which Playwright API it meant. This wasn't a wrong claim, just an under-specified one — flagging here so the next reader doesn't independently re-arrive at a `@playwright/test` interpretation.
+>
+> All four corrections are reflected in the implementation plan at `docs/superpowers/plans/2026-05-11-encrypted-blob-runtime-smoke.md`. The §"Reasoning provenance" section below stays unchanged — these are factual corrections, not gate decisions, and the gate decisions themselves remain valid.
+
 ## Goal
 
 Add a runtime layer to ward-helper's encrypted-blob invariant triad. Today the layer has developer-time (TypeScript) + CI-time (`tests/apiKeyCloudSync.test.ts`, 9 tests) coverage. Runtime layer is missing — Geri PR #208 closed the equivalent gap for `auth_login_user.api_key → samega_apikey`, but that template does NOT transfer because Geri's wire is plaintext and ward-helper's wire is AES-GCM ciphertext gated by a user passphrase.
