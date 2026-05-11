@@ -13,7 +13,7 @@ These four rules are the floor. They override any conflicting guidance later in 
 
 Mobile-first Hebrew-RTL PWA for SZMC ward rounds. Camera an AZMA screen → reviewed Hebrew note → paste to Chameleon. Single-user, proxy-based Claude access (no BYO key), local-first IndexedDB, encrypted Supabase backup.
 
-## Snapshot (last audit 2026-05-10, v1.42.0 + ortho-rehab content drop + ortho-rehab UI at #/ortho)
+## Snapshot (last audit 2026-05-11, v1.44.0 — daySnapshots cloud sync + a11y contrast port (5 fixes from Geri/FM/IM patterns) + mobile /today overflow fix + SOAP roster confidence + ortho bot tuning; bot v5 SW-swap chaos injector + encrypted-blob runtime smoke layer)
 
 - **1026 vitest cases passing across 100 files** (+ 1 skipped live-eval gated on `ANTHROPIC_API_KEY`)
 - Entry chunk **~145.08 kB** gzipped (80.6% of 180 kB CI ceiling)
