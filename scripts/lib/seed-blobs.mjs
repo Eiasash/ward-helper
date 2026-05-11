@@ -114,6 +114,37 @@ async function insertBlob(supabase, userId, username, blobType, blobId, sealed) 
 }
 
 /**
+ * Apply the SMOKE_FORCE_FAIL=ciphertext mutation BEFORE the smoke runs.
+ * Flips a byte in the patient row's ciphertext server-side; obs 1 then
+ * fails with "ciphertext mismatch [regression class: wire layer]".
+ *
+ * Modes 'passphrase' and 'plaintext' don't need server-side mutation —
+ * they're handled in the smoke driver (passphrase: wrong value at login;
+ * plaintext: in-process fixture mutation). This function is a no-op for
+ * those modes.
+ */
+export async function applyForcedFailMutation(ctx, seeded, mode) {
+  if (mode !== 'ciphertext') return seeded;
+  const targetType = 'patient';
+  const fixture = BLOB_SEEDS[targetType];
+  const orig = Buffer.from(seeded[targetType].ciphertext, 'base64');
+  // Flip the high bit of byte 0. AES-GCM auth-tag mismatch will throw
+  // on decrypt, but obs 1 catches it first by exact-match.
+  orig[0] ^= 0xff;
+  const corrupted = orig.toString('base64');
+  const { error } = await ctx.supabase
+    .from('ward_helper_backup')
+    .update({ ciphertext: corrupted })
+    .eq('user_id', ctx.syntheticUserId)
+    .eq('blob_type', targetType)
+    .eq('blob_id', fixture.blobId);
+  if (error) throw new Error(`applyForcedFailMutation 'ciphertext' failed: ${error.message}`);
+  // Don't update seeded[targetType].ciphertext — the smoke compares the
+  // network response against `seeded`, so we WANT the comparison to fail.
+  return seeded;
+}
+
+/**
  * Tear down: delete every ward_helper_backup row carrying the burner's
  * username. Catches both seedAll's rows AND any rows the smoke's runtime
  * UI login pushed (canary auto-arm at login, etc.). Idempotent.

@@ -36,7 +36,7 @@
  */
 
 import { chromium } from 'playwright';
-import { initContext, seedAll, cleanupAll } from './lib/seed-blobs.mjs';
+import { initContext, seedAll, cleanupAll, applyForcedFailMutation } from './lib/seed-blobs.mjs';
 import { BLOB_SEEDS, USER_DATA_BLOB_TYPES } from '../tests/fixtures/blob-seeds.ts';
 
 const URL = process.env.SMOKE_URL || 'https://eiasash.github.io/ward-helper/';
@@ -62,8 +62,9 @@ const failures = [];
   let seeded;
   try {
     seeded = await seedAll(ctx, process.env.TEST_PASSPHRASE);
+    seeded = await applyForcedFailMutation(ctx, seeded, process.env.SMOKE_FORCE_FAIL);
   } catch (e) {
-    console.error('smoke-blob-runtime: seedAll failed:', e.message);
+    console.error('smoke-blob-runtime: seedAll/applyForcedFailMutation failed:', e.message);
     await safeCleanup();
     process.exit(2);
   }
