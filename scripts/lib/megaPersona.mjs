@@ -158,6 +158,31 @@ export const SEL = {
 // Recovery layer — soft-restart / hard-reload / kill
 // ============================================================================
 
+/**
+ * Detect page/context/browser-death errors that should short-circuit the
+ * persona loop instead of being retried.
+ *
+ * 2026-05-12 — Stage 3 cascade revealed that on first page-death, the
+ * persona's main catch block was logging LOW + soft-recovering on a dead
+ * page → next iteration → another TargetClosedError → another LOW. The
+ * loop only exits when the 300s idle watchdog fires. In Stage 3 this
+ * produced 2440 retry-on-dead-page LOWs and bailed the bot at 22.71 min
+ * instead of the 6h planned wall.
+ *
+ * Pattern this matches: any error whose message indicates the target
+ * (page/context/frame/browser) is no longer interactive. When detected,
+ * the catch block breaks the persona loop immediately and logs one
+ * 'chaos-infra' HIGH for triage.
+ *
+ * @param {unknown} err — caught error from page.evaluate / locator.click / etc.
+ * @returns {boolean}
+ */
+export function isPageDeadError(err) {
+  if (!err) return false;
+  const msg = (err && err.message) || String(err);
+  return /Target.*closed|Frame.*detached|context.*destroyed|TargetClosedError|page has been closed|Browser has been closed|Protocol error.*Target closed/i.test(msg);
+}
+
 export class RecoveryGuard {
   constructor(page, persona, scenarioId, logBug) {
     this.page = page;
@@ -981,6 +1006,17 @@ export async function runPersona({
       });
     } catch (err) {
       tally.errors++;
+      // 2026-05-12 — Stage 3 cascade post-mortem. On first page/context/frame-
+      // death, bail the persona loop instead of retrying on a dead target.
+      // Prior behavior: log LOW + softRecover() (which itself throws on dead
+      // page, swallowed by .catch) → next tick → another TargetClosedError →
+      // hundreds of retry-LOWs until the 300s idle watchdog finally fires.
+      if (isPageDeadError(err)) {
+        tally.pageClosedAt = actionsThisCycle;
+        logBug('HIGH', 'chaos-infra', `${persona.name}/page-closed`,
+          `persona bailed: page closed at tick ${actionsThisCycle} during ${picked.name} (${(err.message || String(err)).slice(0, 80)})`);
+        break;
+      }
       logBug('LOW', scenario.scenario_id, `${persona.name}/${picked.name}/exception`,
         `harness exception: ${err.message?.slice(0, 100)}`);
       // Soft-recover after exception so next iteration starts clean.
