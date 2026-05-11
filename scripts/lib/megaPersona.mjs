@@ -669,7 +669,7 @@ export async function scenSoapRound(page, browser, scenario, persona, guard, rep
   return { ok: true };
 }
 
-export async function scenOrthoCalc(page, persona, guard, logBug, scenario) {
+export async function scenOrthoCalc(page, _browser, scenario, persona, guard, _reportDir, logBug) {
   // Tuned 2026-05-10: targeted clicks on named ortho buttons instead of
   // random index spam. Mega-bot v1 produced 567 LOW false-positives on
   // /ortho because random-index clicking compounds with misclicker's 20%
@@ -714,7 +714,7 @@ export async function scenOrthoCalc(page, persona, guard, logBug, scenario) {
   return { ok: true };
 }
 
-export async function scenConsult(page, persona, guard, logBug, scenario) {
+export async function scenConsult(page, _browser, _scenario, persona, guard, _reportDir, _logBug) {
   await page.evaluate(() => { window.location.hash = '#/consult'; });
   await personaSleep(persona);
   // Just probe — consult flow needs a target patient + body. For now,
@@ -732,7 +732,7 @@ export async function scenConsult(page, persona, guard, logBug, scenario) {
   return { ok: true };
 }
 
-export async function scenHistory(page, persona, guard) {
+export async function scenHistory(page, _browser, _scenario, persona, guard) {
   await page.evaluate(() => { window.location.hash = '#/history'; });
   await personaSleep(persona);
   // Click first note in history if any.
@@ -750,7 +750,7 @@ export async function scenHistory(page, persona, guard) {
   return { ok: true };
 }
 
-export async function scenSettingsTour(page, persona, guard) {
+export async function scenSettingsTour(page, _browser, _scenario, persona, guard) {
   // V4 hardening per L5: replaced `interactives.nth(random)` with named
   // toggles. Random-index clicking compounds with misclicker's 20% miss
   // rate and produces zero signal on the settings surface (no error
