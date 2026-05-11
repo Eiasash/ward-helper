@@ -415,7 +415,7 @@ export async function chaosRapidFireUploads(page, browser, scenario, reportDir) 
   return { ok: true };
 }
 
-export async function chaosSwapServiceWorker(page, tally, logBug) {
+export async function chaosSwapServiceWorker(page, tally, logBug, persona, actionIndex) {
   // v5 — SW-swap chaos. Models the production failure mode where a
   // deploy lands mid-shift and the SW lifecycle (install → activate →
   // controllerchange) fires under the clinician's feet.
@@ -477,9 +477,34 @@ export async function chaosSwapServiceWorker(page, tally, logBug) {
     if (result !== 'swapped' && result !== 'no-registration' && result !== 'no-script-url') {
       logBug('LOW', 'chaos-infra', 'chaos-sw-swap/result', `chaos-sw-swap: ${result}`);
     }
-  } catch (_) {
-    // page.evaluate can throw on navigation race / page-closed. Counter
-    // already incremented above; no route to unroute.
+  } catch (err) {
+    // 2026-05-11 — page.evaluate throws when the page detaches mid-eval.
+    // Stage-2 re-run post-fix showed 8/15 swap attempts hit this path,
+    // ALL on Dr. Misclicker (733 actions vs others' 146-219). Pattern is
+    // persona-race: rapid-misclick navigates the page while the 8s swap
+    // promise is pending → TargetClosedError → result undefined → tally
+    // miss-rate silently undercounts.
+    //
+    // Now: classify as 'evaluate-threw' (separate from 'timeout-8s'),
+    // count toward chaosSwapTimeouts so missRate denominator is honest,
+    // ALSO count separately into chaosSwapInfraMisses so the alarm logic
+    // below can exclude chaos-infra-attributable misses from the "real"
+    // miss rate that gates Stage 3 authorization (otherwise a single
+    // sibling-chaos navigation event spuriously fires the surface-dead
+    // alarm at production weight=1).
+    // AND log enough context (err.message + actionIndex + concurrent
+    // chaos fingerprint) to disambiguate persona-race from a genuine
+    // ward-helper app-side exception on the next analysis pass.
+    result = 'evaluate-threw';
+    tally.chaosSwapTimeouts = (tally.chaosSwapTimeouts || 0) + 1;
+    tally.chaosSwapInfraMisses = (tally.chaosSwapInfraMisses || 0) + 1;
+    const errMsg = (err?.message || String(err) || 'unknown').slice(0, 120);
+    const chaosFingerprint = Object.entries(tally.byAction || {})
+      .filter(([k]) => k.startsWith('chaos-') && k !== 'chaos-sw-swap')
+      .map(([k, v]) => `${k}=${v}`).join(',');
+    const personaName = persona?.name || 'unknown';
+    logBug('LOW', 'chaos-infra', `${personaName}/chaos-sw-swap/evaluate-threw`,
+      `tick=${actionIndex} err="${errMsg}" chaos=[${chaosFingerprint}]`);
   }
   return { ok: result === 'swapped', _botSubject: 'chaos-sw-swap', result };
 }
@@ -922,7 +947,7 @@ export async function runPersona({
       if (picked.fn === '__needs_scenario_logBug__') {
         result = await chaosRandomClick(page, persona, scenario.scenario_id, logBug);
       } else if (picked.fn === '__needs_swap_telemetry__') {
-        result = await chaosSwapServiceWorker(page, tally, logBug);
+        result = await chaosSwapServiceWorker(page, tally, logBug, persona, actionsThisCycle);
       } else {
         result = await picked.fn(page, browser, scenario, persona, guard, reportDir, logBug);
       }
@@ -978,16 +1003,28 @@ export async function runPersona({
   // 100% miss surfaces fast (N≥3) while the original >20% rule stays for
   // degraded-but-alive cases (N≥10). Surface as 'chaos-infra' so triage
   // routes to the bot, not ward-helper.
+  //
+  // 2026-05-11 amendment: chaosSwapInfraMisses (evaluate-throws attributed
+  // to sibling chaos navigating the page off ward-helper) are excluded
+  // from BOTH the alarm denominator and the miss count. Otherwise a single
+  // chaos-back-mash navigation event at production weight=1 spuriously
+  // fires "surface dead" on an otherwise-healthy SW-swap. Raw miss count
+  // is still logged for visibility; alarm fires on real (non-infra)
+  // miss rate. The gate-evaluation script on the analysis side mirrors
+  // this filter against JSONL result==='evaluate-threw' rows.
   const swapTotal = tally.chaosSwapAttempts || 0;
   const swapMiss = tally.chaosSwapTimeouts || 0;
-  const missRate = swapTotal > 0 ? swapMiss / swapTotal : 0;
-  if (swapTotal >= 3 && missRate >= 1.0) {
+  const infraMisses = tally.chaosSwapInfraMisses || 0;
+  const realTotal = swapTotal - infraMisses;
+  const realMiss = swapMiss - infraMisses;
+  const realMissRate = realTotal > 0 ? realMiss / realTotal : 0;
+  if (realTotal >= 3 && realMissRate >= 1.0) {
     logBug('HIGH', 'chaos-infra', `${persona.name}/chaos-sw-swap/coverage`,
-      `SW-swap 100% miss (${swapTotal}/${swapTotal}) — surface dead, not an app bug`);
-  } else if (swapTotal >= 10 && missRate > 0.20) {
-    const firedPct = Math.round((1 - missRate) * 100);
+      `SW-swap 100% miss (${realMiss}/${realTotal} real, +${infraMisses} infra-attributed) — surface dead, not an app bug`);
+  } else if (realTotal >= 10 && realMissRate > 0.20) {
+    const firedPct = Math.round((1 - realMissRate) * 100);
     logBug('MEDIUM', 'chaos-infra', `${persona.name}/chaos-sw-swap/coverage`,
-      `SW-swap fired ${swapTotal - swapMiss}/${swapTotal} (${firedPct}%) — coverage gap, not app bug`);
+      `SW-swap fired ${realTotal - realMiss}/${realTotal} real (${firedPct}%, excl. ${infraMisses} infra-attributed) — coverage gap, not app bug`);
   }
 
   // V4: pull longtask count from the diag closure if exposed via window.
