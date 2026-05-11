@@ -69,6 +69,15 @@ const failures = [];
     process.exit(2);
   }
 
+  // SMOKE_FORCE_FAIL=plaintext: mutate fixture plaintext in-process so
+  // obs 3's deep-equal against fixture.plaintext fails (decrypt produces
+  // the originally-seeded plaintext, but the fixture we're comparing
+  // against has changed). Distinguishes from mode 'passphrase' which
+  // produces an actually-different decrypt path failure.
+  if (process.env.SMOKE_FORCE_FAIL === 'plaintext') {
+    BLOB_SEEDS.patient.plaintext = { ...BLOB_SEEDS.patient.plaintext, name: 'MUTATED-FOR-DRY-FAIL' };
+  }
+
   const browser = await chromium.launch({ headless: HEADLESS });
   const browserCtx = await browser.newContext();
   const page = await browserCtx.newPage();
