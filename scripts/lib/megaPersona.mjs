@@ -424,43 +424,48 @@ export async function chaosSwapServiceWorker(page, tally, logBug) {
   // conflict with the encrypted-blob-smoke principle of 'use
   // waitForResponse, not route'. Different intent: observe vs mutate.
   //
-  // CRITICAL — try/finally + counter ordering. If page.evaluate throws
-  // (page crash, navigation, timeout race), page.unroute MUST still run
-  // or the mutation handler leaks across subsequent ticks. Any later
-  // chaos that triggers an sw.js fetch (e.g., chaosVisibilityCycle
-  // causing a controllerchange re-check) would get the mutated body too
-  // — shows up as "chaos-sw-swap stops working after tick 12 in
-  // unrelated ways," i.e. non-deterministic state corruption. Counter
-  // increment lives OUTSIDE the try (a throwing evaluate still counts
-  // as an attempt) so the 0.20 alarm denominator doesn't under-report.
+  // 2026-05-11 — Original spec used page.route('**/sw.js') to mutate the
+  // SW script body so reg.update() saw byte-different bytes → install →
+  // activate → controllerchange. Empirically that path produced 100%
+  // timeout-8s (Stage 2 7/7, diag fixture 9/9 with routeHits counter at 0).
+  // Root cause: Playwright's page.route and context.route both hook the
+  // BrowserContext network layer, which sits ABOVE the service-worker
+  // container's update-check fetch. The container fetches the script
+  // through a path that bypasses page-level interception — confirmed by
+  // Playwright docs ("BrowserContext.route will not intercept requests
+  // intercepted by Service Worker") and by the routeHits=0 evidence.
+  //
+  // Current mechanism: call navigator.serviceWorker.register() directly
+  // with a cache-busted URL. Per SW spec §5.3, a different script URL in
+  // the same scope forces a true install → activate → claim chain. We no
+  // longer need page.route at all, so the unroute-on-throw concern is
+  // moot. The 8s timeout still races against a real lifecycle.
   //
   // Spec: docs/superpowers/specs/2026-05-11-mega-bot-v5-sw-swap-chaos-design.md
-  await page.route('**/sw.js', async (route) => {
-    const r = await route.fetch();
-    const body = await r.text();
-    await route.fulfill({
-      response: r,
-      body: body + `\n// chaos-${Date.now()}\n`,
-      headers: { ...r.headers(), 'cache-control': 'no-cache' },
-    });
-  });
+  // (spec's page.route premise was wrong; this comment captures the post-mortem.)
 
-  // Counter BEFORE the try — a throwing evaluate counts as an attempt
-  // so the denominator stays honest.
+  // Counter BEFORE the evaluate — a throwing evaluate still counts as an
+  // attempt so the alarm denominator stays honest.
   tally.chaosSwapAttempts = (tally.chaosSwapAttempts || 0) + 1;
 
   let result;
   try {
-    // NOTE: no reg.waiting.postMessage({type:'SKIP_WAITING'}) —
-    // ward-helper's sw.js calls self.skipWaiting() unconditionally in
-    // install handler (public/sw.js:6 as of v1.44.0), so postMessage is
-    // dead code. Don't re-add it without re-verifying sw.js.
+    // ward-helper's sw.js calls self.skipWaiting() in install and
+    // self.clients.claim() in activate (public/sw.js:6,15 as of v1.44.0)
+    // — those are what make controllerchange fire promptly. Don't drop
+    // the claim() without re-verifying sw.js.
     result = await page.evaluate(() => new Promise((resolve) => {
       navigator.serviceWorker.addEventListener('controllerchange',
         () => resolve('swapped'), { once: true });
       navigator.serviceWorker.getRegistration().then((reg) => {
         if (!reg) return resolve('no-registration');
-        reg.update();
+        const scriptURL = reg.active?.scriptURL || reg.waiting?.scriptURL || reg.installing?.scriptURL;
+        if (!scriptURL) return resolve('no-script-url');
+        // Cache-bust the URL — same scope, different script identity,
+        // forces a real SW lifecycle transition.
+        const sep = scriptURL.includes('?') ? '&' : '?';
+        navigator.serviceWorker.register(scriptURL + sep + 'chaos=' + Date.now())
+          .catch(() => resolve('register-failed'));
       });
       setTimeout(() => resolve('timeout-8s'), 8000);
     }));
@@ -469,14 +474,12 @@ export async function chaosSwapServiceWorker(page, tally, logBug) {
     }
     // Per-tick log entry for triage. LOW severity because a single miss
     // is informational; the threshold-based teardown alarm catches surges.
-    if (result !== 'swapped' && result !== 'no-registration') {
+    if (result !== 'swapped' && result !== 'no-registration' && result !== 'no-script-url') {
       logBug('LOW', 'chaos-infra', 'chaos-sw-swap/result', `chaos-sw-swap: ${result}`);
     }
-  } finally {
-    // Always unroute, even on throw. .catch swallows if the page is
-    // already closed (orchestrator hard-kill, browser crash) — at that
-    // point the leak is moot anyway.
-    await page.unroute('**/sw.js').catch(() => {});
+  } catch (_) {
+    // page.evaluate can throw on navigation race / page-closed. Counter
+    // already incremented above; no route to unroute.
   }
   return { ok: result === 'swapped', _botSubject: 'chaos-sw-swap', result };
 }
@@ -968,17 +971,22 @@ export async function runPersona({
 
   const wallMs = Date.now() - t0;
 
-  // v5 — chaos-infra alarm. If SW-swap fired ≥10 times and missed more
-  // than 20%, that's a coverage gap, not an app bug. Surface as
-  // 'chaos-infra' so triage routes it to the bot, not ward-helper.
-  // Threshold rationale: N≥10 floor avoids false-alarms on smoke runs;
-  // 20% magic number replaces with rolling baseline after 1-2 weeks of
-  // JSONL data (separate ticket).
+  // v5 — chaos-infra alarms (two-tier, post-mortem from 2026-05-11 gate-fail).
+  // Cost asymmetry: chaos-infra false-negatives are silent broken chaos for
+  // weeks (every run gives bad-data confidence in a dead surface), whereas
+  // false-positives are at most one extra triage bug. Tier the threshold so
+  // 100% miss surfaces fast (N≥3) while the original >20% rule stays for
+  // degraded-but-alive cases (N≥10). Surface as 'chaos-infra' so triage
+  // routes to the bot, not ward-helper.
   const swapTotal = tally.chaosSwapAttempts || 0;
   const swapMiss = tally.chaosSwapTimeouts || 0;
-  if (swapTotal >= 10 && swapMiss / swapTotal > 0.20) {
-    const firedPct = Math.round((1 - swapMiss / swapTotal) * 100);
-    logBug('LOW', 'chaos-infra', `${persona.name}/chaos-sw-swap/coverage`,
+  const missRate = swapTotal > 0 ? swapMiss / swapTotal : 0;
+  if (swapTotal >= 3 && missRate >= 1.0) {
+    logBug('HIGH', 'chaos-infra', `${persona.name}/chaos-sw-swap/coverage`,
+      `SW-swap 100% miss (${swapTotal}/${swapTotal}) — surface dead, not an app bug`);
+  } else if (swapTotal >= 10 && missRate > 0.20) {
+    const firedPct = Math.round((1 - missRate) * 100);
+    logBug('MEDIUM', 'chaos-infra', `${persona.name}/chaos-sw-swap/coverage`,
       `SW-swap fired ${swapTotal - swapMiss}/${swapTotal} (${firedPct}%) — coverage gap, not app bug`);
   }
 
