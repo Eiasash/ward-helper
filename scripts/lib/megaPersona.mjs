@@ -424,6 +424,16 @@ export async function chaosSwapServiceWorker(page, tally, logBug) {
   // conflict with the encrypted-blob-smoke principle of 'use
   // waitForResponse, not route'. Different intent: observe vs mutate.
   //
+  // CRITICAL — try/finally + counter ordering. If page.evaluate throws
+  // (page crash, navigation, timeout race), page.unroute MUST still run
+  // or the mutation handler leaks across subsequent ticks. Any later
+  // chaos that triggers an sw.js fetch (e.g., chaosVisibilityCycle
+  // causing a controllerchange re-check) would get the mutated body too
+  // — shows up as "chaos-sw-swap stops working after tick 12 in
+  // unrelated ways," i.e. non-deterministic state corruption. Counter
+  // increment lives OUTSIDE the try (a throwing evaluate still counts
+  // as an attempt) so the 0.20 alarm denominator doesn't under-report.
+  //
   // Spec: docs/superpowers/specs/2026-05-11-mega-bot-v5-sw-swap-chaos-design.md
   await page.route('**/sw.js', async (route) => {
     const r = await route.fetch();
@@ -435,31 +445,38 @@ export async function chaosSwapServiceWorker(page, tally, logBug) {
     });
   });
 
-  // NOTE: no reg.waiting.postMessage({type:'SKIP_WAITING'}) —
-  // ward-helper's sw.js calls self.skipWaiting() unconditionally in
-  // install handler (public/sw.js:6 as of v1.44.0), so postMessage is
-  // dead code. Don't re-add it without re-verifying sw.js.
-  const result = await page.evaluate(() => new Promise((resolve) => {
-    navigator.serviceWorker.addEventListener('controllerchange',
-      () => resolve('swapped'), { once: true });
-    navigator.serviceWorker.getRegistration().then((reg) => {
-      if (!reg) return resolve('no-registration');
-      reg.update();
-    });
-    setTimeout(() => resolve('timeout-8s'), 8000);
-  }));
-
-  await page.unroute('**/sw.js');
-
-  // Telemetry on the per-persona tally object — end-of-run alarm reads these.
+  // Counter BEFORE the try — a throwing evaluate counts as an attempt
+  // so the denominator stays honest.
   tally.chaosSwapAttempts = (tally.chaosSwapAttempts || 0) + 1;
-  if (result !== 'swapped') {
-    tally.chaosSwapTimeouts = (tally.chaosSwapTimeouts || 0) + 1;
-  }
-  // Per-tick log entry for triage. LOW severity because a single miss
-  // is informational; the threshold-based teardown alarm catches surges.
-  if (result !== 'swapped' && result !== 'no-registration') {
-    logBug('LOW', 'chaos-infra', 'chaos-sw-swap/result', `chaos-sw-swap: ${result}`);
+
+  let result;
+  try {
+    // NOTE: no reg.waiting.postMessage({type:'SKIP_WAITING'}) —
+    // ward-helper's sw.js calls self.skipWaiting() unconditionally in
+    // install handler (public/sw.js:6 as of v1.44.0), so postMessage is
+    // dead code. Don't re-add it without re-verifying sw.js.
+    result = await page.evaluate(() => new Promise((resolve) => {
+      navigator.serviceWorker.addEventListener('controllerchange',
+        () => resolve('swapped'), { once: true });
+      navigator.serviceWorker.getRegistration().then((reg) => {
+        if (!reg) return resolve('no-registration');
+        reg.update();
+      });
+      setTimeout(() => resolve('timeout-8s'), 8000);
+    }));
+    if (result !== 'swapped') {
+      tally.chaosSwapTimeouts = (tally.chaosSwapTimeouts || 0) + 1;
+    }
+    // Per-tick log entry for triage. LOW severity because a single miss
+    // is informational; the threshold-based teardown alarm catches surges.
+    if (result !== 'swapped' && result !== 'no-registration') {
+      logBug('LOW', 'chaos-infra', 'chaos-sw-swap/result', `chaos-sw-swap: ${result}`);
+    }
+  } finally {
+    // Always unroute, even on throw. .catch swallows if the page is
+    // already closed (orchestrator hard-kill, browser crash) — at that
+    // point the leak is moot anyway.
+    await page.unroute('**/sw.js').catch(() => {});
   }
   return { ok: result === 'swapped', _botSubject: 'chaos-sw-swap', result };
 }

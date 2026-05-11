@@ -14,13 +14,13 @@ This is v5's centerpiece. tabHopper and exifRotation are subsequent design conve
 
 Three components in one PR. No new files, no new deps — all extends `scripts/lib/megaPersona.mjs`.
 
-### Component A — `chaosSwapServiceWorker(page, log, ctx)`
+### Component A — `chaosSwapServiceWorker(page, tally, logBug)`
 
-Injector function, same shape class as the other 12 chaos injectors:
+Injector function, same shape class as the other 12 chaos injectors. **Counter increment lives OUTSIDE the try; `page.evaluate` lives INSIDE; `page.unroute` lives in `finally`.** A throwing evaluate (page crash, navigation race) must still count as an attempt (or the 0.20 alarm denominator under-reports), and unroute must still run (or the mutation handler leaks across subsequent ticks — silent state corruption that surfaces as "chaos-sw-swap stops working after tick N in unrelated ways"):
 
 ```js
-async function chaosSwapServiceWorker(page, log, ctx) {
-  // 1. Mutate the next sw.js fetch (no-op comment → byte diff that triggers swap).
+async function chaosSwapServiceWorker(page, tally, logBug) {
+  // 1. Mutate the next sw.js fetch (chaos comment → byte diff → real swap).
   //    page.route is correct HERE because mutation IS the chaos —
   //    NOT in conflict with the encrypted-blob-smoke principle of
   //    'use waitForResponse, not route'. Different intent: observe vs mutate.
@@ -34,57 +34,80 @@ async function chaosSwapServiceWorker(page, log, ctx) {
     });
   });
 
-  // 2. Force re-check + race against 8s timeout.
-  const result = await page.evaluate(() => new Promise((resolve) => {
-    navigator.serviceWorker.addEventListener('controllerchange',
-      () => resolve('swapped'), { once: true });
-    navigator.serviceWorker.getRegistration().then((reg) => {
-      if (!reg) return resolve('no-registration');
-      reg.update();
-      // NOTE: No reg.waiting.postMessage({type:'SKIP_WAITING'}) —
-      // ward-helper's sw.js calls self.skipWaiting() unconditionally
-      // in the install handler, so postMessage is dead code here.
-      // Don't re-add it without re-verifying sw.js.
-    });
-    setTimeout(() => resolve('timeout-8s'), 8000);
-  }));
+  // 2. Counter BEFORE the try — a throwing evaluate counts as an attempt
+  //    so the 0.20-miss-rate alarm denominator doesn't under-report.
+  tally.chaosSwapAttempts = (tally.chaosSwapAttempts || 0) + 1;
 
-  await page.unroute('**/sw.js');
-
-  // 3. Telemetry — attempts always, timeouts on non-'swapped'.
-  ctx.chaosSwapAttempts = (ctx.chaosSwapAttempts || 0) + 1;
-  if (result !== 'swapped') ctx.chaosSwapTimeouts = (ctx.chaosSwapTimeouts || 0) + 1;
-  log(`chaos-sw-swap: ${result}`);
+  let result;
+  try {
+    // 3. Force re-check + race against 8s timeout. No SKIP_WAITING postMessage —
+    //    ward-helper's sw.js auto-skipWaitings (public/sw.js:6 v1.44.0).
+    result = await page.evaluate(() => new Promise((resolve) => {
+      navigator.serviceWorker.addEventListener('controllerchange',
+        () => resolve('swapped'), { once: true });
+      navigator.serviceWorker.getRegistration().then((reg) => {
+        if (!reg) return resolve('no-registration');
+        reg.update();
+      });
+      setTimeout(() => resolve('timeout-8s'), 8000);
+    }));
+    if (result !== 'swapped') {
+      tally.chaosSwapTimeouts = (tally.chaosSwapTimeouts || 0) + 1;
+    }
+    if (result !== 'swapped' && result !== 'no-registration') {
+      logBug('LOW', 'chaos-infra', 'chaos-sw-swap/result', `chaos-sw-swap: ${result}`);
+    }
+  } finally {
+    // 4. ALWAYS unroute, even on throw. .catch swallows if the page is
+    //    already closed (orchestrator hard-kill); leak is moot at that point.
+    //    Without this guard, a single thrown evaluate poisons every subsequent
+    //    tick that triggers an sw.js fetch — silent, non-deterministic.
+    await page.unroute('**/sw.js').catch(() => {});
+  }
+  return { ok: result === 'swapped', _botSubject: 'chaos-sw-swap', result };
 }
 ```
 
-### Component B — `CHAOS_MENU` slot 13
+### Component B — `CHAOS_MENU` slot 13 + call-site wrap
+
+The injector's signature `(page, tally, logBug)` doesn't match the standard `(page, browser, scenario, persona, guard, reportDir, logBug)` that the dispatcher passes (verified at `megaPersona.mjs:849` during plan-writing). The existing `chaos-random-click` entry already handles this by marking `fn` as a special string (`'__needs_scenario_logBug__'`) that the dispatcher pattern-matches at the call site. SW-swap follows the same pattern:
 
 ```js
 // In CHAOS_MENU array (megaPersona.mjs:712-730), append:
-{ weight: 1, name: 'chaos-sw-swap', fn: (p, _b, _s, _persona, ctx, log) => chaosSwapServiceWorker(p, log, ctx) },
+{ weight: 1, name: 'chaos-sw-swap', fn: '__needs_swap_telemetry__', _meta: 'sw-swap' },
+```
+
+And in `runPersona`'s dispatch (around line 846-849), extend the existing branch:
+
+```js
+if (picked.fn === '__needs_scenario_logBug__') {
+  result = await chaosRandomClick(page, persona, scenario.scenario_id, logBug);
+} else if (picked.fn === '__needs_swap_telemetry__') {
+  result = await chaosSwapServiceWorker(page, tally, logBug);
+} else {
+  result = await picked.fn(page, browser, scenario, persona, guard, reportDir, logBug);
+}
 ```
 
 Weight 1 matches the slowest existing chaos types (`chaos-midnight` w:2 holds 4s, `chaos-idb-quota` w:2). SW-swap can hold up to 8s + is invasive (the swapped SW persists across subsequent ticks until the next swap or page reload). Weight 1 means it fires roughly once per ~50 ticks per persona — enough coverage without dominating the run.
 
-**Signature note:** existing CHAOS_MENU entries take `(p, _b, _s, persona)` or similar; the SW-swap injector needs `ctx` (for counter telemetry) and `log` (for per-tick output). If the runPersona dispatcher doesn't already pass these, the implementation plan adds them — or wraps via closure in the menu entry. To-be-verified at plan-writing time against `runPersona` in `megaPersona.mjs:745+`.
-
 ### Component C — End-of-run `chaos-infra` alarm
 
-At persona-run teardown (after the action loop exits), one place:
+At persona-run teardown (after the action loop exits, before `await ctx.close()`), one place. Counter source is the per-persona `tally` object the dispatcher already mutates (verified at `megaPersona.mjs:862-872`); `logBug` signature is `(severity, scenarioId, locator, message)` per existing call at line 881:
 
 ```js
-const swapTotal = ctx.chaosSwapAttempts || 0;
-const swapMiss = ctx.chaosSwapTimeouts || 0;
+const swapTotal = tally.chaosSwapAttempts || 0;
+const swapMiss = tally.chaosSwapTimeouts || 0;
 if (swapTotal >= 10 && swapMiss / swapTotal > 0.20) {
-  logBug({
-    kind: 'chaos-infra',
-    msg: `SW-swap fired ${swapTotal - swapMiss}/${swapTotal} (${Math.round((1 - swapMiss/swapTotal) * 100)}%) — coverage gap, not app bug`,
-  });
+  const firedPct = Math.round((1 - swapMiss / swapTotal) * 100);
+  logBug('LOW', 'chaos-infra', `${persona.name}/chaos-sw-swap/coverage`,
+    `SW-swap fired ${swapTotal - swapMiss}/${swapTotal} (${firedPct}%) — coverage gap, not app bug`);
 }
 ```
 
-**`kind: 'chaos-infra'` is load-bearing.** It separates "chaos bot is broken" from "ward-helper is broken" in triage. Different on-call, different fix. Existing `logBug` callers use `kind: 'scenario-fail'` / `kind: 'unhandled-error'` / etc.; `chaos-infra` is a new kind.
+**`scenarioId: 'chaos-infra'` is load-bearing.** It separates "chaos bot is broken" from "ward-helper is broken" in triage. Different on-call, different fix. Existing `logBug` callers use scenarioIds like the real scenario_id (per line 881 `scenario.scenario_id`); `chaos-infra` is a new scenarioId reserved for harness self-telemetry.
+
+**Once-per-persona, not once-per-page:** `runPersona` creates a single `page` and never reassigns it (memo at `megaPersona.mjs:840`), so the teardown alarm fires exactly once per persona run. No need to gate with a `tally.chaosSwapAlarmed` boolean. If three personas run in parallel and all hit >20% miss, three alarms fire — correct signal (each persona's telemetry is independent).
 
 **Threshold rationale:**
 - N≥10 floor: don't false-alarm on a 3-tick smoke run.
