@@ -22,6 +22,7 @@ Mobile-first Hebrew-RTL PWA for SZMC ward rounds. Camera an AZMA screen → revi
 - Coverage: total statements 65.34%, branches 80.96% (UI gap by design — covered by Playwright `ward-helper-bot-v1`)
 - Tests pinned to `TZ=Asia/Jerusalem` via `cross-env` (added 2026-05-10 alongside the orthoCalc TZ-regression block)
 - Ortho-rehab UI live at `#/ortho` — calculators (POD / suture / DVT) + 8 reference accordions + 5 SOAP templates, all clipboard writes through `wrapForChameleon`
+- Email-to-self live: Save + Consult screens have a "Send by email" button (configure recipient in Settings → email field); routes via `src/notes/email.ts` → `send-note-email` Supabase Edge Function (`verify_jwt=true`, Gmail OAuth from `GMAIL_FROM`). Single-user-to-own-inbox is the documented PHI carve-out from the "no plaintext PHI off device" invariant — see header comment in `src/notes/email.ts`. Covered 100% by `tests/email.test.ts`.
 - See [IMPROVEMENTS.md](IMPROVEMENTS.md) for the full audit log
 
 ## Commands

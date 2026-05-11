@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { listBlocks } from '@/camera/session';
 import { runExtractTurn } from '@/agent/loop';
 import { loadSkills } from '@/skills/loader';
-import { applyRosterSeedFromStorage } from '@/notes/rosterSeed';
+import { applyRosterSeedFromStorageWithConfidence } from '@/notes/rosterSeed';
 import { isValidIsraeliTzLuhn } from '@/notes/israeliTz';
 import { pushBreadcrumb } from '../components/MobileDebugPanel';
 import type { ParseResult, ParseFields, Med } from '@/agent/tools';
@@ -143,12 +143,15 @@ export function Review() {
         // when the doctor came here via Today.tsx's roster card,
         // sessionStorage holds the RosterPatient identity. Merge it
         // into extract output (roster wins on identity, extract wins
-        // on clinical) so the doctor doesn't have to re-photograph
-        // the patient card. Same merge function the batch driver uses
-        // — single source of truth for the roster→SOAP wiring.
-        // One-shot read + clear inside the helper.
-        const mergedFields = applyRosterSeedFromStorage(result.fields);
-        setParsed(result);
+        // on clinical) AND override confidence to 'high' for fields
+        // the roster supplied — otherwise FieldRow flags every
+        // roster-sourced critical identity as "אישור ידני נדרש"
+        // because parsed.confidence['name'/'teudatZehut'/'age'] is
+        // undefined when extract never saw a card.
+        // (User-reported bug 2026-05-10 + mega-bot reproducer.)
+        const { fields: mergedFields, confidence: mergedConfidence } =
+          applyRosterSeedFromStorageWithConfidence(result.fields, result.confidence);
+        setParsed({ ...result, confidence: mergedConfidence });
         setFields(mergedFields);
         setStatus('ready');
       } catch (e: unknown) {

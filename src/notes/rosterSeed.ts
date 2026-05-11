@@ -23,27 +23,55 @@
  */
 
 import { mergeRosterIdentity } from './batchSoap';
-import type { ParseFields } from '@/agent/tools';
+import type { ParseFields, Confidence } from '@/agent/tools';
 import type { RosterPatient } from '@/storage/roster';
 
 const STORAGE_KEY = 'rosterSeed';
+
+/** Identity fields the roster contributes — these get high confidence when seeded. */
+const ROSTER_IDENTITY_KEYS = ['name', 'teudatZehut', 'age', 'sex', 'room'] as const;
 
 /**
  * Read + parse + clear sessionStorage's rosterSeed and apply it to
  * extract output. Returns extract unchanged when no seed (or bad seed)
  * is present. Always clears the storage entry so a back-and-forth
  * navigation doesn't double-apply or leak across patients.
+ *
+ * Backward-compatible wrapper around applyRosterSeedFromStorageWithConfidence.
+ * Existing callers that don't need confidence overrides still work; new
+ * callers (Review.tsx) should use the *WithConfidence variant so identity
+ * fields populated from the roster aren't flagged as "אישור ידני נדרש".
  */
 export function applyRosterSeedFromStorage(extract: ParseFields): ParseFields {
+  return applyRosterSeedFromStorageWithConfidence(extract, {}).fields;
+}
+
+/**
+ * Like applyRosterSeedFromStorage, but ALSO returns confidence overrides
+ * for fields populated from the roster.
+ *
+ * Roster identity is doctor-curated in the import-modal preview before
+ * setRoster lands — it deserves 'high' confidence. Without this, Review.tsx's
+ * FieldRow sees `confidence === undefined && critical=true` and renders
+ * "אישור ידני נדרש" on every roster-sourced identity field, forcing the
+ * doctor to manually re-confirm name/tz/age that they already imported.
+ *
+ * Mega-bot 2026-05-10 + user direct report 2026-05-10 confirmed this is
+ * the SOAP "re-prompt for ID" bug.
+ */
+export function applyRosterSeedFromStorageWithConfidence(
+  extract: ParseFields,
+  baseConfidence: Record<string, Confidence>,
+): { fields: ParseFields; confidence: Record<string, Confidence> } {
   let seedRaw: string | null;
   try {
     seedRaw = sessionStorage.getItem(STORAGE_KEY);
   } catch {
     // sessionStorage may throw in private/quota-exceeded contexts;
     // degrade silently to extract-as-is.
-    return extract;
+    return { fields: extract, confidence: baseConfidence };
   }
-  if (!seedRaw) return extract;
+  if (!seedRaw) return { fields: extract, confidence: baseConfidence };
   // Clear FIRST so a malformed JSON below also gets removed —
   // stale bad-JSON would block the merge for every subsequent extract.
   try {
@@ -53,9 +81,23 @@ export function applyRosterSeedFromStorage(extract: ParseFields): ParseFields {
   }
   try {
     const seed = JSON.parse(seedRaw) as RosterPatient;
-    return mergeRosterIdentity(seed, extract);
+    const fields = mergeRosterIdentity(seed, extract);
+    // For each identity key the seed actually contributed, override
+    // confidence to 'high'. Skip keys where the seed value is null/undefined
+    // — those didn't get filled by the roster, so extract's confidence stands.
+    const confidence: Record<string, Confidence> = { ...baseConfidence };
+    if (seed.name) confidence['name'] = 'high';
+    if (seed.tz) confidence['teudatZehut'] = 'high';
+    if (seed.age != null) confidence['age'] = 'high';
+    if (seed.sex) confidence['sex'] = 'high';
+    if (seed.room) confidence['room'] = 'high';
+    return { fields, confidence };
   } catch {
     // Bad JSON in storage — fall through with extract as-is.
-    return extract;
+    return { fields: extract, confidence: baseConfidence };
   }
 }
+
+// Suppress unused-import warning when the readonly tuple is only referenced
+// in JSDoc above. Touching it via Object.keys keeps the type live.
+void ROSTER_IDENTITY_KEYS;
