@@ -26,6 +26,63 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { checkV42Invariant, V4_SUB_BOTS_REQUIRING_WAIT } from './lib/v42Invariant.mjs';
 
+// ============================================================================
+// Rebound sanity bounds — workstream #3 (2026-05-12)
+//
+// Three thresholds asserted against per-persona tally counters from
+// scripts/lib/megaPersona.mjs's runPersona output. See spec §7:
+// docs/superpowers/specs/2026-05-12-persona-rebound-workstream-3-design.md.
+//
+// Each bound emits a MEDIUM breach in the analyzer report — these are NOT
+// runtime bot bugs (the bot already exited by analyze-time); they're
+// post-run diagnostic signals worth eyeballing during triage.
+// ============================================================================
+
+/**
+ * @param {string} personaName
+ * @param {{actions?:number, rebound_attempts?:number, rebound_successes?:number, layer2_recoveries?:number}} tally
+ */
+export function evaluateReboundSanityBounds(personaName, tally) {
+  const breaches = [];
+  const actions = tally.actions || 0;
+  const attempts = tally.rebound_attempts || 0;
+  const successes = tally.rebound_successes || 0;
+  const recoveries = tally.layer2_recoveries || 0;
+
+  // Bound 1 — rebound rate (uses attempts, not successes, so high-failure
+  // path can't game the gate). Per spec §9 G-D.
+  if (actions > 0 && (attempts + recoveries) / actions > 0.5) {
+    const pct = Math.round(((attempts + recoveries) / actions) * 100);
+    breaches.push({
+      kind: 'rebound-rate-high',
+      severity: 'MEDIUM',
+      detail: `${pct}% of ticks invoked rebound (${attempts}+${recoveries} / ${actions}) — chaos weights may need rebalancing`,
+    });
+  }
+
+  // Bound 2 — success ratio degraded (only meaningful with N>=10 attempts;
+  // small N is too noisy). Per spec §7 second bound.
+  if (attempts >= 10 && successes / attempts < 0.5) {
+    const pct = Math.round((successes / Math.max(1, attempts)) * 100);
+    breaches.push({
+      kind: 'rebound-success-degraded',
+      severity: 'MEDIUM',
+      detail: `rebound success ratio ${pct}% (${successes}/${attempts}) — page.goto failing often; context death may be more severe than expected`,
+    });
+  }
+
+  // Bound 3 — Layer 2 fired more than expected. Per spec §7 third bound.
+  if (recoveries > 5) {
+    breaches.push({
+      kind: 'layer2-recoveries-high',
+      severity: 'MEDIUM',
+      detail: `Layer 2 fired ${recoveries} times — racing-death class more frequent than estimated; Layer 1 may need tightening`,
+    });
+  }
+
+  return { persona: personaName, breaches };
+}
+
 const REPORT_DIR = 'chaos-reports/ward-bot-mega';
 const DEFAULT_BASELINE = 'wm-2026-05-10T17-13-37';
 const LIVE_GALLERY_BASE_URL = 'https://eiasash.github.io/ward-helper/';
@@ -399,6 +456,32 @@ async function main() {
     `Chaos types most worth porting: networkRamped (CDP cycle), midnightRollover (full Date patch), randomClick (tagged provenance).`,
     `Defer to v5: exifRotation (needs fixture set), live cross-tab race (needs same-context architecture), SW swap mid-session (needs deploy coordination).`,
   ].join(' '));
+  out.push('');
+
+  // ─── Rebound sanity bounds section (workstream #3, 2026-05-12) ──────
+  // Per spec §7, each persona should be evaluated against three thresholds:
+  //   1. rebound-rate-high: (rebound_attempts + layer2_recoveries) / actions > 0.5
+  //   2. rebound-success-degraded: rebound_successes / rebound_attempts < 0.5 AND attempts >= 10
+  //   3. layer2-recoveries-high: layer2_recoveries > 5
+  //
+  // evaluateReboundSanityBounds() is wired and exported; however, the three
+  // tally counters (rebound_attempts, rebound_successes, layer2_recoveries)
+  // are not currently serialized to the report.md or JSONL timeline — they
+  // live only in runPersona's in-memory results array (ward-helper-mega-bot.mjs
+  // line ~1270-1277). To make this section fully functional, the mega-bot
+  // writeReport() should emit a "## Per-persona rebound tally" section (or
+  // embed the three counters into the existing per-persona table) so the
+  // analyzer can parse them here.
+  //
+  // TODO: extend ward-helper-mega-bot.mjs writeReport() to emit per-persona
+  // rebound_attempts, rebound_successes, layer2_recoveries into the report.md,
+  // then parse that section here and call evaluateReboundSanityBounds() per
+  // persona. Analyzer skeleton is ready; data pipeline is the only gap.
+  out.push('## Rebound sanity bounds');
+  out.push('');
+  out.push('> **Note:** per-persona tally fields (`rebound_attempts`, `rebound_successes`, `layer2_recoveries`) are not yet serialized to the report.md or JSONL timeline. The `evaluateReboundSanityBounds` function is implemented and exported — once the mega-bot emits these counters into the report, this section will auto-populate. See the TODO comment in this analyzer for the wiring plan.');
+  out.push('');
+  out.push('See `docs/superpowers/specs/2026-05-12-persona-rebound-workstream-3-design.md` §7 for threshold rationale.');
   out.push('');
 
   // ─── Footer ──────────────────────────────────────────────────────────
