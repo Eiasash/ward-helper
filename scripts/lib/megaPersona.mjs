@@ -1086,10 +1086,17 @@ export async function runPersona({
 
   const t0 = Date.now();
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 }).catch(() => {});
+  const baseOrigin = new URL(url).origin;
+  const basePathname = new URL(url).pathname;
   await sleep(1200);
 
   let actionsThisCycle = 0;
   while (Date.now() - t0 < durationMs) {
+    // Layer 1 — top-of-tick guard. Per workstream #3 spec, see
+    // docs/superpowers/specs/2026-05-12-persona-rebound-workstream-3-design.md §3.
+    // Cheap pre-check; if off-base, rebounds to baseUrl before the action picker.
+    await reboundIfOffBase(page, baseOrigin, basePathname, url, tally);
+
     actionsThisCycle++;
     // Watchdog: 60s idle → soft recover, 180s → hard reload, 300s → bail
     if (guard.isIdle(300_000)) {
