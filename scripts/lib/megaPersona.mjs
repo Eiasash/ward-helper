@@ -1188,8 +1188,12 @@ export async function runPersona({
       // hundreds of retry-LOWs until the 300s idle watchdog finally fires.
       if (isPageDeadError(err)) {
         tally.pageClosedAt = actionsThisCycle;
-        logBug('HIGH', 'chaos-infra', `${persona.name}/page-closed`,
-          `persona bailed: page closed at tick ${actionsThisCycle} during ${picked.name} (${(err.message || String(err)).slice(0, 80)})`);
+        // Layer 2 — catch-block one-shot rebound. Per workstream #3 spec.
+        const result = await tryRecoverFromPageDeath(page, url, persona, picked, logBug, tally, err);
+        if (result === 'recovered') {
+          continue;
+        }
+        // result === 'unrecoverable' — already logged a HIGH page-closed-unrecoverable.
         break;
       }
       logBug('LOW', scenario.scenario_id, `${persona.name}/${picked.name}/exception`,
