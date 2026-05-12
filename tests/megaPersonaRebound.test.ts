@@ -180,6 +180,10 @@ describe('evaluateReboundSanityBounds', () => {
       // (70 + 6) / 100 = 0.76 > 0.5
     };
     const result = evaluateReboundSanityBounds('Dr. Test', tally);
-    expect(result.breaches.length).toBeGreaterThanOrEqual(3);
+    expect(result.breaches.length).toBe(3);
+    const kinds = result.breaches.map((b) => b.kind);
+    expect(kinds).toContain('rebound-rate-high');
+    expect(kinds).toContain('rebound-success-degraded');
+    expect(kinds).toContain('layer2-recoveries-high');
   });
 });

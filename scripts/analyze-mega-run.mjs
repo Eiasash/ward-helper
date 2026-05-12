@@ -50,7 +50,7 @@ export function evaluateReboundSanityBounds(personaName, tally) {
   const recoveries = tally.layer2_recoveries || 0;
 
   // Bound 1 — rebound rate (uses attempts, not successes, so high-failure
-  // path can't game the gate). Per spec §9 G-D.
+  // path can't game the gate). Per spec §7 first bound.
   if (actions > 0 && (attempts + recoveries) / actions > 0.5) {
     const pct = Math.round(((attempts + recoveries) / actions) * 100);
     breaches.push({
@@ -63,7 +63,7 @@ export function evaluateReboundSanityBounds(personaName, tally) {
   // Bound 2 — success ratio degraded (only meaningful with N>=10 attempts;
   // small N is too noisy). Per spec §7 second bound.
   if (attempts >= 10 && successes / attempts < 0.5) {
-    const pct = Math.round((successes / Math.max(1, attempts)) * 100);
+    const pct = Math.round((successes / attempts) * 100);
     breaches.push({
       kind: 'rebound-success-degraded',
       severity: 'MEDIUM',
