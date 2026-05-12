@@ -16,10 +16,9 @@
  * flags suspicious "N > N" numeric patterns as a dev warning.
  */
 
-const HEBREW_RE = /[\u0590-\u05FF]/;
-const LATIN_RE = /[A-Za-z]/;
-const RLM = '\u200F';
-const LRM = '\u200E';
+import { HEBREW_RE, LATIN_RE, BIDI_MARKS_RE, RLM, LRM } from './bidiMarks.mjs';
+
+export { BIDI_MARKS_RE };
 
 export function detectDir(s: string): 'rtl' | 'ltr' | 'neutral' {
   if (HEBREW_RE.test(s)) return 'rtl';
@@ -164,15 +163,100 @@ export function correctedCalcium(
 }
 
 /**
+ * Walk a string by character class and insert directional marks at every
+ * Hebrew\u2194Latin transition.
+ *
+ * 2026-05-12 (workstream a) \u2014 Replaces the prior `wrapForChameleon` Rule A
+ * (`(Latin-only)` \u2192 `(LRM Latin LRM)`) and Rule B (Latin run + Western
+ * punctuation \u2192 RLM before punct). Those two narrow patches missed the
+ * dominant case in clinical content: a Latin run followed by a SPACE
+ * then Hebrew (e.g., "ENOXAPARIN 20mg SC \u05E4\u05E2\u05DD \u05D1\u05D9\u05D5\u05DD"). The DVT prophylaxis
+ * defect surfaced by the bot's no-bidi detector on 2026-05-12 was a live
+ * case of this gap \u2014 manual repro confirmed zero bidi markers on the
+ * clipboard, 5 ward-helper clipboard paths affected.
+ *
+ * Algorithm: classify each character as Hebrew / Latin / neutral. Hebrew
+ * = U+0590..U+05FF (strong RTL). Latin = ASCII letters only (strong LTR).
+ * Digits are bidi-WEAK per UAX-9 rule W2 and inherit the run direction,
+ * so they classify as neutral \u2014 this preserves the `'\u05d2\u05d9\u05dc 92'` constraint
+ * (Hebrew text with embedded digits but no Latin letters needs no marks).
+ * Neutral = everything else (spaces, punctuation, parens, digits). On a
+ * transition between Hebrew and Latin (whether or not separated by
+ * neutrals), insert the appropriate mark BEFORE the new-direction
+ * character: RLM if entering Hebrew, LRM if entering Latin. Neutrals
+ * carry forward the prior class so transitions over whitespace and
+ * digit-runs are still detected.
+ *
+ * Idempotent: existing direction marks classify as their direction-
+ * equivalent class (RLM \u2192 hebrew, LRM \u2192 latin) for prev-state tracking,
+ * but we skip mark INSERTION before any direction-mark character. Without
+ * that skip, re-wrapping `'SC \u200f\u05e4\u05e2\u05dd'` would emit a second RLM before the
+ * existing one and duplicate markers would accumulate on every pass.
+ *
+ * Marker constants are parameterized via `options`. Default RLM/LRM is
+ * known-good in the legacy Chameleon EMR (Rule A and B emitted these
+ * in production through 2026-05-12). An FSI/PDI isolates mode is
+ * intentionally NOT implemented here \u2014 Chameleon's rendering of
+ * U+2068/U+2069 hasn't been manually verified; if it strips them or
+ * renders them as glyphs the "fix" would make paste worse than the bug.
+ * Migration path: add an isolates mode behind an explicit option,
+ * verify in Chameleon paste flow, then flip the default.
+ *
+ * @param text input string
+ * @param options.rlm right-to-left mark (default U+200F)
+ * @param options.lrm left-to-right mark (default U+200E)
+ * @returns text with marks inserted at Hebrew\u2194Latin transitions
+ */
+export function bidiWrap(
+  text: string,
+  options: { rlm?: string; lrm?: string } = {},
+): string {
+  if (!text || text.length === 0) return text;
+  const rlm = options.rlm ?? RLM;
+  const lrm = options.lrm ?? LRM;
+
+  // Strong-direction codepoints. Latin = ASCII letters only; digits are
+  // bidi-WEAK per UAX-9 (rule W2) and inherit the run direction, so we
+  // treat them as neutral here. That matches the `'\u05D2\u05D9\u05DC 92'` no-marker
+  // contract enforced by tests/r2-deeper-dig.test.ts:204.
+  //
+  // Existing direction marks are classified as their direction-equivalent
+  // class so a previously-wrapped string's prev state is preserved across
+  // them \u2014 BUT we additionally skip mark INSERTION before any direction
+  // mark character (see isDirMark below). Without that skip, re-wrapping
+  // `'SC \u200F\u05E4\u05E2\u05DD'` would emit a second RLM before the existing one and
+  // accumulate duplicates on every pass.
+  //
+  // RLM (U+200F) + ALM (U+061C) + RLI (U+2067) \u2192 'hebrew' (strongly RTL).
+  // LRM (U+200E) + LRI (U+2066) \u2192 'latin' (strongly LTR).
+  // FSI (U+2068) and PDI (U+2069) stay neutral; FSI's resolved direction
+  // depends on its first strong character and PDI is a closer.
+  type Klass = 'hebrew' | 'latin' | 'neutral';
+  function classify(ch: string): Klass {
+    if (/[\u0590-\u05FF\u200F\u061C\u2067]/.test(ch)) return 'hebrew';
+    if (/[A-Za-z\u200E\u2066]/.test(ch)) return 'latin';
+    return 'neutral';
+  }
+  const DIR_MARK_RE = /[\u200E\u200F\u061C\u2066\u2067\u2068\u2069]/;
+
+  let out = '';
+  let prev: Klass = 'neutral';
+  for (const ch of text) {
+    const klass = classify(ch);
+    if (klass !== 'neutral' && prev !== 'neutral' && klass !== prev && !DIR_MARK_RE.test(ch)) {
+      out += klass === 'hebrew' ? rlm : lrm;
+    }
+    out += ch;
+    if (klass !== 'neutral') prev = klass;
+  }
+  return out;
+}
+
+/**
  * Full clipboard-boundary transform: sanitize, then insert directional marks.
  */
 export function wrapForChameleon(text: string): string {
-  let out = sanitizeForChameleon(text);
-  // Rule A: (Latin-only content) -> (LRM Latin-only content LRM)
-  out = out.replace(/\(([^()\u0590-\u05FF]+)\)/g, (_, inner) => `(${LRM}${inner}${LRM})`);
-  // Rule B: English run followed by Western punctuation -> RLM before the punct
-  out = out.replace(/([A-Za-z][A-Za-z0-9 +\-/]{2,})([.,:;])/g, `$1${RLM}$2`);
-  return out;
+  return bidiWrap(sanitizeForChameleon(text));
 }
 
 /** Assert no unbalanced directional isolate marks (LRI/RLI/FSI vs PDI). */
