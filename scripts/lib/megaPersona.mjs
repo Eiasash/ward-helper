@@ -65,7 +65,7 @@ import { BIDI_MARKS_RE, HEBREW_RE, LATIN_RE } from '../../src/i18n/bidiMarks.mjs
 //
 // V5.1 adds the persona rebound mechanism (Layer 1 + Layer 2) and three
 // new per-persona tally fields: rebound_attempts, rebound_successes,
-// recoveries. Analyzer queries against pre-v5.1 timelines won't see these
+// layer2_recoveries. Analyzer queries against pre-v5.1 timelines won't see these
 // fields; treat missing as 0. NOT tied to the app version trinity.
 export const BOT_VERSION = 'v5.1.0';
 
@@ -135,7 +135,7 @@ export async function tryRecoverFromPageDeath(page, baseUrl, persona, picked, lo
     .then(() => true)
     .catch(() => false);
   if (recovered) {
-    tally.recoveries = (tally.recoveries || 0) + 1;
+    tally.layer2_recoveries = (tally.layer2_recoveries || 0) + 1;
     logBug('LOW', 'chaos-infra', `${persona.name}/page-closed-recovered`,
       `recovered from page-death during ${picked.name}`);
     return 'recovered';
@@ -1066,14 +1066,15 @@ export async function runPersona({
   const tally = {
     actions: 0,
     chaos: 0,
-    recoveries: 0,       // watchdog soft/hard recover + Layer 2 page-death rebound share this counter
+    recoveries: 0,       // watchdog soft/hard recover only (Layer 2 page-death rebound uses tally.layer2_recoveries — see helper above)
     errors: 0,
     byAction: {},
     byBotSubject: {},  // V4: per-sub-bot fire counts
     usefulActions: 0,  // V4: actions that returned ok:true (not skipped, not error)
     longtaskCount: 0,  // V4: from diagnostics counts
-    rebound_attempts: 0,   // V5.1 Layer 1: incremented before goto on off-base URL
-    rebound_successes: 0,  // V5.1 Layer 1: incremented after goto resolves
+    rebound_attempts: 0,     // V5.1 Layer 1: incremented before goto on off-base URL
+    rebound_successes: 0,    // V5.1 Layer 1: incremented after goto resolves
+    layer2_recoveries: 0,    // V5.1 Layer 2: incremented after successful page-death rebound
   };
 
   const t0 = Date.now();

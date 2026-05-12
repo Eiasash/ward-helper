@@ -13,7 +13,7 @@ export function reboundIfOffBase(
   baseOrigin: string,
   basePathname: string,
   baseUrl: string,
-  tally: { rebound_attempts: number; rebound_successes: number; recoveries: number },
+  tally: { rebound_attempts: number; rebound_successes: number },
 ): Promise<void>;
 
 export function tryRecoverFromPageDeath(
@@ -22,5 +22,5 @@ export function tryRecoverFromPageDeath(
   persona: { name: string },
   picked: { name: string },
   logBug: (sev: string, cat: string, name: string, msg: string) => void,
-  tally: { recoveries: number },
+  tally: { layer2_recoveries: number },
 ): Promise<'recovered' | 'unrecoverable'>;

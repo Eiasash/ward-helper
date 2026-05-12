@@ -12,7 +12,7 @@ function newTally() {
   return {
     rebound_attempts: 0,
     rebound_successes: 0,
-    recoveries: 0,
+    layer2_recoveries: 0,
   };
 }
 
@@ -80,7 +80,7 @@ describe('tryRecoverFromPageDeath (Layer 2)', () => {
     const picked = { name: 'admission' };
     const result = await tryRecoverFromPageDeath(page as any, BASE_URL, persona, picked, logBug, tally);
     expect(result).toBe('recovered');
-    expect(tally.recoveries).toBe(1);
+    expect(tally.layer2_recoveries).toBe(1);
     expect(logBug).toHaveBeenCalledWith(
       'LOW',
       'chaos-infra',
@@ -98,7 +98,7 @@ describe('tryRecoverFromPageDeath (Layer 2)', () => {
     const picked = { name: 'consult' };
     const result = await tryRecoverFromPageDeath(page as any, BASE_URL, persona, picked, logBug, tally);
     expect(result).toBe('unrecoverable');
-    expect(tally.recoveries).toBe(0);
+    expect(tally.layer2_recoveries).toBe(0);
     expect(logBug).toHaveBeenCalledWith(
       'HIGH',
       'chaos-infra',
