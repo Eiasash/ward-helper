@@ -24,6 +24,7 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { checkV42Invariant, V4_SUB_BOTS_REQUIRING_WAIT } from './lib/v42Invariant.mjs';
 
 // ============================================================================
@@ -508,4 +509,6 @@ async function main() {
   }
 }
 
-main().catch((e) => { console.error('fatal:', e); process.exitCode = 1; });
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  main().catch((e) => { console.error('fatal:', e); process.exitCode = 1; });
+}
