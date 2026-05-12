@@ -25,6 +25,30 @@
 
 import { sleep, rand, safeClick, safeFill, findByText, personaSleep, waitForSubject } from './megaPersona.mjs';
 
+/**
+ * Return local-date (YYYY-MM-DD) offset by `daysAgo` from now.
+ *
+ * 2026-05-12 — fix for `scenOrthoCalcMath` pod-wrong false-positive cascade.
+ * The prior `new Date(Date.now() - N*86400_000).toISOString().slice(0, 10)`
+ * returns the UTC date for the offset moment. At evening or early-morning
+ * hours in non-UTC timezones (Jerusalem UTC+2/+3 during the local-after-
+ * midnight, UTC-before-midnight window), UTC date can lag local date by
+ * one day. The bot then injected "yesterday-7d" into a date input that the
+ * app reads against local-today, producing a 1-day POD mismatch that
+ * cascaded as CRITICAL `pod-wrong` for every fire (15+ per 5-min fixture).
+ *
+ * `.toLocaleDateString('en-CA')` formats as YYYY-MM-DD in the LOCAL
+ * timezone, matching the app's local-day POD arithmetic. Pattern also
+ * used at subBotsV4.mjs:167 and megaPersona.mjs:899; this helper just
+ * makes it greppable + unit-testable.
+ *
+ * @param {number} daysAgo — non-negative integer; 0 returns today.
+ * @returns {string} YYYY-MM-DD in local time.
+ */
+export function localIsoDateOffset(daysAgo) {
+  return new Date(Date.now() - daysAgo * 86400_000).toLocaleDateString('en-CA');
+}
+
 // V4.2 — sub-bots that MUST call waitForSubject at the start of each iteration.
 // Source of truth for the per-sub-bot ratchet invariant in v42Invariant.mjs.
 // Co-located with the sub-bot definitions so adding/removing a v4 sub-bot
@@ -357,9 +381,9 @@ export async function scenOrthoCalcMath(page, _browser, scenario, persona, guard
     return { ok: false };
   }
 
-  // Compute today - 7 days as YYYY-MM-DD.
-  const sevenAgo = new Date(Date.now() - 7 * 86400_000);
-  const iso = sevenAgo.toISOString().slice(0, 10);
+  // Compute today - 7 days as YYYY-MM-DD in LOCAL time. See
+  // `localIsoDateOffset` jsdoc for the TZ failure mode this replaces.
+  const iso = localIsoDateOffset(7);
 
   // Fill the date input (aria-label="תאריך ניתוח").
   const dateInput = page.locator('input[type="date"][aria-label*="תאריך ניתוח"]').first();
