@@ -179,26 +179,34 @@ describe('CSP regression (R2)', () => {
 // ─────────────────────────────────────────────────────────────────────────
 
 describe('wrapForChameleon — drug + dose + Hebrew narrative (R2)', () => {
-  it('Hebrew narrative + brand drug name + ending punctuation gets RLM before the period', () => {
+  // 2026-05-12: the prior Rule A (LRM-bracket pure-Latin parens) + Rule B
+  // (RLM before trailing punctuation after Latin run) have been replaced by
+  // bidiWrap's structural run-tokenizer. The new contract: marks at
+  // Hebrew↔Latin transitions only — trailing punctuation is neutral and
+  // inherits the prior class, so no RLM-before-period. See bidi.test.ts
+  // for the full algorithm-level matrix.
+
+  it('Hebrew narrative + brand drug name: LRM before Latin run, no RLM before terminal punct', () => {
     const input = 'המטופלת קיבלה Eliquis.';
     const out = wrapForChameleon(input);
-    // English run >= 3 chars + ending punct -> RLM before punct
-    expect(out).toContain('Eliquis‏.');
+    expect(out).toBe('המטופלת קיבלה ‎Eliquis.');
   });
 
-  it('multiple English drug runs in one Hebrew paragraph each get RLM before their punctuation', () => {
+  it('multiple English drug runs in one Hebrew paragraph: LRM only before first Latin run', () => {
     const input = 'המטופלת קיבלה Eliquis, Coversyl, Crestor.';
     const out = wrapForChameleon(input);
-    // Comma-separated list — each run >= 3 chars triggers the RLM
-    expect(out).toMatch(/Eliquis‏,/);
-    expect(out).toMatch(/Coversyl‏,/);
-    expect(out).toMatch(/Crestor‏\./);
+    // Hebrew → comma/space → Latin → comma/space → Latin → ... → period.
+    // Commas and spaces are neutral, so prev stays latin across them — no
+    // further marks within the Latin sequence.
+    expect(out).toBe('המטופלת קיבלה ‎Eliquis, Coversyl, Crestor.');
   });
 
-  it('parenthesized pure-Latin dose gets LRM-bracketed inside the parens', () => {
+  it('parenthesized Latin dose in Hebrew context: LRM before first Latin LETTER (digits neutral)', () => {
     const input = 'הוחל טיפול (5 mg daily) בבית.';
     const out = wrapForChameleon(input);
-    expect(out).toContain('(‎5 mg daily‎)');
+    // "5" is digit-neutral (UAX-9 weak), so prev stays hebrew through "(5 ".
+    // First Hebrew→Latin transition is at "mg"; first Latin→Hebrew at "בבית".
+    expect(out).toBe('הוחל טיפול (5 ‎mg daily) ‏בבית.');
   });
 
   it('digits adjacent to Hebrew (no Latin) stay untouched (no spurious LRM)', () => {

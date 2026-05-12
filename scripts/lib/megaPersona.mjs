@@ -41,6 +41,14 @@ import {
   PERSONAS_V4,
   PersonaMemory,
 } from './personasV4.mjs';
+// 2026-05-12: shared bidi-mark constants. Importing BIDI_MARKS_RE from the
+// app-side single-source-of-truth (src/i18n/bidiMarks.mjs) keeps the bot's
+// "did wrapForChameleon emit a marker?" detector in lockstep with the app's
+// wrap mechanism. If the app later flips from RLM/LRM to FSI/PDI isolates,
+// the detector picks up the new chars automatically — without this import
+// the inline `includes('‏')` checks would silently false-negative every
+// clipboard from then on, masking a real regression as bot noise.
+import { BIDI_MARKS_RE } from '../../src/i18n/bidiMarks.mjs';
 
 // V4.2 — bumped from v4.1.0 because the JSONL timeline now carries two new
 // per-tick booleans (`waitForSubjectCalled`, `iterationCompleted`) and the
@@ -623,11 +631,9 @@ export async function scenAdmissionEmit(page, browser, scenario, persona, guard,
       try { return await navigator.clipboard.readText(); } catch (_) { return null; }
     }).catch(() => null);
     if (clip && clip.length > 0) {
-      const hasRlm = clip.includes('‏');
-      const hasLrm = clip.includes('‎');
-      if (!hasRlm && !hasLrm) {
+      if (!BIDI_MARKS_RE.test(clip)) {
         logBug('HIGH', scenario.scenario_id, `${persona.name}/admission/no-bidi`,
-          `clipboard ${clip.length} chars but no RLM/LRM — wrapForChameleon regression`);
+          `clipboard ${clip.length} chars but no UAX-9 directional marks — wrapForChameleon regression`);
       }
       const arrows = clip.match(/[→←↑↓]/g);
       if (arrows) {
@@ -712,9 +718,9 @@ export async function scenOrthoCalc(page, _browser, scenario, persona, guard, _r
       const clip = await page.evaluate(async () => {
         try { return await navigator.clipboard.readText(); } catch (_) { return null; }
       }).catch(() => null);
-      if (clip && clip.length > 0 && !clip.includes('‏') && !clip.includes('‎')) {
+      if (clip && clip.length > 0 && !BIDI_MARKS_RE.test(clip)) {
         logBug('HIGH', scenario.scenario_id, `${persona.name}/ortho/no-bidi`,
-          `DVT copy missing RLM/LRM — Chameleon will corrupt. Got ${clip.length} chars: "${clip.slice(0, 60)}"`);
+          `DVT copy missing UAX-9 directional marks — Chameleon will corrupt. Got ${clip.length} chars: "${clip.slice(0, 60)}"`);
       }
     }
   }
@@ -730,9 +736,9 @@ export async function scenOrthoCalc(page, _browser, scenario, persona, guard, _r
       const clip = await page.evaluate(async () => {
         try { return await navigator.clipboard.readText(); } catch (_) { return null; }
       }).catch(() => null);
-      if (clip && clip.length > 0 && !clip.includes('‏') && !clip.includes('‎')) {
+      if (clip && clip.length > 0 && !BIDI_MARKS_RE.test(clip)) {
         logBug('HIGH', scenario.scenario_id, `${persona.name}/ortho/template-no-bidi`,
-          `template copy missing RLM/LRM markers`);
+          `template copy missing UAX-9 directional marks`);
       }
     }
   }

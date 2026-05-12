@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   wrapForChameleon,
+  bidiWrap,
+  BIDI_MARKS_RE,
   detectDir,
   lintBidi,
   sanitizeForChameleon,
@@ -9,6 +11,11 @@ import {
   auditLabSection,
   correctedCalcium,
 } from '@/i18n/bidi';
+
+// U+200F RLM (right-to-left mark)
+const RLM = '‏';
+// U+200E LRM (left-to-right mark)
+const LRM = '‎';
 
 describe('bidi direction detection', () => {
   it('detects Hebrew vs English direction', () => {
@@ -24,41 +31,154 @@ describe('bidi direction detection', () => {
   });
 });
 
-describe('bidi directional marks', () => {
-  it('wraps Hebrew note with RLM after English run + ending punctuation', () => {
-    const input = 'המטופל קיבל Apixaban.';
-    const out = wrapForChameleon(input);
-    expect(out).toContain('Apixaban\u200F.');
-  });
-
-  it('wraps parenthesized Latin-only content with LRM', () => {
-    const input = 'הוחל טיפול (5 mg BID) בבית.';
-    const out = wrapForChameleon(input);
-    // BID is replaced by "פעמיים ביום" by the sanitizer, so the paren now contains Hebrew
-    // and LRM wrap does not apply. Test a pure-Latin paren instead:
-    const pureLatin = wrapForChameleon('הוחל טיפול (5 mg daily) בבית.');
-    expect(pureLatin).toContain('\u200E5 mg daily\u200E');
-    // And the BID version should still be Hebrew, without an LRM wrap:
-    expect(out).not.toContain('\u200EBID');
-    expect(out).toContain('פעמיים ביום');
-  });
-
-  it('does not wrap parens containing Hebrew', () => {
-    const input = 'הערה (זו הערה) חשובה.';
-    const out = wrapForChameleon(input);
-    expect(out).not.toContain('\u200Eזו');
-  });
-
-  it('leaves pure Hebrew prose unchanged when no Latin embedded', () => {
-    const input = 'המטופל ללא תלונות';
-    expect(wrapForChameleon(input)).toBe(input);
-  });
-
+// =========================================================================
+// bidiWrap — structural run-tokenizer algorithm
+// 2026-05-12: replaces the prior narrow Rule A + Rule B in wrapForChameleon.
+// Comprehensive boundary-class matrix; every case asserts EXACT output
+// string per the test-design discipline.
+// =========================================================================
+describe('bidiWrap — negative cases (output equals input untouched)', () => {
   it('returns empty string unchanged', () => {
-    expect(wrapForChameleon('')).toBe('');
+    expect(bidiWrap('')).toBe('');
+  });
+  it('returns single Latin char unchanged', () => {
+    expect(bidiWrap('A')).toBe('A');
+  });
+  it('returns single Hebrew char unchanged', () => {
+    expect(bidiWrap('א')).toBe('א');
+  });
+  it('returns single digit unchanged', () => {
+    expect(bidiWrap('7')).toBe('7');
+  });
+  it('returns digit-only run unchanged', () => {
+    expect(bidiWrap('09/06/26')).toBe('09/06/26');
+  });
+  it('returns pure Hebrew prose unchanged', () => {
+    expect(bidiWrap('המטופל ללא תלונות')).toBe('המטופל ללא תלונות');
+  });
+  it('returns pure Latin + digit content unchanged', () => {
+    expect(bidiWrap('ENOXAPARIN 20mg SC')).toBe('ENOXAPARIN 20mg SC');
+  });
+  it('returns pure whitespace unchanged', () => {
+    expect(bidiWrap('   ')).toBe('   ');
   });
 });
 
+describe('bidiWrap — positive boundary classes (exact-output assertions)', () => {
+  it('Latin → space → Hebrew inserts RLM before Hebrew run', () => {
+    expect(bidiWrap('SC פעם')).toBe('SC ‏פעם');
+  });
+  it('Hebrew → space → Latin inserts LRM before Latin run', () => {
+    expect(bidiWrap('פעם SC')).toBe('פעם ‎SC');
+  });
+  it('Latin → directly → Hebrew (no separator) inserts RLM at the boundary', () => {
+    expect(bidiWrap('SCפעם')).toBe('SC‏פעם');
+  });
+  it('Hebrew → directly → Latin (no separator) inserts LRM at the boundary', () => {
+    expect(bidiWrap('פעםSC')).toBe('פעם‎SC');
+  });
+  it('Hebrew → space → digit (no Latin letter) leaves text unchanged', () => {
+    // Digits are bidi-WEAK per UAX-9 rule W2 and inherit the run direction —
+    // classified as NEUTRAL here. With no Latin letter in the string, the
+    // algorithm sees no Hebrew↔Latin transition and emits no marks. This
+    // matches the existing `'גיל 92'` constraint in r2-deeper-dig:204.
+    expect(bidiWrap('עד 09')).toBe('עד 09');
+  });
+  it('Hebrew + digits only (no Latin) leaves text unchanged', () => {
+    expect(bidiWrap('גיל 92, סוכרת מסוג 2.')).toBe('גיל 92, סוכרת מסוג 2.');
+  });
+  it('Consecutive L↔H↔L chain inserts marks at each transition', () => {
+    expect(bidiWrap('A פעם B')).toBe('A ‏פעם ‎B');
+  });
+  it('Hebrew run inside parens surrounded by Latin: marks at transitions', () => {
+    expect(bidiWrap('RX (מינון) start')).toBe('RX (‏מינון) ‎start');
+  });
+  it('DVT canonical defect — full clinical string', () => {
+    // Single transition: Latin run (ENOXAPARIN 20mg SC) → space → Hebrew
+    // run (פעם ביום...). The trailing "09/06/26" is digit-only neutral and
+    // inherits the prior Hebrew class — no mark.
+    const input = 'ENOXAPARIN 20mg SC פעם ביום (המודיאליזה) עד 09/06/26';
+    expect(bidiWrap(input)).toBe(
+      'ENOXAPARIN 20mg SC ‏פעם ביום (המודיאליזה) עד 09/06/26',
+    );
+  });
+});
+
+describe('bidiWrap — idempotency (re-wrapping does not duplicate marks)', () => {
+  it('re-wrapping a previously-wrapped Latin→Hebrew is stable', () => {
+    const once = bidiWrap('SC פעם');
+    expect(bidiWrap(once)).toBe(once);
+  });
+  it('re-wrapping the DVT canonical case is stable', () => {
+    const once = bidiWrap('ENOXAPARIN 20mg SC פעם ביום (המודיאליזה) עד 09/06/26');
+    expect(bidiWrap(once)).toBe(once);
+  });
+  it('already-marked input does not gain a duplicate marker', () => {
+    const input = 'SC ‏פעם';
+    expect(bidiWrap(input)).toBe(input);
+  });
+});
+
+describe('bidiWrap — options.rlm/lrm parameterization', () => {
+  it('respects custom marker constants (forward-compat for future FSI/PDI gate)', () => {
+    const out = bidiWrap('SC פעם', { rlm: '[R]', lrm: '[L]' });
+    expect(out).toBe('SC [R]פעם');
+  });
+});
+
+describe('BIDI_MARKS_RE — recognizes all 7 UAX-9 directional marks', () => {
+  it('matches each of the 7 UAX-9 marks', () => {
+    expect(BIDI_MARKS_RE.test('‎')).toBe(true); // LRM
+    expect(BIDI_MARKS_RE.test('‏')).toBe(true); // RLM
+    expect(BIDI_MARKS_RE.test('؜')).toBe(true); // ALM
+    expect(BIDI_MARKS_RE.test('⁦')).toBe(true); // LRI
+    expect(BIDI_MARKS_RE.test('⁧')).toBe(true); // RLI
+    expect(BIDI_MARKS_RE.test('⁨')).toBe(true); // FSI
+    expect(BIDI_MARKS_RE.test('⁩')).toBe(true); // PDI
+  });
+  it('does NOT match Latin, Hebrew, digits, or common neutrals', () => {
+    expect(BIDI_MARKS_RE.test('A')).toBe(false);
+    expect(BIDI_MARKS_RE.test('z')).toBe(false);
+    expect(BIDI_MARKS_RE.test('א')).toBe(false);
+    expect(BIDI_MARKS_RE.test('ת')).toBe(false);
+    expect(BIDI_MARKS_RE.test('0')).toBe(false);
+    expect(BIDI_MARKS_RE.test(' ')).toBe(false);
+    expect(BIDI_MARKS_RE.test('.')).toBe(false);
+    expect(BIDI_MARKS_RE.test('(')).toBe(false);
+  });
+});
+
+describe('wrapForChameleon — end-to-end (sanitize + bidiWrap)', () => {
+  it('Latin-paren in Hebrew context: LRM before Latin run', () => {
+    // BID gets replaced by "פעמיים ביום" by the sanitizer first.
+    // After sanitize: 'הוחל טיפול (5 mg פעמיים ביום) בבית.'
+    // The "5" inside the paren is digit-neutral; prev stays hebrew through
+    // "(5 ". First Hebrew→Latin transition is at "mg" → LRM there. Then
+    // Latin→Hebrew at "פעמיים" → RLM there. Closing ") " is neutral; prev
+    // stays hebrew (from פעמיים ביום), so "בבית" sees no transition.
+    const out = wrapForChameleon('הוחל טיפול (5 mg BID) בבית.');
+    expect(out).toBe('הוחל טיפול (5 ‎mg ‏פעמיים ביום) בבית.');
+  });
+  it('inserts LRM before Latin word in paren (digits stay neutral)', () => {
+    // Same shape as above: LRM goes before the first Latin LETTER ("mg"),
+    // not before the digit-neutral "5". After "daily) ", prev=latin, so
+    // "בבית" gets RLM at the Latin→Hebrew transition.
+    const out = wrapForChameleon('הוחל טיפול (5 mg daily) בבית.');
+    expect(out).toBe('הוחל טיפול (5 ‎mg daily) ‏בבית.');
+  });
+  it('Hebrew-prose paren contains no Latin → no markers', () => {
+    expect(wrapForChameleon('הערה (זו הערה) חשובה.')).toBe('הערה (זו הערה) חשובה.');
+  });
+  it('leaves pure Hebrew prose unchanged when no Latin embedded', () => {
+    expect(wrapForChameleon('המטופל ללא תלונות')).toBe('המטופל ללא תלונות');
+  });
+  it('returns empty string unchanged', () => {
+    expect(wrapForChameleon('')).toBe('');
+  });
+  it('Hebrew note ending with Latin + period: LRM before Latin run (was RLM before period in old Rule B)', () => {
+    expect(wrapForChameleon('המטופל קיבל Apixaban.')).toBe('המטופל קיבל ‎Apixaban.');
+  });
+});
 describe('bidi linter', () => {
   it('flags unbalanced opening isolates', () => {
     const errors = lintBidi('\u2066some text without closing');
