@@ -39,6 +39,10 @@ import { createClient } from '@supabase/supabase-js';
 import { attachDiagnostics } from './lib/diagnostics.mjs';
 import { generatePatientChart, generateLabReportPng } from './lib/azmaImage.mjs';
 import { distortImage } from './lib/distortImage.mjs';
+// 2026-05-12: shared bidi-mark constants (single SoT — keeps detector in
+// lockstep with the app-side wrapForChameleon). See src/i18n/bidiMarks.mjs
+// header for rationale.
+import { BIDI_MARKS_RE } from '../src/i18n/bidiMarks.mjs';
 
 // iPhone 13: viewport 390x844, isMobile, hasTouch, deviceScaleFactor 3.
 // Real ward usage is mobile-first; the v1 380x800 desktop viewport missed
@@ -1160,14 +1164,13 @@ async function runAdmissionEmit(scenario, browser) {
       if (!clipText) {
         logBug('HIGH', scenario.scenario_id, 'admission-emit/clipboard-empty', 'clipboard.readText returned null/empty after copy');
       } else {
-        const hasRlm = clipText.includes('‏');
-        const hasLrm = clipText.includes('‎');
-        if (!hasRlm && !hasLrm) {
+        const hasBidiMark = BIDI_MARKS_RE.test(clipText);
+        if (!hasBidiMark) {
           logBug('HIGH', scenario.scenario_id, 'admission-emit/clipboard-no-bidi',
-            'wrapForChameleon regression: copied note has neither RLM nor LRM markers ' +
+            'wrapForChameleon regression: copied note has no UAX-9 directional marks ' +
             '— Chameleon paste will corrupt mixed Hebrew/English text');
         } else {
-          console.log(`  admission-emit: clipboard ✓ ${clipText.length} chars, RLM=${hasRlm} LRM=${hasLrm}`);
+          console.log(`  admission-emit: clipboard ✓ ${clipText.length} chars, hasBidiMark=true`);
         }
         // Also flag if the text contains the dangerous chars sanitizer should remove.
         const arrows = clipText.match(/[→←↑↓]/g);
