@@ -3,6 +3,7 @@ dist/
 .env
 .env.local
 *.log
+.audit_logs/
 .DS_Store
 
 # Emitted TS artifacts (we use vite for bundling; tsc is --noEmit only)
