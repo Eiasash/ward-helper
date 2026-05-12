@@ -9,7 +9,7 @@
  */
 
 export function reboundIfOffBase(
-  page: { url(): string; goto(url: string, opts?: object): Promise<unknown> },
+  page: { url(): string; goto(url: string, opts?: { waitUntil?: string; timeout?: number }): Promise<unknown> },
   baseOrigin: string,
   basePathname: string,
   baseUrl: string,
@@ -17,10 +17,11 @@ export function reboundIfOffBase(
 ): Promise<void>;
 
 export function tryRecoverFromPageDeath(
-  page: { goto(url: string, opts?: object): Promise<unknown> },
+  page: { goto(url: string, opts?: { waitUntil?: string; timeout?: number }): Promise<unknown> },
   baseUrl: string,
   persona: { name: string },
   picked: { name: string },
   logBug: (sev: string, cat: string, name: string, msg: string) => void,
   tally: { layer2_recoveries: number },
+  err?: unknown,
 ): Promise<'recovered' | 'unrecoverable'>;

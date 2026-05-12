@@ -128,9 +128,16 @@ export async function reboundIfOffBase(page, baseOrigin, basePathname, baseUrl, 
  * shape that replaces the old chaos-infra/page-closed HIGH (which now
  * only fires when Layer 2's goto itself throws).
  *
+ * @param page - Playwright Page (or shape-compatible mock for tests)
+ * @param baseUrl - the full BASE_URL string
+ * @param persona - persona descriptor with at least `.name`
+ * @param picked - action that was running when the page died (`.name` used in logs)
+ * @param logBug - telemetry emitter `(sev, cat, name, msg) => void`
+ * @param tally - the persona's tally object (mutated in place)
+ * @param {unknown} [err] - optional original error from the catch block; appended to the HIGH log message for diagnostics
  * @returns {Promise<'recovered'|'unrecoverable'>}
  */
-export async function tryRecoverFromPageDeath(page, baseUrl, persona, picked, logBug, tally) {
+export async function tryRecoverFromPageDeath(page, baseUrl, persona, picked, logBug, tally, err) {
   const recovered = await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 })
     .then(() => true)
     .catch(() => false);
@@ -141,7 +148,7 @@ export async function tryRecoverFromPageDeath(page, baseUrl, persona, picked, lo
     return 'recovered';
   }
   logBug('HIGH', 'chaos-infra', `${persona.name}/page-closed-unrecoverable`,
-    `persona bailed: rebound failed after page-death during ${picked.name}`);
+    `persona bailed: rebound failed after page-death during ${picked.name}: ${(err && (err.message || String(err))) || 'unknown'}`);
   return 'unrecoverable';
 }
 

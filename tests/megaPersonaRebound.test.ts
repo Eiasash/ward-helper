@@ -47,6 +47,17 @@ describe('reboundIfOffBase (Layer 1)', () => {
     expect(tally.rebound_successes).toBe(0);
   });
 
+  it('same-origin wrong-path: triggers rebound (origin matches but pathname does not)', async () => {
+    const tally = newTally();
+    const goto = vi.fn().mockResolvedValue(undefined);
+    // Same origin (https://eiasash.github.io) but different path — startsWith(basePathname) fails
+    const page = mockPage({ url: 'https://eiasash.github.io/some-other-app/#/whatever', goto });
+    await reboundIfOffBase(page as any, baseOrigin, basePathname, BASE_URL, tally);
+    expect(goto).toHaveBeenCalledWith(BASE_URL, expect.objectContaining({ waitUntil: 'domcontentloaded' }));
+    expect(tally.rebound_attempts).toBe(1);
+    expect(tally.rebound_successes).toBe(1);
+  });
+
   it('dead context: page.url throws → swallowed silently, no counter changes', async () => {
     const tally = newTally();
     const page = {
