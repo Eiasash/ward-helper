@@ -48,7 +48,7 @@ import {
 // the detector picks up the new chars automatically — without this import
 // the inline `includes('‏')` checks would silently false-negative every
 // clipboard from then on, masking a real regression as bot noise.
-import { BIDI_MARKS_RE } from '../../src/i18n/bidiMarks.mjs';
+import { BIDI_MARKS_RE, HEBREW_RE, LATIN_RE } from '../../src/i18n/bidiMarks.mjs';
 
 // V4.2 — bumped from v4.1.0 because the JSONL timeline now carries two new
 // per-tick booleans (`waitForSubjectCalled`, `iterationCompleted`) and the
@@ -165,6 +165,39 @@ export const SEL = {
 // ============================================================================
 // Recovery layer — soft-restart / hard-reload / kill
 // ============================================================================
+
+/**
+ * Detect Hebrew+Latin text written to the clipboard without bidi markers.
+ *
+ * 2026-05-12 — workstream (c). Replaces the two per-path no-bidi checks
+ * in scenOrthoCalc (DVT-copy + SOAP-template-copy) with a generic
+ * clipboard interceptor installed via addInitScript. Catches the same
+ * defect class across every ward-helper clipboard path the bot's flows
+ * happen to exercise (NoteEditor, NoteViewer, Consult, suture-removal,
+ * future paths) without per-path test infrastructure.
+ *
+ * Marker recognition uses BIDI_MARKS_RE — all 7 UAX-9 directional marks
+ * (LRM/RLM/ALM + LRI/RLI/FSI/PDI). The app currently emits only RLM/LRM
+ * (per wrapForChameleon's documented marker policy) but recognizing the
+ * full set means a future migration to FSI/PDI isolates won't silently
+ * regress this auditor into false-positives on every clipboard.
+ *
+ * Logic:
+ *   - text must be a non-empty string
+ *   - text must contain at least one Hebrew character (U+0590..U+05FF)
+ *   - text must contain at least one Latin letter (A-Z, a-z)
+ *   - text must NOT contain ANY of the 7 UAX-9 directional marks
+ *   - returns true (violation) iff all four conditions hold
+ *
+ * @param {unknown} text
+ * @returns {boolean}
+ */
+export function detectUnmarkedBidiMix(text) {
+  if (typeof text !== 'string' || text.length === 0) return false;
+  if (!HEBREW_RE.test(text)) return false;
+  if (!LATIN_RE.test(text)) return false;
+  return !BIDI_MARKS_RE.test(text);
+}
 
 /**
  * Detect page/context/browser-death errors that should short-circuit the
@@ -700,29 +733,29 @@ export async function scenSoapRound(page, browser, scenario, persona, guard, rep
   return { ok: true };
 }
 
-export async function scenOrthoCalc(page, _browser, scenario, persona, guard, _reportDir, logBug) {
+export async function scenOrthoCalc(page, _browser, _scenario, persona, guard, _reportDir, _logBug) {
   // Tuned 2026-05-10: targeted clicks on named ortho buttons instead of
   // random index spam. Mega-bot v1 produced 567 LOW false-positives on
   // /ortho because random-index clicking compounds with misclicker's 20%
   // off-center rate. Now we click DVT prophylaxis copy + the first SOAP
-  // template copy by aria-label, then verify clipboard markers.
+  // template copy by aria-label.
+  //
+  // 2026-05-12 — workstream (c): the per-path no-bidi checks that used to
+  // live here (DVT-copy + SOAP-template-copy) were removed when the
+  // global bidi-audit clipboard interceptor was installed in runPersona.
+  // The interceptor catches the same defect class on every clipboard
+  // path the bot exercises (5+ paths), so the per-path checks became
+  // duplicate findings.
   await page.evaluate(() => { window.location.hash = '#/ortho'; });
   await personaSleep(persona);
 
   // Click DVT prophylaxis copy button (aria-label="העתק פרופילקסיס DVT").
+  // The global bidi-audit interceptor records any RLM/LRM-less Hebrew+Latin
+  // clipboard write triggered by this click; runPersona drains + emits.
   const dvtBtn = page.locator('button[aria-label*="פרופילקסיס DVT"]').first();
   if ((await dvtBtn.count().catch(() => 0)) > 0) {
-    const result = await safeClick(page, persona, dvtBtn, 'ortho-dvt-copy', guard);
-    if (result.ok) {
-      await sleep(300);
-      const clip = await page.evaluate(async () => {
-        try { return await navigator.clipboard.readText(); } catch (_) { return null; }
-      }).catch(() => null);
-      if (clip && clip.length > 0 && !BIDI_MARKS_RE.test(clip)) {
-        logBug('HIGH', scenario.scenario_id, `${persona.name}/ortho/no-bidi`,
-          `DVT copy missing UAX-9 directional marks — Chameleon will corrupt. Got ${clip.length} chars: "${clip.slice(0, 60)}"`);
-      }
-    }
+    await safeClick(page, persona, dvtBtn, 'ortho-dvt-copy', guard);
+    await sleep(300);
   }
 
   // Click first SOAP-template copy button (aria-label starts with "העתק תבנית").
@@ -730,17 +763,8 @@ export async function scenOrthoCalc(page, _browser, scenario, persona, guard, _r
   const tN = await tplBtns.count().catch(() => 0);
   if (tN > 0) {
     const idx = Math.floor(Math.random() * tN);
-    const result = await safeClick(page, persona, tplBtns.nth(idx), `ortho-tpl-${idx}`, guard);
-    if (result.ok) {
-      await sleep(300);
-      const clip = await page.evaluate(async () => {
-        try { return await navigator.clipboard.readText(); } catch (_) { return null; }
-      }).catch(() => null);
-      if (clip && clip.length > 0 && !BIDI_MARKS_RE.test(clip)) {
-        logBug('HIGH', scenario.scenario_id, `${persona.name}/ortho/template-no-bidi`,
-          `template copy missing UAX-9 directional marks`);
-      }
-    }
+    await safeClick(page, persona, tplBtns.nth(idx), `ortho-tpl-${idx}`, guard);
+    await sleep(300);
   }
   return { ok: true };
 }
@@ -906,6 +930,53 @@ export async function runPersona({
       localStorage.setItem('ward-helper.lastArchivedDate', yesterday);
     } catch (_) {}
   }, { emailTarget: emailTarget || 'bot+test@example.com' });
+
+  // 2026-05-12 — workstream (c) bidi-audit clipboard interceptor.
+  // Covers every clipboard write the bot's flows trigger, including paths
+  // (NoteEditor, NoteViewer, Consult, suture-removal) that the existing
+  // per-path scenOrthoCalc check doesn't reach. Records findings into a
+  // window-attached buffer; runPersona drains the buffer each tick and
+  // emits HIGH bugs.
+  //
+  // Marker recognition uses all 7 UAX-9 directional marks (LRM/RLM/ALM
+  // + LRI/RLI/FSI/PDI). The app currently emits RLM/LRM only via
+  // wrapForChameleon, but recognizing the full set means a future
+  // migration to FSI/PDI isolates won't silently regress this auditor
+  // into false-positives on every clipboard.
+  //
+  // The page-side function mirrors `detectUnmarkedBidiMix`. The regex
+  // sources must match — both this script and the exported helper draw
+  // from BIDI_MARKS_RE in src/i18n/bidiMarks.mjs (the cross-runtime
+  // single source of truth). Embed the regexes by source so addInitScript
+  // can serialize them across the context boundary.
+  const auditScript = (regexes) => {
+    if (typeof window === 'undefined' || !navigator?.clipboard?.writeText) return;
+    if (window.__chaosBidiAuditor) return;
+    window.__chaosBidiAuditor = { findings: [] };
+    const HEB = new RegExp(regexes.hebrew);
+    const LAT = new RegExp(regexes.latin);
+    const MARK = new RegExp(regexes.marks);
+    const origWriteText = navigator.clipboard.writeText.bind(navigator.clipboard);
+    navigator.clipboard.writeText = async function (text) {
+      try {
+        if (typeof text === 'string' && text.length > 0
+            && HEB.test(text) && LAT.test(text) && !MARK.test(text)) {
+          window.__chaosBidiAuditor.findings.push({
+            ts: Date.now(),
+            length: text.length,
+            sample: text.slice(0, 100),
+            location: (typeof window.location !== 'undefined' && window.location.hash) || '',
+          });
+        }
+      } catch (_) { /* never let the audit break the real write */ }
+      return origWriteText(text);
+    };
+  };
+  await ctx.addInitScript(auditScript, {
+    hebrew: HEBREW_RE.source,
+    latin: LATIN_RE.source,
+    marks: BIDI_MARKS_RE.source,
+  });
   const page = await ctx.newPage();
   attachDiagnostics(page, scenario.scenario_id, logBug);
 
@@ -1028,6 +1099,28 @@ export async function runPersona({
       // Soft-recover after exception so next iteration starts clean.
       await guard.softRecover().catch(() => {});
     }
+
+    // 2026-05-12 — workstream (c) bidi-audit drain. Pulls any clipboard
+    // findings the in-page interceptor recorded during this tick's action.
+    // Emits HIGH once per finding with `location` = page hash at time of
+    // write, so triage can attribute to the originating UI surface
+    // (#/ortho, #/capture, #/history, #/consult, etc.) without per-path
+    // sub-bot instrumentation. Wrap in try/catch — a dead page is handled
+    // by the page-closed short-circuit above.
+    try {
+      const bidiFindings = await page.evaluate(() => {
+        const buf = window.__chaosBidiAuditor;
+        if (!buf || !Array.isArray(buf.findings) || buf.findings.length === 0) return [];
+        const out = buf.findings.slice();
+        buf.findings.length = 0;
+        return out;
+      }).catch(() => []);
+      for (const f of bidiFindings) {
+        tally.bidiAuditFindings = (tally.bidiAuditFindings || 0) + 1;
+        logBug('HIGH', 'ward-helper', `${persona.name}/bidi-audit/no-markers`,
+          `clipboard write missing RLM/LRM markers at ${f.location || '<unknown>'}: "${(f.sample || '').slice(0, 60)}" (${f.length} chars)`);
+      }
+    } catch (_) { /* drain failure is non-fatal; next tick retries */ }
 
     // Battery saver persona: every 8 actions, simulate phone sleep.
     if (persona.sleepCycleEvery && actionsThisCycle % persona.sleepCycleEvery === 0) {
