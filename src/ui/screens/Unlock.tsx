@@ -59,14 +59,30 @@ export function Unlock({ onUnlocked }: Props = {}): JSX.Element {
     setBusy(true);
     const outcome: PhiUnlockOutcome = await attemptPhiUnlockWithPassword(password);
     setBusy(false);
+    // v1.46.1: explicit branch per outcome variant. Default-fallthrough
+    // is the bug class we just memory-folded (see ward-helper B2.2 review);
+    // every kind gets an explicit branch and the unreachable tail still
+    // fails-closed.
     if (outcome.kind === 'ok' || outcome.kind === 'already-unlocked') {
       setPassword('');
       onUnlocked?.();
       return;
     }
-    if (outcome.kind === 'backfill-failed') {
+    if (outcome.kind === 'wrong-password') {
+      // The verify-probe inside attemptPhiUnlockWithPassword tested the
+      // derived key against on-disk sealed rows and got zero successful
+      // decrypts. The key was cleared from memory before returning, so
+      // hasPhiKey() is back to false; the gate stays mounted naturally.
       setError('סיסמה שגויה — נסה שוב.');
       setPassword('');
+      return;
+    }
+    if (outcome.kind === 'backfill-failed') {
+      // Genuine system error (IDB read failed, probe threw, backfill
+      // sweep threw). Be honest about it — pre-v1.46.1 we displayed
+      // "סיסמה שגויה" here which was wrong; that case now has its own
+      // 'wrong-password' branch above.
+      setError(`שגיאה במערכת: ${outcome.error.message}`);
       return;
     }
     if (outcome.kind === 'no-user') {
@@ -74,6 +90,7 @@ export function Unlock({ onUnlocked }: Props = {}): JSX.Element {
       return;
     }
     // 'no-password' is impossible here (we just passed one in).
+    // Any other kind = type-system regression caller — fail-closed.
     setError('שגיאה לא צפויה. נסה שוב.');
   }
 
