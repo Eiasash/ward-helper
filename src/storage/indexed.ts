@@ -2,6 +2,12 @@ import { openDB, type IDBPDatabase } from 'idb';
 
 import type { SafetyFlags } from '@/safety/types';
 import { notifyNotesChanged } from '@/ui/hooks/glanceableEvents';
+import {
+  decryptRowIfEncrypted,
+  decryptRowsIfEncrypted,
+  type SealedNoteRow,
+  type SealedPatientRow,
+} from '@/crypto/phiRow';
 
 export type NoteType = 'admission' | 'discharge' | 'consult' | 'case' | 'soap' | 'census';
 
@@ -362,7 +368,14 @@ export async function upsertPatientByTz(p: Omit<Patient, 'id'>): Promise<Patient
 }
 
 export async function listPatients(): Promise<Patient[]> {
-  return (await getDb()).getAll('patients');
+  // PR-B2.1: route through the read seam. Under flag-off + no encrypted
+  // rows (B2.1's world) the helper's fast path returns the raw array
+  // unchanged (byte-equal to today). Under flag-on (B2.2's world) any
+  // encrypted-shape rows decrypt here; that's the seam.
+  const rows = (await (await getDb()).getAll('patients')) as Array<
+    Patient | SealedPatientRow
+  >;
+  return decryptRowsIfEncrypted<Patient>(rows, 'patient');
 }
 
 export async function putNote(n: Note): Promise<void> {
@@ -371,7 +384,14 @@ export async function putNote(n: Note): Promise<void> {
 
 export async function listNotes(patientId: string): Promise<Note[]> {
   const db = await getDb();
-  return db.getAllFromIndex('notes', 'by-patient', patientId);
+  // PR-B2.1: by-patient index keys on patientId (plaintext, non-PII, kept
+  // at row top-level even on the post-B2.2 encrypted SealedNoteRow shape).
+  // The index lookup itself doesn't need to change; only the row values
+  // returned from it pass through the decryption seam.
+  const rows = (await db.getAllFromIndex('notes', 'by-patient', patientId)) as Array<
+    Note | SealedNoteRow
+  >;
+  return decryptRowsIfEncrypted<Note>(rows, 'note');
 }
 
 /**
@@ -381,15 +401,30 @@ export async function listNotes(patientId: string): Promise<Note[]> {
  * getAll is strictly cheaper than N index scans.
  */
 export async function listAllNotes(): Promise<Note[]> {
-  return (await getDb()).getAll('notes');
+  // PR-B2.1: cross the read seam (see listPatients for rationale).
+  const rows = (await (await getDb()).getAll('notes')) as Array<Note | SealedNoteRow>;
+  return decryptRowsIfEncrypted<Note>(rows, 'note');
 }
 
 export async function getNote(id: string): Promise<Note | undefined> {
-  return (await getDb()).get('notes', id);
+  // PR-B2.1: point read through the seam. Decrypt-failure null is coerced
+  // to undefined to preserve the existing call-site signature (callers
+  // already handle `undefined` as "not found"). B2.2 will add the visible
+  // "1 record couldn't be loaded" UX affordance for the null branch.
+  const raw = (await (await getDb()).get('notes', id)) as Note | SealedNoteRow | undefined;
+  const result = await decryptRowIfEncrypted<Note>(raw, 'note');
+  return result ?? undefined;
 }
 
 export async function getPatient(id: string): Promise<Patient | undefined> {
-  return (await getDb()).get('patients', id);
+  // PR-B2.1: point read through the seam. Same null→undefined coercion
+  // rationale as getNote above.
+  const raw = (await (await getDb()).get('patients', id)) as
+    | Patient
+    | SealedPatientRow
+    | undefined;
+  const result = await decryptRowIfEncrypted<Patient>(raw, 'patient');
+  return result ?? undefined;
 }
 
 export async function deleteNote(id: string): Promise<void> {
@@ -505,12 +540,20 @@ export async function listNotesByTeudatZehut(
 ): Promise<{ patient: Patient | null; notes: Note[] }> {
   const tz = teudatZehut.trim();
   if (!tz) return { patient: null, notes: [] };
-  const db = await getDb();
-  // v7+: by-tz index dropped; full-scan patients + JS filter. The
-  // by-patient index on notes survives (patientId is a random UUID,
-  // non-PII) — once we know the patient id(s) the notes lookup is
-  // still O(log N) per match.
-  const allPatients = (await db.getAll('patients')) as Patient[];
+  // PR-B2.1: route through listPatients() + listNotes() so this site
+  // crosses the encryption seam. Pre-B2.1 this function did
+  // `db.getAll('patients')` + `db.getAllFromIndex('notes', 'by-patient',
+  // p.id)` direct — the PR #166 review caught that the direct
+  // getAll-patients bypassed listPatients, and the design pin
+  // generalized to "every read site must cross the seam." Routing
+  // through listPatients fixes the bypass; routing the per-match note
+  // lookup through listNotes() fixes the same bypass on the by-patient
+  // side. The by-patient index itself keeps working — patientId stays
+  // plaintext top-level on encrypted rows (SealedNoteRow).
+  //
+  // v7+: by-tz index dropped (PR-B1); listPatients() returns a full
+  // scan that we filter by teudatZehut in JS. ~30ms at ward scale.
+  const allPatients = await listPatients();
   const matches = allPatients.filter((p) => p.teudatZehut === tz);
   if (matches.length === 0) return { patient: null, notes: [] };
   matches.sort((a, b) => b.updatedAt - a.updatedAt);
@@ -519,9 +562,7 @@ export async function listNotesByTeudatZehut(
   // where two patient rows share a teudatZehut from a prior index-era
   // miss-split; combined notes are returned so continuity / banner show
   // the union).
-  const notesByPatient = await Promise.all(
-    matches.map((p) => db.getAllFromIndex('notes', 'by-patient', p.id)),
-  );
-  const notes = notesByPatient.flat() as Note[];
+  const notesByPatient = await Promise.all(matches.map((p) => listNotes(p.id)));
+  const notes = notesByPatient.flat();
   return { patient, notes };
 }
