@@ -1,6 +1,27 @@
 #!/usr/bin/env node
 /**
- * test-page-dead-shortcircuit.mjs
+ * test-page-dead-shortcircuit.mjs — manual integration test of the PR #150
+ * page-dead short-circuit contract.
+ *
+ * IMPORTANT (2026-05-12, post-Task-3 of persona rebound workstream): this
+ * script simulates the catch block's behavior PRIOR to Task 3 of the
+ * persona-rebound workstream (commit 2bc6bed). Pre-Task-3, the catch block
+ * emitted a HIGH `chaos-infra/page-closed` bug and bailed via `break`.
+ * Post-Task-3, the catch block calls `tryRecoverFromPageDeath` which emits
+ * either `page-closed-recovered` (LOW, on rebound success) or
+ * `page-closed-unrecoverable` (HIGH, on rebound failure), and the loop
+ * may `continue` instead of `break`.
+ *
+ * The simulation in this script does NOT exercise the new Layer 2 rebound
+ * path. Its assertions happen to pass under the new contract by virtue of
+ * `.includes('page-closed')` substring matching, but for the wrong reason
+ * (no rebound attempt is made). To test the new contract, see the unit
+ * tests in `tests/megaPersonaRebound.test.ts` (covers both helper paths
+ * in isolation) plus the live `npm test` suite.
+ *
+ * Retained as historical regression coverage for the bare-bail short-circuit
+ * design. If a future change makes this file conflict with new bot logic,
+ * delete it rather than retrofit — its semantics are now obsolete.
  *
  * 2026-05-12 — workstream #2 fallback test. Pre-committed in
  * STAGE3_GATES_2026-05-11.md: if the 5-min fixture produces 0 natural
