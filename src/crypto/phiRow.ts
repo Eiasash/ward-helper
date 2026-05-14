@@ -155,7 +155,16 @@ export async function decryptRowIfEncrypted<T>(
   if (row === null || row === undefined) return row;
   if (!isEncryptedRow(row)) return row as T;
   const { unsealRow } = await import('./phi');
-  return unsealRow<T>({ iv: row.enc.iv, ciphertext: row.enc.ciphertext });
+  const result = await unsealRow<T>({ iv: row.enc.iv, ciphertext: row.enc.ciphertext });
+  if (result === null) {
+    // Decrypt failure: most likely cause is "user changed login password
+    // since this row was sealed" or "row's ciphertext is corrupt." We
+    // surface a session-scoped count so the banner can prompt the user
+    // toward a cloud-restore. The row itself is dropped (caller treats
+    // null as "not found" downstream).
+    incrementDecryptFailureCount();
+  }
+  return result;
 }
 
 /**
@@ -213,4 +222,126 @@ export function isPhiEncryptV7Enabled(): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Flip the localStorage flag on. Called by the B2.2 backfill runner after
+ * sealing existing rows AND writing the durable `Settings.phiEncryptedV7`
+ * sentinel — never before, never independently. The sentinel is the
+ * source of truth; the localStorage flag is the per-tab fast-path that
+ * the write seams consult.
+ */
+export function setPhiEncryptV7Enabled(): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(PHI_ENCRYPT_V7_LS_KEY, '1');
+    }
+  } catch {
+    /* localStorage unavailable — sentinel still holds; next session reads it */
+  }
+}
+
+// ─── Decrypt-failure counter (PR-B2.2 UX surface) ─────────────────────
+
+/**
+ * Session-scoped count of rows that hit `unsealRow → null` during this
+ * session. Reset on every page reload (not persisted). The banner reads
+ * this via `getDecryptFailureCount()` and re-renders on the
+ * `'ward-helper:phi-decrypt-fail'` event.
+ *
+ * Why a count and not just a boolean: a single decrypt failure could be
+ * a corrupted row, but tens of failures usually point at a wrong-key
+ * scenario (password changed mid-flight; password-rotation guard in
+ * commit-5 prevents this for change-password specifically, but defensive
+ * tracking for any other cause). The number helps the user judge
+ * "is this a stray row, or is everything broken?"
+ *
+ * Reset paths: `clearDecryptFailureCount()` is called after a successful
+ * cloud restore (when re-pulled rows replace the broken ones) and on
+ * fresh logout.
+ */
+let _decryptFailureCount = 0;
+const PHI_DECRYPT_FAIL_EVENT = 'ward-helper:phi-decrypt-fail';
+
+function incrementDecryptFailureCount(): void {
+  _decryptFailureCount++;
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(PHI_DECRYPT_FAIL_EVENT));
+  }
+}
+
+export function getDecryptFailureCount(): number {
+  return _decryptFailureCount;
+}
+
+export function clearDecryptFailureCount(): void {
+  if (_decryptFailureCount === 0) return;
+  _decryptFailureCount = 0;
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(PHI_DECRYPT_FAIL_EVENT));
+  }
+}
+
+export function subscribeDecryptFailureChanges(handler: () => void): () => void {
+  if (typeof window === 'undefined') return () => {};
+  window.addEventListener(PHI_DECRYPT_FAIL_EVENT, handler);
+  return () => window.removeEventListener(PHI_DECRYPT_FAIL_EVENT, handler);
+}
+
+// ─── Write-path wrap helpers (PR-B2.2) ────────────────────────────────
+
+/**
+ * Seal a Patient row for write. The caller decides via
+ * `isPhiEncryptV7Enabled()` whether to pass the plaintext row through
+ * `put` directly, OR through this wrapper. The wrapper unconditionally
+ * seals — it does NOT consult the flag — so a caller that picks this
+ * branch commits to writing the encrypted envelope shape.
+ *
+ * Shape produced: `{ id, enc }` where `id` is preserved at top level so
+ * the IDB `patients` keyPath continues to resolve. Every other PHI
+ * field (name, teudatZehut, dob, ...) lives inside `enc` as a sealed
+ * JSON blob.
+ *
+ * Throws if no PHI key is set (delegated from `sealRow`) — same
+ * contract as the read seam's `unsealRow` returning null. A caller
+ * that reaches this without a key has a programming bug; the throw is
+ * loud rather than silent.
+ *
+ * Imports `sealRow` dynamically to mirror the read seam's cycle break.
+ * After first call the module is cached, so subsequent calls pay only
+ * the function-call cost (not the dynamic-import overhead).
+ */
+export async function wrapPatientForWrite(
+  p: { id: string } & object,
+): Promise<SealedPatientRow> {
+  const { sealRow } = await import('./phi');
+  const enc = await sealRow(p);
+  return { id: p.id, enc };
+}
+
+/**
+ * Seal a Note row for write. patientId stays at row top level so the
+ * `notes.by-patient` index continues to function after encryption — the
+ * index keys on `patientId` (plaintext, non-PII UUID), and that index
+ * is load-bearing for every per-patient note lookup in the app.
+ */
+export async function wrapNoteForWrite(
+  n: { id: string; patientId: string } & object,
+): Promise<SealedNoteRow> {
+  const { sealRow } = await import('./phi');
+  const enc = await sealRow(n);
+  return { id: n.id, patientId: n.patientId, enc };
+}
+
+/**
+ * Seal a Roster row for write. Same shape as patients — id at top,
+ * everything else inside `enc`. No surviving index on the roster store
+ * (bounded <50 rows, full scan).
+ */
+export async function wrapRosterForWrite(
+  r: { id: string } & object,
+): Promise<SealedRosterRow> {
+  const { sealRow } = await import('./phi');
+  const enc = await sealRow(r);
+  return { id: r.id, enc };
 }

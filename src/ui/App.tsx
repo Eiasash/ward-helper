@@ -1,6 +1,11 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { HashRouter, Routes, Route, NavLink } from 'react-router-dom';
-import { loadPersistedLoginPassword, getLastLoginPasswordOrNull } from '@/auth/auth';
+import {
+  loadPersistedLoginPassword,
+  getLastLoginPasswordOrNull,
+  subscribeAuthChanges,
+} from '@/auth/auth';
+import { attemptPhiUnlock, clearPhiKeyOnLogout } from '@/auth/phiUnlock';
 import { ageOutRoster } from '@/storage/roster';
 import { pushLatestDaySnapshotIfEnabled } from '@/storage/daySnapshotsCloud';
 import { pushBreadcrumb } from './components/MobileDebugPanel';
@@ -12,10 +17,13 @@ import { Settings } from './screens/Settings';
 import { Today } from './screens/Today';
 import { Consult } from './screens/Consult';
 import OrthoQuickref from './screens/OrthoQuickref';
+import { Unlock } from './screens/Unlock';
 import { HeaderStrip } from './components/HeaderStrip';
 import { PostLoginRestorePrompt } from './components/PostLoginRestorePrompt';
 import { MobileDebugPanel } from './components/MobileDebugPanel';
 import { MorningArchivePrompt } from './components/MorningArchivePrompt';
+import { DecryptFailureBanner } from './components/DecryptFailureBanner';
+import { usePhiGateState } from './hooks/usePhiGateState';
 
 // Lazy-loaded routes. Cold start usually lands on /today or /capture; the
 // three below are not on the hot path, so splitting them out trims the
@@ -44,6 +52,11 @@ declare const __APP_VERSION__: string;
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
 
 export function App() {
+  // PR-B2.2 cold-start gate. Derives one of {loading, guest, unlocked, locked}.
+  // When 'locked' we render <Unlock /> IN PLACE OF <Routes> so encrypted
+  // patients/notes/roster aren't accessed by any route until the user has
+  // typed their password and the PHI key is derived.
+  const phiGateState = usePhiGateState();
   // v1.35.2: rehydrate the in-memory login-password stash from IDB on app
   // boot. The auth session is already persisted in localStorage so the user
   // appears logged in across reloads — but the cloud encryption key (login
@@ -94,10 +107,61 @@ export function App() {
         pushBreadcrumb('boot.roster.ageOut.err', (e as Error).message ?? 'unknown');
       });
 
-    if (getLastLoginPasswordOrNull() !== null) return; // already in memory
-    loadPersistedLoginPassword().then((p) => {
-      pushBreadcrumb('boot.loadPersistedPwd', { hadPersisted: p !== null });
+    // Cold-start PHI unlock chain (PR-B2.2):
+    //   1. Ensure the login password is in memory (already there, or
+    //      restored from IDB via loadPersistedLoginPassword).
+    //   2. Run attemptPhiUnlock — derives the PHI key from
+    //      (password, persisted salt), sets it in memory, runs the
+    //      sentinel-gated backfill if this install hasn't yet sealed
+    //      its plaintext PHI rows.
+    //   3. No-op for guests + for logged-in users whose persisted
+    //      password is missing (private window, profile reset) — the
+    //      cold-start Unlock.tsx gate (commit-4) surfaces that case.
+    const ensurePwdInMemory: Promise<unknown> =
+      getLastLoginPasswordOrNull() !== null
+        ? Promise.resolve()
+        : loadPersistedLoginPassword().then((p) => {
+            pushBreadcrumb('boot.loadPersistedPwd', { hadPersisted: p !== null });
+          });
+    void ensurePwdInMemory
+      .then(() => attemptPhiUnlock())
+      .then((outcome) => {
+        pushBreadcrumb('boot.phiUnlock', { kind: outcome.kind });
+        if (outcome.kind === 'ok' && outcome.report.sentinelSet) {
+          pushBreadcrumb('boot.phiBackfill', {
+            examined: outcome.report.examined,
+            sealed: outcome.report.sealed,
+          });
+        } else if (outcome.kind === 'backfill-failed') {
+          pushBreadcrumb('boot.phiBackfill.err', outcome.error.message);
+        }
+      })
+      .catch((e: unknown) => {
+        pushBreadcrumb('boot.phiUnlock.err', (e as Error).message ?? 'unknown');
+      });
+
+    // Auth subscriber (PR-B2.2): warm transitions.
+    //   - On login/register: derive the PHI key from the just-stashed
+    //     password and run the backfill. Idempotent — if a key is
+    //     already set (e.g. cold-start beat the subscriber), skipped.
+    //   - On logout: clear the in-memory key. Encrypted rows on disk
+    //     stay sealed; next login of any user re-derives.
+    //   - On change-password: deliberately NOT clearing the key here.
+    //     The password-rotation guard (commit-5) refuses the rotation
+    //     when sealed rows exist, so this branch is unreachable in
+    //     that case. If the guard ever ships a re-encrypt sweep, that
+    //     code owns its own key lifecycle.
+    const unsubscribeAuth = subscribeAuthChanges((action) => {
+      if (action === 'login' || action === 'register') {
+        void attemptPhiUnlock().then((outcome) => {
+          pushBreadcrumb('auth.phiUnlock', { kind: outcome.kind, action });
+        });
+      } else if (action === 'logout') {
+        clearPhiKeyOnLogout();
+        pushBreadcrumb('auth.phiKey.cleared');
+      }
     });
+    return unsubscribeAuth;
   }, []);
 
   // v1.42.0: opt-in cloud sync for daySnapshots. The helper itself enforces
@@ -129,24 +193,39 @@ export function App() {
            PWA on a fresh morning is offered the archive-yesterday flow
            regardless of which screen is active. */}
         <MorningArchivePrompt />
-        <Suspense fallback={<section><h1>טוען...</h1></section>}>
-          <Routes>
-            <Route path="/" element={<Capture />} />
-            <Route path="/consult" element={<Consult />} />
-            <Route path="/today" element={<Today />} />
-            <Route path="/capture" element={<Capture />} />
-            <Route path="/review" element={<Review />} />
-            <Route path="/edit" element={<NoteEditor />} />
-            <Route path="/save" element={<Save />} />
-            <Route path="/note/:id" element={<NoteViewer />} />
-            <Route path="/history" element={<History />} />
-            <Route path="/census" element={<Census />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/ortho" element={<OrthoQuickref />} />
-            <Route path="/reset-password" element={<PasswordReset />} />
-            <Route path="*" element={<Capture />} />
-          </Routes>
-        </Suspense>
+        <DecryptFailureBanner />
+        {phiGateState === 'loading' ? (
+          // Brief async check (sentinel read from IDB ~5-30ms) decides
+          // whether we render the cold-start gate. During 'loading' we
+          // MUST NOT fall through to <Routes> — that would render with
+          // `hasPhiKey() === false` and let any route's listPatients()
+          // call silently filter every encrypted row via the read seam's
+          // null-on-failure return. User would see a flicker of empty
+          // data before Unlock appears. Renders the same fallback the
+          // Suspense boundary uses for consistency.
+          <section><h1>טוען...</h1></section>
+        ) : phiGateState === 'locked' ? (
+          <Unlock />
+        ) : (
+          <Suspense fallback={<section><h1>טוען...</h1></section>}>
+            <Routes>
+              <Route path="/" element={<Capture />} />
+              <Route path="/consult" element={<Consult />} />
+              <Route path="/today" element={<Today />} />
+              <Route path="/capture" element={<Capture />} />
+              <Route path="/review" element={<Review />} />
+              <Route path="/edit" element={<NoteEditor />} />
+              <Route path="/save" element={<Save />} />
+              <Route path="/note/:id" element={<NoteViewer />} />
+              <Route path="/history" element={<History />} />
+              <Route path="/census" element={<Census />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/ortho" element={<OrthoQuickref />} />
+              <Route path="/reset-password" element={<PasswordReset />} />
+              <Route path="*" element={<Capture />} />
+            </Routes>
+          </Suspense>
+        )}
         <footer className="app-version" aria-hidden="true">
           v{APP_VERSION}
         </footer>

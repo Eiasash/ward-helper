@@ -123,8 +123,23 @@ export async function derivePhiKey(
 
 let currentPhiKey: CryptoKey | null = null;
 
+/**
+ * Dispatched on every transition of the in-memory PHI key (set or clear).
+ * The cold-start gate hook (`usePhiGateState`) subscribes to this so the
+ * gate UI re-renders when the boot unlock chain finishes setting the key.
+ * Synchronous custom-event dispatch; no payload — listeners re-read
+ * `hasPhiKey()` for the current value.
+ */
+const PHI_KEY_CHANGE_EVENT = 'ward-helper:phi-key';
+function notifyPhiKeyChanged(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(PHI_KEY_CHANGE_EVENT));
+  }
+}
+
 export function setPhiKey(key: CryptoKey): void {
   currentPhiKey = key;
+  notifyPhiKeyChanged();
 }
 
 /**
@@ -143,6 +158,13 @@ export function hasPhiKey(): boolean {
 
 export function clearPhiKey(): void {
   currentPhiKey = null;
+  notifyPhiKeyChanged();
+}
+
+export function subscribePhiKeyChanges(handler: () => void): () => void {
+  if (typeof window === 'undefined') return () => {};
+  window.addEventListener(PHI_KEY_CHANGE_EVENT, handler);
+  return () => window.removeEventListener(PHI_KEY_CHANGE_EVENT, handler);
 }
 
 // ─── Sealed-row helpers ──────────────────────────────────────────────────
