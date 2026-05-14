@@ -69,22 +69,18 @@ export function clearLastLoginPassword(): void {
 export async function persistLoginPassword(p: string): Promise<void> {
   // Lazy-loaded IDB + xor — keeps the auth.ts entry-chunk weight down for
   // guests who never trigger any of this.
-  const [{ getSettings, setSettings }, { xorEncrypt, generateDeviceSecret }] =
+  const [{ getSettings, patchSettings }, { xorEncrypt, generateDeviceSecret }] =
     await Promise.all([
       import('@/storage/indexed'),
       import('@/crypto/xor'),
     ]);
+  // Read existing only to extract / preserve the deviceSecret — the xor
+  // derivation needs to use the SAME secret the next read will resolve to.
+  // patchSettings handles the field-safe merge of everything else.
   const existing = await getSettings();
   const deviceSecret = existing?.deviceSecret ?? generateDeviceSecret();
   const loginPwdXor = xorEncrypt(p, deviceSecret);
-  await setSettings({
-    apiKeyXor: existing?.apiKeyXor ?? new Uint8Array(0),
-    deviceSecret,
-    lastPassphraseAuthAt: existing?.lastPassphraseAuthAt ?? null,
-    prefs: existing?.prefs ?? {},
-    cachedUnlockBlob: existing?.cachedUnlockBlob ?? null,
-    loginPwdXor,
-  });
+  await patchSettings({ deviceSecret, loginPwdXor });
 }
 
 /**
