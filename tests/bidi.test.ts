@@ -482,6 +482,49 @@ describe('sanitizeLabSection — stricter than general sanitizer', () => {
     expect(sanitizeLabSection('Ca 11.3H')).toContain('(מעל הנורמה)');
   });
 
+  describe('critical-flag suffix (H! / L!) — direction must match the flag', () => {
+    it('converts isolated H! to "(מעל הנורמה, חריג)"', () => {
+      expect(sanitizeLabSection('Glu 320 H!')).toContain('(מעל הנורמה, חריג)');
+      expect(sanitizeLabSection('Glu 320 H!')).not.toContain('(מתחת');
+    });
+
+    it('converts isolated L! to "(מתחת לנורמה, חריג)"', () => {
+      expect(sanitizeLabSection('Na 122 L!')).toContain('(מתחת לנורמה, חריג)');
+      expect(sanitizeLabSection('Na 122 L!')).not.toContain('(מעל');
+    });
+
+    it('REGRESSION: L! must stay "below" when input also contains the letter H elsewhere (e.g. "Hb")', () => {
+      // Bug v1.45.0: the per-match callback was reading
+      // `str.includes('H')` on the FULL input string, so any L! in a string
+      // containing "Hb" (hemoglobin) or any other H-letter token was
+      // mistranslated as "above-norm, critical" instead of "below-norm, critical".
+      // Clinical impact: flipped direction on critical-low flags whenever
+      // hemoglobin (or any H-named test) was in the same section.
+      const out = sanitizeLabSection('Hb 8.3 L!');
+      expect(out).toContain('(מתחת לנורמה, חריג)');
+      expect(out).not.toContain('(מעל');
+    });
+
+    it('REGRESSION: H! must stay "above" when input also contains the letter L elsewhere', () => {
+      // Symmetric guard. The original bug was H-biased due to the
+      // includes('H') check; an "L"-biased version would have surfaced
+      // if the fix mis-flipped. Pin both directions.
+      const out = sanitizeLabSection('LDH 850 H!');
+      expect(out).toContain('(מעל הנורמה, חריג)');
+      expect(out).not.toContain('(מתחת');
+    });
+
+    it('handles multiple critical flags in mixed direction within one input', () => {
+      const out = sanitizeLabSection('Hb 8.3 L! Glu 320 H! Na 122 L!');
+      // Two L! → below, one H! → above; bug would have made all three
+      // appear "above" because input contains 'H' (from "Hb" and "H!").
+      const aboveCount = (out.match(/\(מעל הנורמה, חריג\)/g) || []).length;
+      const belowCount = (out.match(/\(מתחת לנורמה, חריג\)/g) || []).length;
+      expect(aboveCount).toBe(1);
+      expect(belowCount).toBe(2);
+    });
+  });
+
   it('also runs the general sanitizer (Unicode arrows still caught)', () => {
     const out = sanitizeLabSection('Cr 0.72 → 0.78');
     expect(out).not.toContain('→');
