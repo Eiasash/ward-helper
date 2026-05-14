@@ -28,7 +28,7 @@
  */
 
 import { aesEncrypt, aesDecrypt, type Sealed } from './aes';
-import { getSettings, setSettings, type Settings } from '@/storage/indexed';
+import { getSettings, patchSettings } from '@/storage/indexed';
 
 export type { Sealed };
 
@@ -157,15 +157,6 @@ export async function loadOrCreatePhiSalt(): Promise<Uint8Array<ArrayBuffer>> {
     return existing.phiSalt;
   }
   const salt = crypto.getRandomValues(new Uint8Array(16)) as Uint8Array<ArrayBuffer>;
-  const next: Settings = {
-    apiKeyXor: existing?.apiKeyXor ?? new Uint8Array(0),
-    deviceSecret: existing?.deviceSecret ?? new Uint8Array(0),
-    lastPassphraseAuthAt: existing?.lastPassphraseAuthAt ?? null,
-    prefs: existing?.prefs ?? {},
-    cachedUnlockBlob: existing?.cachedUnlockBlob ?? null,
-    loginPwdXor: existing?.loginPwdXor ?? null,
-    phiSalt: salt,
-  };
-  await setSettings(next);
+  await patchSettings({ phiSalt: salt });
   return salt;
 }

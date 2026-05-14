@@ -1,4 +1,4 @@
-import { getSettings, setSettings } from '@/storage/indexed';
+import { getSettings, patchSettings } from '@/storage/indexed';
 
 /**
  * Snippet expansion: short trigger like `/nc` followed by a space expands to
@@ -33,20 +33,13 @@ export async function loadSnippets(): Promise<SnippetMap> {
 }
 
 export async function saveSnippets(map: SnippetMap): Promise<void> {
+  // Merge the snippets key into existing prefs (preserving any sibling
+  // keys); patchSettings handles everything else (apiKeyXor, deviceSecret,
+  // lastPassphraseAuthAt, cachedUnlockBlob, loginPwdXor, phiSalt) — fresh
+  // install gets defaults, existing install gets its current values.
   const existing = await getSettings();
-  // First-run: settings record doesn't exist yet (no API key saved). Create
-  // a minimal one so the snippets persist before the user touches anything
-  // crypto-related.
-  const base = existing ?? {
-    apiKeyXor: new Uint8Array(0),
-    deviceSecret: new Uint8Array(0),
-    lastPassphraseAuthAt: null,
-    prefs: {},
-  };
-  await setSettings({
-    ...base,
-    prefs: { ...base.prefs, [PREFS_KEY]: map },
-  });
+  const prefs = { ...(existing?.prefs ?? {}), [PREFS_KEY]: map };
+  await patchSettings({ prefs });
 }
 
 /**

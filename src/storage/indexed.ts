@@ -351,6 +351,45 @@ export async function getSettings(): Promise<Settings | undefined> {
   return (await getDb()).get('settings', 'singleton');
 }
 
+/**
+ * Field-safe partial update of the singleton Settings record.
+ *
+ * Reads the current settings (or a fresh defaults record on first-write),
+ * spreads the partial on top, and writes the result. Any field NOT named in
+ * `partial` is preserved from the existing record.
+ *
+ * Why this exists: `setSettings(...)` is full-replace, and several callers
+ * (auth.ts persistLoginPassword, unlock.ts cacheUnlockBlob, and any future
+ * settings-touching caller) historically hand-listed every field when
+ * constructing the next Settings record. Every new field on the Settings
+ * type meant editing all of those sites; missing one silently wipes that
+ * field on the next call. The unlock.ts call site already wipes
+ * loginPwdXor today — a latent bug pre-dating PHI work.
+ *
+ * Discipline replacement: this function is the single hand-list site for
+ * Settings defaults. New optional fields added to Settings need exactly
+ * one default added here. `merged: Settings` is type-asserted so a new
+ * REQUIRED field without a default is a compile error, not a runtime miss.
+ *
+ * Atomicity: read-modify-write under no lock. Concurrent calls in the same
+ * tab can race, but ward-helper is single-tab single-user; the existing
+ * setSettings has the same property.
+ */
+export async function patchSettings(partial: Partial<Settings>): Promise<void> {
+  const existing = await getSettings();
+  const merged: Settings = {
+    apiKeyXor: existing?.apiKeyXor ?? new Uint8Array(0),
+    deviceSecret: existing?.deviceSecret ?? new Uint8Array(0),
+    lastPassphraseAuthAt: existing?.lastPassphraseAuthAt ?? null,
+    prefs: existing?.prefs ?? {},
+    cachedUnlockBlob: existing?.cachedUnlockBlob ?? null,
+    loginPwdXor: existing?.loginPwdXor ?? null,
+    phiSalt: existing?.phiSalt ?? null,
+    ...partial,
+  };
+  await setSettings(merged);
+}
+
 export interface DbStats {
   patients: number;
   notes: number;
