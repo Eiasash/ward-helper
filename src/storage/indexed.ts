@@ -96,6 +96,24 @@ export interface Settings {
    * PR-A only persists this; the encrypt/decrypt callers ship in PR-B.
    */
   phiSalt?: Uint8Array<ArrayBuffer> | null;
+  /**
+   * Durable PHI-encryption sentinel. Source of truth for "this install has
+   * completed the one-time PHI backfill and every patients/notes/roster row
+   * on disk is sealed." Set by the B2.2 backfill runner ONLY AFTER every
+   * existing row was successfully sealed and written back; the
+   * `localStorage.phi_encrypt_v7` flag is flipped in the same operation.
+   *
+   * Re-derives the flag on cold-start: the auth/boot path reads this
+   * sentinel and re-flips the localStorage flag, so a per-tab localStorage
+   * wipe (private-window, profile reset) doesn't downgrade a previously-
+   * backfilled install to plaintext writes (which would leave sealed rows
+   * on disk and break new-write reads of those rows).
+   *
+   * Null/undefined = backfill not yet completed (or this install pre-dates
+   * v1.46.0). True = backfill done, all writes seal. There is no "false"
+   * state — once true, never reverts (matches the one-way flag policy).
+   */
+  phiEncryptedV7?: boolean | null;
 }
 
 let dbPromise: Promise<IDBPDatabase> | null = null;
@@ -507,6 +525,7 @@ export async function patchSettings(partial: Partial<Settings>): Promise<void> {
     cachedUnlockBlob: existing?.cachedUnlockBlob ?? null,
     loginPwdXor: existing?.loginPwdXor ?? null,
     phiSalt: existing?.phiSalt ?? null,
+    phiEncryptedV7: existing?.phiEncryptedV7 ?? null,
     ...partial,
   };
   await setSettings(merged);
