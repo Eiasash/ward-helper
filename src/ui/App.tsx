@@ -194,7 +194,17 @@ export function App() {
            regardless of which screen is active. */}
         <MorningArchivePrompt />
         <DecryptFailureBanner />
-        {phiGateState === 'locked' ? (
+        {phiGateState === 'loading' ? (
+          // Brief async check (sentinel read from IDB ~5-30ms) decides
+          // whether we render the cold-start gate. During 'loading' we
+          // MUST NOT fall through to <Routes> — that would render with
+          // `hasPhiKey() === false` and let any route's listPatients()
+          // call silently filter every encrypted row via the read seam's
+          // null-on-failure return. User would see a flicker of empty
+          // data before Unlock appears. Renders the same fallback the
+          // Suspense boundary uses for consistency.
+          <section><h1>טוען...</h1></section>
+        ) : phiGateState === 'locked' ? (
           <Unlock />
         ) : (
           <Suspense fallback={<section><h1>טוען...</h1></section>}>
