@@ -13,7 +13,18 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'html', 'json-summary'],
       include: ['src/**/*.{ts,tsx}'],
-      exclude: ['**/node_modules/**', '**/dist/**', 'tests/**', 'src/**/*.test.{ts,tsx}'],
+      exclude: [
+        '**/node_modules/**',
+        '**/dist/**',
+        'tests/**',
+        'src/**/*.test.{ts,tsx}',
+        // Declaration files are types-only; rolldown (vitest 4 coverage
+        // backend) otherwise parses `export const X: string;` ambient
+        // decls as runtime ESM and emits a misleading RolldownError.
+        '**/*.d.ts',
+        '**/*.d.mts',
+        '**/*.d.cts',
+      ],
     },
   },
 });
