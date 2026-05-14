@@ -62,7 +62,95 @@ import { BIDI_MARKS_RE, HEBREW_RE, LATIN_RE } from '../../src/i18n/bidiMarks.mjs
 // V4.2 adds: runtime per-tick wait counter via page._v42WaitCount (reset at
 // the top of each runPersona iteration; incremented by waitForSubject; read
 // into the onTick payload) + analyzer assertion gated to V4_SUB_BOTS_REQUIRING_WAIT.
-export const BOT_VERSION = 'v5.0.0';
+//
+// V5.1 adds the persona rebound mechanism (Layer 1 + Layer 2) and three
+// new per-persona tally fields: rebound_attempts, rebound_successes,
+// layer2_recoveries. Analyzer queries against pre-v5.1 timelines won't see these
+// fields; treat missing as 0. NOT tied to the app version trinity.
+export const BOT_VERSION = 'v5.1.0';
+
+// ============================================================================
+// Persona rebound — workstream #3 (2026-05-12)
+//
+// Two-layer recovery for the sibling-chaos page-death class. See
+// docs/superpowers/specs/2026-05-12-persona-rebound-workstream-3-design.md.
+//
+// Layer 1 (reboundIfOffBase): top-of-tick URL guard. Fires before action
+// picker every iteration. Catches the dominant case where chaos navigated
+// off-base and a later non-chaos action would fall off the cliff.
+//
+// Layer 2 (tryRecoverFromPageDeath): catch-block one-shot rebound, fires
+// from isPageDeadError branch. Returns 'recovered' or 'unrecoverable' so
+// the loop knows to continue or break.
+// ============================================================================
+
+/**
+ * Layer 1 — top-of-tick guard. Compares page.url() against BASE_URL by
+ * origin + pathname; if off-base, calls page.goto(baseUrl). Increments
+ * tally.rebound_attempts BEFORE goto so a failure path is still recorded;
+ * increments tally.rebound_successes AFTER goto resolves.
+ *
+ * Wraps everything in try/catch so a dead context (page.url() throws)
+ * falls through silently — the next action's existing catch handles it
+ * via Layer 2.
+ *
+ * @param page - Playwright Page (or shape-compatible mock for tests)
+ * @param baseOrigin - origin of BASE_URL (from new URL(BASE_URL).origin)
+ * @param basePathname - pathname of BASE_URL (from new URL(BASE_URL).pathname)
+ * @param baseUrl - the full BASE_URL string
+ * @param tally - the persona's tally object (mutated in place)
+ */
+export async function reboundIfOffBase(page, baseOrigin, basePathname, baseUrl, tally) {
+  try {
+    const cur = new URL(page.url());
+    const offBase = cur.origin !== baseOrigin || !cur.pathname.startsWith(basePathname);
+    if (offBase) {
+      tally.rebound_attempts = (tally.rebound_attempts || 0) + 1;
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 });
+      tally.rebound_successes = (tally.rebound_successes || 0) + 1;
+    }
+  } catch (_) {
+    // page.url() or page.goto threw. Fall through silently; the next
+    // action's catch (Layer 2) handles a dead context. The attempt is
+    // already recorded if we got past url() — successes is intentionally
+    // not incremented on this path.
+  }
+}
+
+/**
+ * Layer 2 — catch-block one-shot rebound. Called from the action-loop
+ * catch when isPageDeadError(err) is true. Tries page.goto(baseUrl) once.
+ * Returns 'recovered' if goto resolves (caller does `continue`) or
+ * 'unrecoverable' if goto throws (caller does `break`).
+ *
+ * Emits exactly one bug per call: LOW page-closed-recovered on success
+ * or HIGH page-closed-unrecoverable on failure. The HIGH is the new
+ * shape that replaces the old chaos-infra/page-closed HIGH (which now
+ * only fires when Layer 2's goto itself throws).
+ *
+ * @param page - Playwright Page (or shape-compatible mock for tests)
+ * @param baseUrl - the full BASE_URL string
+ * @param persona - persona descriptor with at least `.name`
+ * @param picked - action that was running when the page died (`.name` used in logs)
+ * @param logBug - telemetry emitter `(sev, cat, name, msg) => void`
+ * @param tally - the persona's tally object (mutated in place)
+ * @param {unknown} [err] - optional original error from the catch block; appended to the HIGH log message for diagnostics
+ * @returns {Promise<'recovered'|'unrecoverable'>}
+ */
+export async function tryRecoverFromPageDeath(page, baseUrl, persona, picked, logBug, tally, err) {
+  const recovered = await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (recovered) {
+    tally.layer2_recoveries = (tally.layer2_recoveries || 0) + 1;
+    logBug('LOW', 'chaos-infra', `${persona.name}/page-closed-recovered`,
+      `recovered from page-death during ${picked.name}`);
+    return 'recovered';
+  }
+  logBug('HIGH', 'chaos-infra', `${persona.name}/page-closed-unrecoverable`,
+    `persona bailed: rebound failed after page-death during ${picked.name}: ${(err && (err.message || String(err))) || 'unknown'}`);
+  return 'unrecoverable';
+}
 
 // ============================================================================
 // Persona definitions — timing + tolerance + action-menu weights
@@ -985,20 +1073,30 @@ export async function runPersona({
   const tally = {
     actions: 0,
     chaos: 0,
-    recoveries: 0,
+    recoveries: 0,       // watchdog soft/hard recover only (Layer 2 page-death rebound uses tally.layer2_recoveries — see helper above)
     errors: 0,
     byAction: {},
     byBotSubject: {},  // V4: per-sub-bot fire counts
     usefulActions: 0,  // V4: actions that returned ok:true (not skipped, not error)
     longtaskCount: 0,  // V4: from diagnostics counts
+    rebound_attempts: 0,     // V5.1 Layer 1: incremented before goto on off-base URL
+    rebound_successes: 0,    // V5.1 Layer 1: incremented after goto resolves
+    layer2_recoveries: 0,    // V5.1 Layer 2: incremented after successful page-death rebound
   };
 
   const t0 = Date.now();
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 }).catch(() => {});
+  const baseOrigin = new URL(url).origin;
+  const basePathname = new URL(url).pathname;
   await sleep(1200);
 
   let actionsThisCycle = 0;
   while (Date.now() - t0 < durationMs) {
+    // Layer 1 — top-of-tick guard. Per workstream #3 spec, see
+    // docs/superpowers/specs/2026-05-12-persona-rebound-workstream-3-design.md §3.
+    // Cheap pre-check; if off-base, rebounds to baseUrl before the action picker.
+    await reboundIfOffBase(page, baseOrigin, basePathname, url, tally);
+
     actionsThisCycle++;
     // Watchdog: 60s idle → soft recover, 180s → hard reload, 300s → bail
     if (guard.isIdle(300_000)) {
@@ -1090,8 +1188,12 @@ export async function runPersona({
       // hundreds of retry-LOWs until the 300s idle watchdog finally fires.
       if (isPageDeadError(err)) {
         tally.pageClosedAt = actionsThisCycle;
-        logBug('HIGH', 'chaos-infra', `${persona.name}/page-closed`,
-          `persona bailed: page closed at tick ${actionsThisCycle} during ${picked.name} (${(err.message || String(err)).slice(0, 80)})`);
+        // Layer 2 — catch-block one-shot rebound. Per workstream #3 spec.
+        const reboundResult = await tryRecoverFromPageDeath(page, url, persona, picked, logBug, tally, err);
+        if (reboundResult === 'recovered') {
+          continue;
+        }
+        // reboundResult === 'unrecoverable' — already logged a HIGH page-closed-unrecoverable.
         break;
       }
       logBug('LOW', scenario.scenario_id, `${persona.name}/${picked.name}/exception`,
