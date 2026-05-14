@@ -79,6 +79,16 @@ export interface Settings {
    * cloud backup until the user logged out + back in.
    */
   loginPwdXor?: Uint8Array<ArrayBuffer> | null;
+  /**
+   * 16-byte salt for PHI-at-rest PBKDF2 derivation. Generated once on
+   * first install via src/crypto/phi.ts::loadOrCreatePhiSalt, then STABLE
+   * for the life of the install — regenerating would orphan every existing
+   * ciphertext row. Non-secret (an attacker with the salt still needs the
+   * login password to derive the key), but never rewritten once present.
+   *
+   * PR-A only persists this; the encrypt/decrypt callers ship in PR-B.
+   */
+  phiSalt?: Uint8Array<ArrayBuffer> | null;
 }
 
 let dbPromise: Promise<IDBPDatabase> | null = null;
