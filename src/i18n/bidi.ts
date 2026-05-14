@@ -120,19 +120,24 @@ export function sanitizeLabSection(text: string): string {
   //    these alone (rule 5 only spells out >N comparisons).
   s = s.replace(/\s+>\s+/g, ', ');
 
-  // 2. H / L lab printout suffixes — strip and convert to Hebrew parens.
-  //    Matches "11.3 H" or "3.0 L" (number, optional space, H or L,
-  //    word boundary). Case-sensitive on purpose (Hebrew text contains
-  //    no Latin H/L).
+  // 2a. "L!" / "H!" critical-flag suffix — MUST run before the plain H/L
+  //     handlers below, otherwise the plain `\bH` regex consumes the H/L and
+  //     leaves a stray "!" behind. Capture the letter directly so each
+  //     match's direction reflects its own flag (was reading `str.includes('H')`
+  //     on the FULL input, mis-flipping L! in any string containing 'H' anywhere,
+  //     e.g. "Hb 8.3 L!" → wrong "מעל הנורמה"). Pinned by 5 regression tests.
+  s = s.replace(/(\d+(?:\.\d+)?)\s*([HL])!/g, (_, num, hl) =>
+    `${num} ${hl === 'H' ? '(מעל הנורמה, חריג)' : '(מתחת לנורמה, חריג)'}`,
+  );
+  // 2b. Plain H / L lab printout suffixes — strip and convert to Hebrew parens.
+  //     Matches "11.3 H" or "3.0 L" (number, optional space, H or L,
+  //     word boundary). Case-sensitive on purpose (Hebrew text contains
+  //     no Latin H/L).
   s = s.replace(/(\d+(?:\.\d+)?)\s+H\b/g, '$1 (מעל הנורמה)');
   s = s.replace(/(\d+(?:\.\d+)?)\s+L\b/g, '$1 (מתחת לנורמה)');
   // Same with no space (some printouts emit "11.3H").
   s = s.replace(/(\d+(?:\.\d+)?)H\b/g, '$1 (מעל הנורמה)');
   s = s.replace(/(\d+(?:\.\d+)?)L\b/g, '$1 (מתחת לנורמה)');
-  // "L!" / "H!" critical-flag suffix — same handling.
-  s = s.replace(/(\d+(?:\.\d+)?)\s*[HL]!/g, (_, num, off, str) =>
-    `${num} ${str.includes('H') ? '(מעל הנורמה, חריג)' : '(מתחת לנורמה, חריג)'}`,
-  );
 
   return s;
 }
