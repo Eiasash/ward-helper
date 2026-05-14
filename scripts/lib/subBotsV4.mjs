@@ -213,16 +213,23 @@ export async function scenMorningRoundsPrep(page, _browser, scenario, persona, g
   // MorningArchivePrompt useEffect runs on mount and checks lastArchivedDate;
   // we set yesterday above, so the banner should appear). Without this
   // ratchet, evaluate races useEffect and reports banner-missing falsely.
-  // 2026-05-14: removed `^...$` anchors on /ארכב/ /דחה/ — full-string
-  // anchoring against document.body.innerText can never match a populated
-  // page. The 3 unanchored banner patterns also tested OK, so this is
-  // belt-and-braces. Same anchor bug as emailToSelf above.
+  // 2026-05-14 (round 2 — validation findings):
+  //   * regex anchors already removed in PR #162.
+  //   * `/היום אין מטופלים/` removed — that string does not exist in src;
+  //     speculative pattern from the bot author. Empty-roster state renders
+  //     the always-on `<h1>היום</h1>` heading instead.
+  //   * Replaced banner-content patterns with `/היום/` (the always-rendered
+  //     h1 in Today.tsx). This decouples mount-timeout from banner-missing:
+  //     if /today mounts but the MorningArchivePrompt useEffect doesn't fire
+  //     (race or stale localStorage), the explicit banner-visible check
+  //     below catches that as `banner-missing`, not mount-timeout.
+  //
+  // Validation result confirming this is needed: 10-min fixture-mode run
+  // post-PR-#162 showed emailToSelf at 0/8 mount-timeouts but morningRounds
+  // still at 7/9 — the patterns required the banner to be visible AND the
+  // route to be mounted, conflating two distinct failure classes.
   const wait = await waitForSubject(page, [
-    /זוהה יום חדש/,        // banner text
-    /כבר ארכבת היום/,      // confirm-replace state
-    /ארכב/,                // archive button
-    /דחה/,                 // dismiss button (still anchored-free; substring-matches)
-    /היום אין מטופלים/,   // empty-roster fallback (banner WILL render but list-section text)
+    /היום/,                // always-rendered Today screen h1 ("Today")
   ], 5000);
   // Note: a no-banner result is itself a valid signal — don't bail on
   // wait failure here; let the next check distinguish "banner truly missing"
