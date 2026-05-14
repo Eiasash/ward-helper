@@ -155,7 +155,16 @@ export async function decryptRowIfEncrypted<T>(
   if (row === null || row === undefined) return row;
   if (!isEncryptedRow(row)) return row as T;
   const { unsealRow } = await import('./phi');
-  return unsealRow<T>({ iv: row.enc.iv, ciphertext: row.enc.ciphertext });
+  const result = await unsealRow<T>({ iv: row.enc.iv, ciphertext: row.enc.ciphertext });
+  if (result === null) {
+    // Decrypt failure: most likely cause is "user changed login password
+    // since this row was sealed" or "row's ciphertext is corrupt." We
+    // surface a session-scoped count so the banner can prompt the user
+    // toward a cloud-restore. The row itself is dropped (caller treats
+    // null as "not found" downstream).
+    incrementDecryptFailureCount();
+  }
+  return result;
 }
 
 /**
@@ -230,6 +239,53 @@ export function setPhiEncryptV7Enabled(): void {
   } catch {
     /* localStorage unavailable — sentinel still holds; next session reads it */
   }
+}
+
+// ─── Decrypt-failure counter (PR-B2.2 UX surface) ─────────────────────
+
+/**
+ * Session-scoped count of rows that hit `unsealRow → null` during this
+ * session. Reset on every page reload (not persisted). The banner reads
+ * this via `getDecryptFailureCount()` and re-renders on the
+ * `'ward-helper:phi-decrypt-fail'` event.
+ *
+ * Why a count and not just a boolean: a single decrypt failure could be
+ * a corrupted row, but tens of failures usually point at a wrong-key
+ * scenario (password changed mid-flight; password-rotation guard in
+ * commit-5 prevents this for change-password specifically, but defensive
+ * tracking for any other cause). The number helps the user judge
+ * "is this a stray row, or is everything broken?"
+ *
+ * Reset paths: `clearDecryptFailureCount()` is called after a successful
+ * cloud restore (when re-pulled rows replace the broken ones) and on
+ * fresh logout.
+ */
+let _decryptFailureCount = 0;
+const PHI_DECRYPT_FAIL_EVENT = 'ward-helper:phi-decrypt-fail';
+
+function incrementDecryptFailureCount(): void {
+  _decryptFailureCount++;
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(PHI_DECRYPT_FAIL_EVENT));
+  }
+}
+
+export function getDecryptFailureCount(): number {
+  return _decryptFailureCount;
+}
+
+export function clearDecryptFailureCount(): void {
+  if (_decryptFailureCount === 0) return;
+  _decryptFailureCount = 0;
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(PHI_DECRYPT_FAIL_EVENT));
+  }
+}
+
+export function subscribeDecryptFailureChanges(handler: () => void): () => void {
+  if (typeof window === 'undefined') return () => {};
+  window.addEventListener(PHI_DECRYPT_FAIL_EVENT, handler);
+  return () => window.removeEventListener(PHI_DECRYPT_FAIL_EVENT, handler);
 }
 
 // ─── Write-path wrap helpers (PR-B2.2) ────────────────────────────────

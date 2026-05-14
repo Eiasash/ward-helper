@@ -41,6 +41,7 @@ import {
   hasPhiKey,
   loadOrCreatePhiSalt,
 } from '@/crypto/phi';
+import { clearDecryptFailureCount } from '@/crypto/phiRow';
 import {
   getLastLoginPasswordOrNull,
   stashLastLoginPassword,
@@ -118,4 +119,8 @@ export async function attemptPhiUnlockWithPassword(
  */
 export function clearPhiKeyOnLogout(): void {
   clearPhiKey();
+  // Reset the session-scoped decrypt-failure count too — different user
+  // logging in next means no decrypt failures from the prior session
+  // apply. If failures occur for the new user, the counter starts fresh.
+  clearDecryptFailureCount();
 }

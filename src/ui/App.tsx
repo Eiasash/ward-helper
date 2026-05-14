@@ -17,10 +17,13 @@ import { Settings } from './screens/Settings';
 import { Today } from './screens/Today';
 import { Consult } from './screens/Consult';
 import OrthoQuickref from './screens/OrthoQuickref';
+import { Unlock } from './screens/Unlock';
 import { HeaderStrip } from './components/HeaderStrip';
 import { PostLoginRestorePrompt } from './components/PostLoginRestorePrompt';
 import { MobileDebugPanel } from './components/MobileDebugPanel';
 import { MorningArchivePrompt } from './components/MorningArchivePrompt';
+import { DecryptFailureBanner } from './components/DecryptFailureBanner';
+import { usePhiGateState } from './hooks/usePhiGateState';
 
 // Lazy-loaded routes. Cold start usually lands on /today or /capture; the
 // three below are not on the hot path, so splitting them out trims the
@@ -49,6 +52,11 @@ declare const __APP_VERSION__: string;
 const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev';
 
 export function App() {
+  // PR-B2.2 cold-start gate. Derives one of {loading, guest, unlocked, locked}.
+  // When 'locked' we render <Unlock /> IN PLACE OF <Routes> so encrypted
+  // patients/notes/roster aren't accessed by any route until the user has
+  // typed their password and the PHI key is derived.
+  const phiGateState = usePhiGateState();
   // v1.35.2: rehydrate the in-memory login-password stash from IDB on app
   // boot. The auth session is already persisted in localStorage so the user
   // appears logged in across reloads — but the cloud encryption key (login
@@ -185,24 +193,29 @@ export function App() {
            PWA on a fresh morning is offered the archive-yesterday flow
            regardless of which screen is active. */}
         <MorningArchivePrompt />
-        <Suspense fallback={<section><h1>טוען...</h1></section>}>
-          <Routes>
-            <Route path="/" element={<Capture />} />
-            <Route path="/consult" element={<Consult />} />
-            <Route path="/today" element={<Today />} />
-            <Route path="/capture" element={<Capture />} />
-            <Route path="/review" element={<Review />} />
-            <Route path="/edit" element={<NoteEditor />} />
-            <Route path="/save" element={<Save />} />
-            <Route path="/note/:id" element={<NoteViewer />} />
-            <Route path="/history" element={<History />} />
-            <Route path="/census" element={<Census />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/ortho" element={<OrthoQuickref />} />
-            <Route path="/reset-password" element={<PasswordReset />} />
-            <Route path="*" element={<Capture />} />
-          </Routes>
-        </Suspense>
+        <DecryptFailureBanner />
+        {phiGateState === 'locked' ? (
+          <Unlock />
+        ) : (
+          <Suspense fallback={<section><h1>טוען...</h1></section>}>
+            <Routes>
+              <Route path="/" element={<Capture />} />
+              <Route path="/consult" element={<Consult />} />
+              <Route path="/today" element={<Today />} />
+              <Route path="/capture" element={<Capture />} />
+              <Route path="/review" element={<Review />} />
+              <Route path="/edit" element={<NoteEditor />} />
+              <Route path="/save" element={<Save />} />
+              <Route path="/note/:id" element={<NoteViewer />} />
+              <Route path="/history" element={<History />} />
+              <Route path="/census" element={<Census />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/ortho" element={<OrthoQuickref />} />
+              <Route path="/reset-password" element={<PasswordReset />} />
+              <Route path="*" element={<Capture />} />
+            </Routes>
+          </Suspense>
+        )}
         <footer className="app-version" aria-hidden="true">
           v{APP_VERSION}
         </footer>
