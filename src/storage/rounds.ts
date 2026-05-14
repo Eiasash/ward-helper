@@ -1,6 +1,10 @@
 import { getDb } from './indexed';
 import type { Patient } from './indexed';
 import { notifyDayArchived, notifyPatientsChanged } from '@/ui/hooks/glanceableEvents';
+import {
+  isEncryptedRow,
+  type SealedPatientRow,
+} from '@/crypto/phiRow';
 
 export const SNAPSHOT_HISTORY_CAP = 20;
 
@@ -61,7 +65,24 @@ export async function archiveDay(): Promise<DaySnapshot> {
   const patientsStore = tx.objectStore('patients');
 
   // Read live patients within the same tx (consistency).
-  const patients = (await patientsStore.getAll()) as Patient[];
+  // PR-B2.1: sync-sniff-inside-tx. Under flag-off + no encrypted rows
+  // (B2.1's world) every row is plaintext, fast path runs identical to
+  // today. Under premature flag-on we throw — archiveDay's structuredClone
+  // would otherwise produce a daySnapshot containing encrypted-shaped
+  // rows that downstream consumers (MorningArchivePrompt, dayContinuity)
+  // expect to be plaintext. B2.2 will refactor this into the staged
+  // multi-store pattern: read patients out, close tx, decrypt out-of-tx,
+  // reopen multi-store tx for the snapshot put + planToday clears.
+  // daySnapshots itself stays plaintext at rest per the carve-out
+  // (`src/crypto/phi.ts` header — cloud-side already encrypted, local-rest
+  // threat model assumes OS disk encryption).
+  const rawPatients = (await patientsStore.getAll()) as Array<Patient | SealedPatientRow>;
+  if (rawPatients.some((r) => isEncryptedRow(r))) {
+    throw new Error(
+      'archiveDay: encountered encrypted patient row but B2.2 staged multi-store pattern not yet wired at this site',
+    );
+  }
+  const patients = rawPatients as Patient[];
 
   // Frozen copy — capture planToday BEFORE clearing. structuredClone
   // isolates the returned snapshot from any future caller mutation
@@ -106,12 +127,63 @@ export async function runV1_40_0_BackfillIfNeeded(): Promise<void> {
   if (localStorage.getItem(BACKFILL_KEY) === '1') return;
   try {
     const db = await getDb();
-    const tx = db.transaction('patients', 'readwrite');
-    const store = tx.objectStore('patients');
-    let cursor = await store.openCursor();
+    //
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // PR-B2.1 STAGED CURSOR PATTERN — explicit per the design pin
+    //   (`.audit_logs/2026-05-14-pr-b2-design-pins.md` §"Cursor staged-
+    //    pattern"). The B2.1 fresh-eye round 2 (Q2) confirmed: the
+    //   `idb` library's contract is "do NOT await other things between
+    //   the start and end of your transaction." The pre-B2.1 single-tx
+    //   cursor only awaited IDB-internal operations (cursor.update /
+    //   continue). Decryption uses crypto.subtle.decrypt (a non-IDB
+    //   Promise) and would poison the tx mid-iteration.
+    //
+    // The pattern:
+    //   Phase 1 — readonly tx: open cursor, collect every row's raw
+    //             value synchronously, close the tx.
+    //   Phase 2 — out-of-tx: sniff each row. Under B2.1's expected
+    //             world (no encrypted rows present yet) all rows are
+    //             plaintext and we proceed. Encrypted rows would
+    //             require decrypt + re-seal which lands in B2.2; B2.1
+    //             aborts with a clear error rather than silently
+    //             downgrading sealed rows to plaintext.
+    //   Phase 3 — readwrite tx: apply the v1.40.0 backfill mutation
+    //             (default fields) and write each row back.
+    //
+    // Under B2.1's world this is end-state-identical to the prior
+    // single-tx version. The staging adds two-tx overhead but the
+    // function runs at most once per install (BACKFILL_KEY gate), so
+    // the cost is paid exactly once and is irrelevant.
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    // Phase 1 — readonly tx, collect rows.
+    const readTx = db.transaction('patients', 'readonly');
+    const readStore = readTx.objectStore('patients');
+    const collected: Array<Patient | SealedPatientRow> = [];
+    let cursor = await readStore.openCursor();
     while (cursor) {
-      const p = cursor.value as Patient;
-      await cursor.update({
+      collected.push(cursor.value as Patient | SealedPatientRow);
+      cursor = await cursor.continue();
+    }
+    await readTx.done;
+
+    // Phase 2 — out-of-tx classification. The staging exists explicitly
+    // so we can do non-IDB work here without poisoning the tx. Under
+    // B2.1 every row is plaintext (flag-off, no encrypted rows present).
+    // If we encounter an encrypted row, abort — re-sealing requires
+    // wrapPatientForWrite which lands in B2.2.
+    if (collected.some((r) => isEncryptedRow(r))) {
+      throw new Error(
+        'runV1_40_0_BackfillIfNeeded: encountered encrypted patient row but B2.2 re-seal-on-write not yet wired at this site',
+      );
+    }
+    const plaintextRows = collected as Patient[];
+
+    // Phase 3 — readwrite tx, apply mutations.
+    const writeTx = db.transaction('patients', 'readwrite');
+    const writeStore = writeTx.objectStore('patients');
+    for (const p of plaintextRows) {
+      await writeStore.put({
         ...p,
         discharged: p.discharged ?? false,
         tomorrowNotes: p.tomorrowNotes ?? [],
@@ -120,9 +192,9 @@ export async function runV1_40_0_BackfillIfNeeded(): Promise<void> {
         planToday: p.planToday ?? '',
         clinicalMeta: p.clinicalMeta ?? {},
       });
-      cursor = await cursor.continue();
     }
-    await tx.done;
+    await writeTx.done;
+
     localStorage.setItem(BACKFILL_KEY, '1');
   } catch (err) {
     // Don't set marker on failure — retries next boot.
@@ -146,11 +218,20 @@ export async function dischargePatient(patientId: string): Promise<void> {
   const db = await getDb();
   const tx = db.transaction('patients', 'readwrite');
   const store = tx.objectStore('patients');
-  const p = (await store.get(patientId)) as Patient | undefined;
-  if (!p) {
+  // PR-B2.1 sync-sniff-inside-tx (see design pin). Throw on encrypted —
+  // B2.2 lands the staged read+decrypt+reseal+write pattern.
+  const raw = (await store.get(patientId)) as Patient | SealedPatientRow | undefined;
+  if (!raw) {
     await tx.done;
     throw new Error(`Patient ${patientId} not found`);
   }
+  if (isEncryptedRow(raw)) {
+    await tx.done;
+    throw new Error(
+      `dischargePatient: encrypted patient row ${patientId} but B2.2 staged-pattern not yet wired at this site`,
+    );
+  }
+  const p = raw;
   const now = Date.now();
   await store.put({
     ...p,
@@ -181,11 +262,21 @@ export async function unDischargePatient(
   const db = await getDb();
   const tx = db.transaction('patients', 'readwrite');
   const store = tx.objectStore('patients');
-  const p = (await store.get(patientId)) as Patient | undefined;
-  if (!p) {
+  // PR-B2.1 sync-sniff-inside-tx (see design pin). See dischargePatient
+  // for the rationale; same pattern repeats at every read-then-write tx
+  // site until B2.2 replaces with staged-pattern.
+  const raw = (await store.get(patientId)) as Patient | SealedPatientRow | undefined;
+  if (!raw) {
     await tx.done;
     throw new Error(`Patient ${patientId} not found`);
   }
+  if (isEncryptedRow(raw)) {
+    await tx.done;
+    throw new Error(
+      `unDischargePatient: encrypted patient row ${patientId} but B2.2 staged-pattern not yet wired at this site`,
+    );
+  }
+  const p = raw;
   const today = new Date().toLocaleDateString('en-CA');
   const reAdmitLine = `חזר לאשפוז ב-${today} לאחר ${gapDays} ימים: ${reason}`;
   const newHandoverNote = p.handoverNote
@@ -216,11 +307,19 @@ export async function addTomorrowNote(patientId: string, text: string): Promise<
   const db = await getDb();
   const tx = db.transaction('patients', 'readwrite');
   const store = tx.objectStore('patients');
-  const p = (await store.get(patientId)) as Patient | undefined;
-  if (!p) {
+  // PR-B2.1 sync-sniff-inside-tx (see design pin).
+  const raw = (await store.get(patientId)) as Patient | SealedPatientRow | undefined;
+  if (!raw) {
     await tx.done;
     throw new Error(`Patient ${patientId} not found`);
   }
+  if (isEncryptedRow(raw)) {
+    await tx.done;
+    throw new Error(
+      `addTomorrowNote: encrypted patient row ${patientId} but B2.2 staged-pattern not yet wired at this site`,
+    );
+  }
+  const p = raw;
   await store.put({
     ...p,
     tomorrowNotes: [...(p.tomorrowNotes ?? []), text],
@@ -242,11 +341,19 @@ export async function dismissTomorrowNote(patientId: string, lineIdx: number): P
   const db = await getDb();
   const tx = db.transaction('patients', 'readwrite');
   const store = tx.objectStore('patients');
-  const p = (await store.get(patientId)) as Patient | undefined;
-  if (!p) {
+  // PR-B2.1 sync-sniff-inside-tx (see design pin).
+  const raw = (await store.get(patientId)) as Patient | SealedPatientRow | undefined;
+  if (!raw) {
     await tx.done;
     throw new Error(`Patient ${patientId} not found`);
   }
+  if (isEncryptedRow(raw)) {
+    await tx.done;
+    throw new Error(
+      `dismissTomorrowNote: encrypted patient row ${patientId} but B2.2 staged-pattern not yet wired at this site`,
+    );
+  }
+  const p = raw;
   const next = (p.tomorrowNotes ?? []).filter((_, i) => i !== lineIdx);
   await store.put({ ...p, tomorrowNotes: next, updatedAt: Date.now() });
   await tx.done;
@@ -270,11 +377,19 @@ export async function promoteToHandover(patientId: string, lineIdx: number): Pro
   const db = await getDb();
   const tx = db.transaction('patients', 'readwrite');
   const store = tx.objectStore('patients');
-  const p = (await store.get(patientId)) as Patient | undefined;
-  if (!p) {
+  // PR-B2.1 sync-sniff-inside-tx (see design pin).
+  const raw = (await store.get(patientId)) as Patient | SealedPatientRow | undefined;
+  if (!raw) {
     await tx.done;
     throw new Error(`Patient ${patientId} not found`);
   }
+  if (isEncryptedRow(raw)) {
+    await tx.done;
+    throw new Error(
+      `promoteToHandover: encrypted patient row ${patientId} but B2.2 staged-pattern not yet wired at this site`,
+    );
+  }
+  const p = raw;
   const lines = p.tomorrowNotes ?? [];
   const line = lines[lineIdx];
   if (line === undefined) {

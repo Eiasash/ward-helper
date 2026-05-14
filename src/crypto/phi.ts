@@ -7,8 +7,45 @@
  *             held in memory only via setKey/clearKey, never persisted.
  *   - Salt:   16 random bytes generated on first install, persisted in
  *             Settings.phiSalt. Non-secret but STABLE — never regenerate.
- *   - Scope:  IDB `patients` + `notes` row values only. Not localStorage,
- *             not `wardhelper_apikey`, not `roster`/`daySnapshots`/`settings`.
+ *
+ * ─── Per-store scope (locked 2026-05-14 PR-B2.1 design — Adjustment 2C) ──
+ *
+ * IN-SCOPE (sealed at rest):
+ *   - `patients` — full PHI (name, teudatZehut, dob, room, tomorrowNotes,
+ *                  handoverNote, planLongTerm, planToday, clinicalMeta).
+ *   - `notes`    — clinical body PHI (bodyHebrew, structuredData).
+ *                  patientId stays plaintext at row top-level to keep the
+ *                  surviving `by-patient` index working post-encryption.
+ *   - `roster`   — direct PHI (tz, name, room, dxShort per RosterPatient).
+ *                  Added to scope after the B2.1 fresh-eye Q2 found that
+ *                  pre-B2.1 docs incorrectly claimed roster carries no PHI.
+ *
+ * CARVE-OUT (intentionally NOT sealed at rest):
+ *   - `daySnapshots` — frozen `Patient[]` copies via structuredClone in
+ *                  `rounds.ts::archiveDay`. The cloud-sync path
+ *                  (`daySnapshotsCloud.ts`) ALREADY encrypts on push via
+ *                  encryptForCloud and decrypts on pull via decryptFromCloud,
+ *                  so the cloud surface is protected.
+ *                  Local-at-rest is the documented exposed surface, and it's
+ *                  inside the project threat model: CLAUDE.md states the
+ *                  scope as "a lost LOCKED personal device on top of OS
+ *                  full-disk encryption." A reader who recovers a local
+ *                  daySnapshot row at rest has already defeated full-disk
+ *                  encryption, at which point the IDB-layer ciphertext is
+ *                  not the meaningful defense.
+ *                  Pinned by the B2.1 fresh-eye round 2 Q3 verification:
+ *                  no daySnapshot read path assumes encryption (every
+ *                  consumer reads plain typed DaySnapshot rows); the
+ *                  carve-out is consistent. Reviewing this in future:
+ *                  before adding a new daySnapshot consumer that runs
+ *                  rows through `unsealRow`/`decrypt`, REVISIT this
+ *                  carve-out — that would mean some consumers think
+ *                  daySnapshots are encrypted and others don't, which
+ *                  is the silent-hole failure mode the carve-out was
+ *                  audited against.
+ *   - `settings`    — metadata only (apiKeyXor, deviceSecret, salts,
+ *                  prefs, cachedUnlockBlob, loginPwdXor, phiSalt). No
+ *                  PHI fields. Verified by the same B2.1 fresh-eye Q2.
  *
  * Threat model: a lost LOCKED personal device on top of OS full-disk
  * encryption + an iCloud/Google IDB backup leak. Because the key is
@@ -16,15 +53,18 @@
  * salt only — fully inert without the user's login password.
  *
  * Companion modules: aes.ts (primitives), pbkdf2.ts (the shared
- * unlock.ts derivation path). The PHI derivation is forked here
- * rather than parameterised on pbkdf2.ts because the PHI flow needs
- * `extractable: false` and the shared derivation needs `extractable: true`
- * for the cached-unlock blob round-trip. Forking keeps each invariant local.
+ * unlock.ts derivation path), phiRow.ts (row-shape envelope + read seam).
+ * The PHI derivation is forked here rather than parameterised on
+ * pbkdf2.ts because the PHI flow needs `extractable: false` and the
+ * shared derivation needs `extractable: true` for the cached-unlock
+ * blob round-trip. Forking keeps each invariant local.
  *
- * This module is intentionally caller-free as of PR-A — PR-B introduces
- * the schema-v7 migration, cold-start gate, and the 4 by-tz caller refactors
- * that consume these helpers. PR-A ships the primitives in isolation so
- * the next PR's review surface is purely "wire up", not "wire up + new crypto".
+ * Status: this module owns the crypto primitives + key lifecycle +
+ * salt. The row-shape glue (`{id, enc}` for patients/roster, `{id,
+ * patientId, enc}` for notes) lives in phiRow.ts. PR-A landed these
+ * primitives as dead code; PR-B1 dropped the by-tz index; PR-B2.1
+ * wires the read seam at every site (this commit); PR-B2.2 will land
+ * the write side + backfill + cold-start gate.
  */
 
 import { aesEncrypt, aesDecrypt, type Sealed } from './aes';

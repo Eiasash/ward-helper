@@ -2,6 +2,13 @@ import { openDB, type IDBPDatabase } from 'idb';
 
 import type { SafetyFlags } from '@/safety/types';
 import { notifyNotesChanged } from '@/ui/hooks/glanceableEvents';
+import {
+  decryptRowIfEncrypted,
+  decryptRowsIfEncrypted,
+  isEncryptedRow,
+  type SealedNoteRow,
+  type SealedPatientRow,
+} from '@/crypto/phiRow';
 
 export type NoteType = 'admission' | 'discharge' | 'consult' | 'case' | 'soap' | 'census';
 
@@ -362,7 +369,14 @@ export async function upsertPatientByTz(p: Omit<Patient, 'id'>): Promise<Patient
 }
 
 export async function listPatients(): Promise<Patient[]> {
-  return (await getDb()).getAll('patients');
+  // PR-B2.1: route through the read seam. Under flag-off + no encrypted
+  // rows (B2.1's world) the helper's fast path returns the raw array
+  // unchanged (byte-equal to today). Under flag-on (B2.2's world) any
+  // encrypted-shape rows decrypt here; that's the seam.
+  const rows = (await (await getDb()).getAll('patients')) as Array<
+    Patient | SealedPatientRow
+  >;
+  return decryptRowsIfEncrypted<Patient>(rows, 'patient');
 }
 
 export async function putNote(n: Note): Promise<void> {
@@ -371,7 +385,14 @@ export async function putNote(n: Note): Promise<void> {
 
 export async function listNotes(patientId: string): Promise<Note[]> {
   const db = await getDb();
-  return db.getAllFromIndex('notes', 'by-patient', patientId);
+  // PR-B2.1: by-patient index keys on patientId (plaintext, non-PII, kept
+  // at row top-level even on the post-B2.2 encrypted SealedNoteRow shape).
+  // The index lookup itself doesn't need to change; only the row values
+  // returned from it pass through the decryption seam.
+  const rows = (await db.getAllFromIndex('notes', 'by-patient', patientId)) as Array<
+    Note | SealedNoteRow
+  >;
+  return decryptRowsIfEncrypted<Note>(rows, 'note');
 }
 
 /**
@@ -381,15 +402,30 @@ export async function listNotes(patientId: string): Promise<Note[]> {
  * getAll is strictly cheaper than N index scans.
  */
 export async function listAllNotes(): Promise<Note[]> {
-  return (await getDb()).getAll('notes');
+  // PR-B2.1: cross the read seam (see listPatients for rationale).
+  const rows = (await (await getDb()).getAll('notes')) as Array<Note | SealedNoteRow>;
+  return decryptRowsIfEncrypted<Note>(rows, 'note');
 }
 
 export async function getNote(id: string): Promise<Note | undefined> {
-  return (await getDb()).get('notes', id);
+  // PR-B2.1: point read through the seam. Decrypt-failure null is coerced
+  // to undefined to preserve the existing call-site signature (callers
+  // already handle `undefined` as "not found"). B2.2 will add the visible
+  // "1 record couldn't be loaded" UX affordance for the null branch.
+  const raw = (await (await getDb()).get('notes', id)) as Note | SealedNoteRow | undefined;
+  const result = await decryptRowIfEncrypted<Note>(raw, 'note');
+  return result ?? undefined;
 }
 
 export async function getPatient(id: string): Promise<Patient | undefined> {
-  return (await getDb()).get('patients', id);
+  // PR-B2.1: point read through the seam. Same null→undefined coercion
+  // rationale as getNote above.
+  const raw = (await (await getDb()).get('patients', id)) as
+    | Patient
+    | SealedPatientRow
+    | undefined;
+  const result = await decryptRowIfEncrypted<Patient>(raw, 'patient');
+  return result ?? undefined;
 }
 
 export async function deleteNote(id: string): Promise<void> {
@@ -405,8 +441,21 @@ export async function deleteNote(id: string): Promise<void> {
  */
 export async function markNoteSent(id: string, ts: number = Date.now()): Promise<void> {
   const db = await getDb();
-  const note = (await db.get('notes', id)) as Note | undefined;
-  if (!note) return;
+  // PR-B2.1: sync-sniff-inside-tx pattern. Under flag-off + no encrypted
+  // rows (B2.1's world), this is a no-op gate — sniff returns false,
+  // plaintext fast path runs identical to today. Under a premature flag-on
+  // (encrypted row in storage before B2.2's full staged-write lands at
+  // this site), throw an explicit error rather than corrupting the row
+  // by writing a plaintext-shaped mutation back over an encrypted row.
+  // B2.2 will replace this throw with the staged write pattern.
+  const raw = (await db.get('notes', id)) as Note | SealedNoteRow | undefined;
+  if (!raw) return;
+  if (isEncryptedRow(raw)) {
+    throw new Error(
+      'markNoteSent: encountered encrypted note row but B2.2 staged-write pattern not yet wired at this site',
+    );
+  }
+  const note = raw;
   await db.put('notes', { ...note, sentToEmrAt: ts, updatedAt: ts });
   // Header-strip pending-sync subscribes — drop the count by 1 immediately.
   // `glanceableEvents` is a tiny no-dep module (just `window.dispatchEvent`)
@@ -473,17 +522,50 @@ export interface DbStats {
 
 /**
  * Lightweight stats for the debug panel. No per-record decryption — bytes
- * are a rough estimate (`patients*256 + Σ note.body.length*2 + 256`) so the
- * user can eyeball whether local storage is bloating up.
+ * are a rough estimate so the user can eyeball whether local storage is
+ * bloating up.
+ *
+ * PR-B2.1: post-encryption (B2.2 world) notes are stored as SealedNoteRow
+ * with `bodyHebrew` inside the encrypted envelope, NOT at row top-level.
+ * Reading `n.bodyHebrew.length` on an encrypted row would yield `undefined`.
+ * The "decrypt every note for a debug byte count" alternative is absurd
+ * cost for a number whose docblock already says "rough" — so the byte
+ * estimate switches to a ciphertext-length-derived figure on encrypted rows.
+ *
+ * AES-GCM overhead is deterministic per envelope: 12-byte IV (separate
+ * field in Sealed) + 16-byte auth tag appended to the ciphertext. So
+ * `ciphertext.length - 16` ≈ plaintext byte count. Multiply by ~1 (already
+ * bytes, not chars) for the estimate. The existing per-note `+ 256` overhead
+ * constant covers row scaffolding and is preserved.
+ *
+ * Encrypted rows also lose access to top-level `updatedAt` / `createdAt`,
+ * so the oldest/newest timestamp computation is skipped on those rows.
+ * Acceptable degradation — these are debug-panel hints, not clinical data.
+ *
+ * For temporal range queries on encrypted rows post-B2.2, callers should
+ * materialize a decrypted list first (via listAllNotes) and compute then.
  */
 export async function getDbStats(): Promise<DbStats> {
   const db = await getDb();
   const patients = await db.count('patients');
-  const notes = (await db.getAll('notes')) as Note[];
+  const notes = (await db.getAll('notes')) as Array<Note | SealedNoteRow>;
   let estimatedBytes = patients * 256;
   let oldest: number | null = null;
   let newest: number | null = null;
   for (const n of notes) {
+    if (isEncryptedRow(n)) {
+      // Ciphertext-length-derived estimate. Auth tag is 16 bytes
+      // appended to the GCM output; subtracting it approximates the
+      // plaintext byte count. Comment retained so a future reader
+      // doesn't "fix" this to call unsealRow.
+      const ctLen = n.enc.ciphertext.byteLength;
+      const plaintextBytesApprox = Math.max(0, ctLen - 16);
+      estimatedBytes += plaintextBytesApprox + 256;
+      // No createdAt/updatedAt at top level on encrypted rows — skip
+      // this row's contribution to the temporal range. (Debug-panel
+      // figure; clinically irrelevant.)
+      continue;
+    }
     estimatedBytes += (n.bodyHebrew?.length ?? 0) * 2 + 256;
     const t = n.updatedAt ?? n.createdAt ?? 0;
     if (t) {
@@ -505,12 +587,20 @@ export async function listNotesByTeudatZehut(
 ): Promise<{ patient: Patient | null; notes: Note[] }> {
   const tz = teudatZehut.trim();
   if (!tz) return { patient: null, notes: [] };
-  const db = await getDb();
-  // v7+: by-tz index dropped; full-scan patients + JS filter. The
-  // by-patient index on notes survives (patientId is a random UUID,
-  // non-PII) — once we know the patient id(s) the notes lookup is
-  // still O(log N) per match.
-  const allPatients = (await db.getAll('patients')) as Patient[];
+  // PR-B2.1: route through listPatients() + listNotes() so this site
+  // crosses the encryption seam. Pre-B2.1 this function did
+  // `db.getAll('patients')` + `db.getAllFromIndex('notes', 'by-patient',
+  // p.id)` direct — the PR #166 review caught that the direct
+  // getAll-patients bypassed listPatients, and the design pin
+  // generalized to "every read site must cross the seam." Routing
+  // through listPatients fixes the bypass; routing the per-match note
+  // lookup through listNotes() fixes the same bypass on the by-patient
+  // side. The by-patient index itself keeps working — patientId stays
+  // plaintext top-level on encrypted rows (SealedNoteRow).
+  //
+  // v7+: by-tz index dropped (PR-B1); listPatients() returns a full
+  // scan that we filter by teudatZehut in JS. ~30ms at ward scale.
+  const allPatients = await listPatients();
   const matches = allPatients.filter((p) => p.teudatZehut === tz);
   if (matches.length === 0) return { patient: null, notes: [] };
   matches.sort((a, b) => b.updatedAt - a.updatedAt);
@@ -519,9 +609,7 @@ export async function listNotesByTeudatZehut(
   // where two patient rows share a teudatZehut from a prior index-era
   // miss-split; combined notes are returned so continuity / banner show
   // the union).
-  const notesByPatient = await Promise.all(
-    matches.map((p) => db.getAllFromIndex('notes', 'by-patient', p.id)),
-  );
-  const notes = notesByPatient.flat() as Note[];
+  const notesByPatient = await Promise.all(matches.map((p) => listNotes(p.id)));
+  const notes = notesByPatient.flat();
   return { patient, notes };
 }

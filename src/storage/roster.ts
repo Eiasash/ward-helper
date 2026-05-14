@@ -11,11 +11,14 @@
  *     on app boot. If cross-device roster sync is ever needed, that's
  *     Phase F. Don't pre-build it.
  *
- *   - Plaintext at rest in IndexedDB. Matches the existing posture for
- *     the `patients` and `notes` stores in indexed.ts — the per-repo
- *     CLAUDE.md invariant is "no plaintext PHI **leaves the device**",
- *     not "no plaintext PHI exists at rest." Roster rows live in IDB
- *     in the same threat model as `patients`.
+ *   - PR-B2.1: in scope for PHI-at-rest encryption (Adjustment 2C).
+ *     Pre-B2.1 the doc said "plaintext at rest matches patients."
+ *     B2.1's fresh-eye PHI-scope check (`crypto/phi.ts:10-12`) found
+ *     that roster carries direct PHI (tz, name, room, dxShort) per
+ *     the RosterPatient interface, same severity as the patients
+ *     store. B2.1 wires the read seam (`getRoster` via
+ *     decryptRowsIfEncrypted); B2.2 will land the write side + the
+ *     staged-pattern refactor of ageOutRoster's read-then-delete tx.
  *
  *   - "Snapshot" semantics. setRoster(patients) is a clear-then-insert
  *     transaction: the daily roster doesn't accumulate, it gets replaced.
@@ -25,6 +28,11 @@
  */
 
 import { getDb } from './indexed';
+import {
+  decryptRowsIfEncrypted,
+  isEncryptedRow,
+  type SealedRosterRow,
+} from '@/crypto/phiRow';
 
 const STORE = 'roster';
 
@@ -76,7 +84,11 @@ export async function setRoster(patients: RosterPatient[]): Promise<void> {
  */
 export async function getRoster(): Promise<RosterPatient[]> {
   const db = await getDb();
-  return (await db.getAll(STORE)) as RosterPatient[];
+  // PR-B2.1: cross the read seam. Same flag-off byte-equal pattern as
+  // listPatients/listAllNotes — the helper's fast path returns the raw
+  // array unchanged when no row is encrypted (B2.1's world).
+  const rows = (await db.getAll(STORE)) as Array<RosterPatient | SealedRosterRow>;
+  return decryptRowsIfEncrypted<RosterPatient>(rows, 'roster');
 }
 
 /** Empty the roster. Used by the modal's "discard" path + tests. */
@@ -98,9 +110,25 @@ export async function ageOutRoster(now: number = Date.now()): Promise<number> {
   const cutoff = now - ROSTER_AGE_OUT_MS;
   const db = await getDb();
   const tx = db.transaction(STORE, 'readwrite');
-  const rows = (await tx.store.getAll()) as RosterPatient[];
+  // PR-B2.1: sync-sniff-inside-tx. Under flag-off + no encrypted rows
+  // (B2.1's world), every row is plaintext — sniff returns false, fast
+  // path runs identical to today (importedAt at row top-level, drop if
+  // expired). Under premature flag-on the throw branch surfaces a clear
+  // error rather than silently failing to expire stale rosters (which
+  // would leave stale PHI on the device past the 24h TTL).
+  //
+  // B2.2 will replace this with the staged-pattern: read out, close tx,
+  // decrypt out-of-tx (or check importedAt via a metadata field at row
+  // top-level — TBD in B2.2 design), reopen for deletes. Sibling case
+  // to runV1_40_0_BackfillIfNeeded.
+  const rows = (await tx.store.getAll()) as Array<RosterPatient | SealedRosterRow>;
   let dropped = 0;
   for (const r of rows) {
+    if (isEncryptedRow(r)) {
+      throw new Error(
+        'ageOutRoster: encountered encrypted roster row but B2.2 staged-pattern not yet wired at this site',
+      );
+    }
     if (r.importedAt < cutoff) {
       await tx.store.delete(r.id);
       dropped++;
