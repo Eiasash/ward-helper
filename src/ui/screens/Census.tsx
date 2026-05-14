@@ -5,7 +5,7 @@ import { dataUrlToBlob } from '@/camera/session';
 import { runCensusExtractTurn, type CensusRow, type CensusResult } from '@/agent/loop';
 import { loadSkills } from '@/skills/loader';
 import { upsertCensus, type CensusUpsertResult } from '@/storage/census';
-import { getPatientByTz } from '@/storage/indexed';
+import { listPatientsByTzMap } from '@/storage/indexed';
 import { pushBreadcrumb } from '@/ui/components/MobileDebugPanel';
 
 type Status = 'idle' | 'parsing' | 'editing' | 'saving' | 'done' | 'error';
@@ -102,12 +102,22 @@ export function Census() {
       // prompt: deterministic, free, self-improving (every successful name
       // extraction in the past helps future ones). Per memory
       // feedback_validator_before_prompt.md.
+      //
+      // v7-load-once-Map (PR-B1): pre-v7 each row called getPatientByTz
+      // backed by an IDB index — N census rows × O(log N) index hits.
+      // Post-v7 the index is gone (preparing for PHI encryption in B2),
+      // so a per-row call would be N × O(N_patients) full-scans = O(N²).
+      // The fix: scan once before the loop, build Map<tz, Patient>, and
+      // do synchronous O(1) lookups inside. Per-row Promise.all wrapper
+      // is preserved (rows are pure synchronous transforms now, but the
+      // outer .map(async) shape matches the rest of the file).
+      const tzMap = await listPatientsByTzMap();
       let augmentedFromRoster = 0;
       const augmented: CensusRow[] = await Promise.all(
         result.rows.map(async (row) => {
           if (row.name?.trim()) return row;
           if (!row.teudatZehut) return row;
-          const known = await getPatientByTz(row.teudatZehut);
+          const known = tzMap.get(row.teudatZehut.trim());
           if (known?.name) {
             augmentedFromRoster++;
             return { ...row, name: known.name };
