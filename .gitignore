@@ -25,3 +25,8 @@ coverage/
 # 2026-05-10: relocated /remote-control session transcript — personal reference,
 # not a project artifact. Lives on disk for retrieval but not tracked in repo.
 docs/2026-05-10-remote-control-session.txt
+
+# 2026-05-14: local MCP server config (no secrets, just public project refs)
+# and Supabase CLI scratch dir. Personal tooling, not project state.
+.mcp.json
+supabase/.temp/
