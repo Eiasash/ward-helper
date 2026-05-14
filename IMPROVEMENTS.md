@@ -4,6 +4,86 @@ Auto-appended by the audit-fix-deploy pipeline. Most recent run on top.
 
 ---
 
+## 2026-05-14 — Overnight audit pass (6 PRs, headline: bidi critical-flag bug)
+
+Single-session audit-fix-deploy cycle conducted overnight 2026-05-13→14 against v1.45.0.
+Six small reviewable PRs shipped, all CI green, no merge action taken (PR-based deploy
+flow per branch protection).
+
+| # | Type | Title | State |
+|---|---|---|---|
+| #156 | feat (draft) | `feat(bot v5.1): persona rebound layer 1+2 + analyzer sanity bounds (4-task workstream)` | draft, CI green |
+| #157 | chore | `chore(test): exclude .d.{ts,mts,cts} from coverage` | ready, CI green |
+| #158 | chore | `chore: housekeeping — gitignore + CLAUDE.md drift refresh` | ready, CI green (this PR adds this entry) |
+| #159 | refactor | `refactor: drop dead isTransient/RETRY_BACKOFF_MS from client.ts` | ready, CI green |
+| #160 | **fix** | `fix(bidi): sanitizeLabSection critical-flag (H!/L!) direction reversed when input contains 'H'` | ready, CI green |
+| #161 | test | `test(manualPush): cover canary-orphan skip + 3 per-row failure paths` | ready, CI green |
+
+### Headline find — PR #160
+
+`sanitizeLabSection` was using `str.includes('H')` on the FULL input string in
+a `.replace` callback, rather than the matched letter. Any `L!` critical-low
+flag in a string containing 'H' anywhere (e.g. "Hb 8.3 L!" — hemoglobin)
+was mistranslated as "(מעל הנורמה, חריג) / above norm critical" instead of
+"(מתחת לנורמה, חריג) / below norm critical".
+
+**Severity correction (callers-grep after PR opened)**: `sanitizeLabSection`
+is exported public API but has **zero callers in `src/`** — the live clipboard
+handler routes through `sanitizeForChameleon` (generic), not the lab variant.
+Bug ships in the bundle but isn't currently exercised by live clinical flow.
+Still merged because the function is reachable by anyone calling it; wire-up
+is a separate design decision tracked on the PR comments.
+
+Also caught a second bug in the same area: handler ordering (H!/L! must run
+BEFORE plain `\bH` handlers, or the plain regex consumes the H and leaves a
+stray "!"). Both fixed in PR #160 together with 5 regression tests.
+
+### What this session ran against the audit profile (§ F)
+
+| Check | Result |
+|---|---|
+| Version trinity (`package.json` ↔ `public/sw.js` ↔ Vite `__APP_VERSION__`) | 1.45.0 coherent ✅ |
+| PHI in localStorage grep | clean (only documented `ward-helper.emailTo` carve-out) |
+| `@anthropic-ai/sdk` import grep | empty ✅ |
+| Direct `api.anthropic.com` calls | only documented State-3 BYOK probe in `dispatch.ts` ✅ |
+| Analytics/3rd-party scripts grep | empty ✅ |
+| Bundle entry chunk (gz) | 81.17 kB (45% of 180 kB ceiling) ✅ |
+| Live SW serves expected version | `ward-v1.45.0` ✅ |
+| RLS sanity pass | **skipped** — no schema-adjacent work this session |
+| Vite 8 install-promo warning | investigated, false positive (intentional non-module IIFE) |
+| Coverage in clinical-safety modules | 90.93% statements / 95.32% functions / 83.98% branches |
+
+### Overnight chaos bot run
+
+Launched in parallel on the WIP branch's code (exercising the bot v5.1 persona
+rebound paths against `eiasash.github.io/ward-helper/`):
+
+- `WARD_BOT_DURATION_MS=10800000` (3 hours)
+- `WARD_BOT_PERSONAS=5` (speedrunner, methodical, misclicker, multitasker, keyboardWarrior)
+- `CHAOS_COST_CAP_USD=15` (well under default 80 — actual spend was ~$1.57 for 5-scenario gen)
+- `CHAOS_EFFORT=medium` (default high was too expensive)
+- Headless, system Chrome
+
+In-progress findings as of writing (will need triage on completion):
+1 HIGH (resetPassword silent-on-fake-token), several MEDIUM/LOW.
+**Do not auto-flip** — per `feedback_bot_triage_queues_have_high_false_positives.md`,
+read actual code path before believing each finding. Full report at
+`chaos-reports/ward-bot-mega/wm-2026-05-13T21-01-58.md` post-run.
+
+### Branches in flight at session end
+
+- `claude/term-persona-rebound-workstream3-impl` → PR #156 (draft)
+- `claude/term-vitest-coverage-dts-exclude` → PR #157
+- `claude/term-housekeeping-gitignore-claudemd` → PR #158 (this entry on it)
+- `claude/term-dead-code-client-isTransient` → PR #159
+- `claude/term-bidi-critical-flag-bug-fix` → PR #160
+- `claude/term-manualpush-coverage` → PR #161
+
+No commits to `main`. All work on PR-gated feature branches per the repo's
+branch-protection invariant.
+
+---
+
 ## 2026-05-10 — Ortho-rehab quickref UI at #/ortho (follow-up to PR #127)
 
 Wires the ortho-rehab content drop (PR #127) into a single-screen UI exposed at
