@@ -5,6 +5,7 @@ import { notifyNotesChanged } from '@/ui/hooks/glanceableEvents';
 import {
   decryptRowIfEncrypted,
   decryptRowsIfEncrypted,
+  isEncryptedRow,
   type SealedNoteRow,
   type SealedPatientRow,
 } from '@/crypto/phiRow';
@@ -440,8 +441,21 @@ export async function deleteNote(id: string): Promise<void> {
  */
 export async function markNoteSent(id: string, ts: number = Date.now()): Promise<void> {
   const db = await getDb();
-  const note = (await db.get('notes', id)) as Note | undefined;
-  if (!note) return;
+  // PR-B2.1: sync-sniff-inside-tx pattern. Under flag-off + no encrypted
+  // rows (B2.1's world), this is a no-op gate — sniff returns false,
+  // plaintext fast path runs identical to today. Under a premature flag-on
+  // (encrypted row in storage before B2.2's full staged-write lands at
+  // this site), throw an explicit error rather than corrupting the row
+  // by writing a plaintext-shaped mutation back over an encrypted row.
+  // B2.2 will replace this throw with the staged write pattern.
+  const raw = (await db.get('notes', id)) as Note | SealedNoteRow | undefined;
+  if (!raw) return;
+  if (isEncryptedRow(raw)) {
+    throw new Error(
+      'markNoteSent: encountered encrypted note row but B2.2 staged-write pattern not yet wired at this site',
+    );
+  }
+  const note = raw;
   await db.put('notes', { ...note, sentToEmrAt: ts, updatedAt: ts });
   // Header-strip pending-sync subscribes — drop the count by 1 immediately.
   // `glanceableEvents` is a tiny no-dep module (just `window.dispatchEvent`)
@@ -508,17 +522,50 @@ export interface DbStats {
 
 /**
  * Lightweight stats for the debug panel. No per-record decryption — bytes
- * are a rough estimate (`patients*256 + Σ note.body.length*2 + 256`) so the
- * user can eyeball whether local storage is bloating up.
+ * are a rough estimate so the user can eyeball whether local storage is
+ * bloating up.
+ *
+ * PR-B2.1: post-encryption (B2.2 world) notes are stored as SealedNoteRow
+ * with `bodyHebrew` inside the encrypted envelope, NOT at row top-level.
+ * Reading `n.bodyHebrew.length` on an encrypted row would yield `undefined`.
+ * The "decrypt every note for a debug byte count" alternative is absurd
+ * cost for a number whose docblock already says "rough" — so the byte
+ * estimate switches to a ciphertext-length-derived figure on encrypted rows.
+ *
+ * AES-GCM overhead is deterministic per envelope: 12-byte IV (separate
+ * field in Sealed) + 16-byte auth tag appended to the ciphertext. So
+ * `ciphertext.length - 16` ≈ plaintext byte count. Multiply by ~1 (already
+ * bytes, not chars) for the estimate. The existing per-note `+ 256` overhead
+ * constant covers row scaffolding and is preserved.
+ *
+ * Encrypted rows also lose access to top-level `updatedAt` / `createdAt`,
+ * so the oldest/newest timestamp computation is skipped on those rows.
+ * Acceptable degradation — these are debug-panel hints, not clinical data.
+ *
+ * For temporal range queries on encrypted rows post-B2.2, callers should
+ * materialize a decrypted list first (via listAllNotes) and compute then.
  */
 export async function getDbStats(): Promise<DbStats> {
   const db = await getDb();
   const patients = await db.count('patients');
-  const notes = (await db.getAll('notes')) as Note[];
+  const notes = (await db.getAll('notes')) as Array<Note | SealedNoteRow>;
   let estimatedBytes = patients * 256;
   let oldest: number | null = null;
   let newest: number | null = null;
   for (const n of notes) {
+    if (isEncryptedRow(n)) {
+      // Ciphertext-length-derived estimate. Auth tag is 16 bytes
+      // appended to the GCM output; subtracting it approximates the
+      // plaintext byte count. Comment retained so a future reader
+      // doesn't "fix" this to call unsealRow.
+      const ctLen = n.enc.ciphertext.byteLength;
+      const plaintextBytesApprox = Math.max(0, ctLen - 16);
+      estimatedBytes += plaintextBytesApprox + 256;
+      // No createdAt/updatedAt at top level on encrypted rows — skip
+      // this row's contribution to the temporal range. (Debug-panel
+      // figure; clinically irrelevant.)
+      continue;
+    }
     estimatedBytes += (n.bodyHebrew?.length ?? 0) * 2 + 256;
     const t = n.updatedAt ?? n.createdAt ?? 0;
     if (t) {

@@ -182,7 +182,10 @@ export async function decryptRowsIfEncrypted<T>(
   const decrypted = await Promise.all(
     rows.map((r) => decryptRowIfEncrypted<T>(r, kind)),
   );
-  return decrypted.filter((r): r is T => r !== null && r !== undefined);
+  // Cast through unknown because TS can't prove the type predicate when T
+  // is generic (T might itself be nullable). Runtime correctness: we
+  // explicitly exclude null and undefined; whatever survives is T.
+  return decrypted.filter((r) => r !== null && r !== undefined) as unknown as T[];
 }
 
 // ─── Write-path flag gate (used by B2.2; exposed in B2.1 for tests) ──
