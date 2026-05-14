@@ -56,18 +56,6 @@ export interface CallOptions {
   signal?: AbortSignal;
 }
 
-const RETRY_BACKOFF_MS = 2_000;
-
-function isTransient(e: unknown): boolean {
-  if (!(e instanceof Error)) return false;
-  const m = e.message;
-  return (
-    /\bHTTP 5\d\d\b/.test(m) || // any 5xx
-    /Upstream timeout/i.test(m) ||
-    /network|aborted|fetch failed|load failed/i.test(m)
-  );
-}
-
 export type AnthropicContentBlock =
   | { type: 'text'; text: string }
   | {
