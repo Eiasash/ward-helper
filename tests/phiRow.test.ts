@@ -23,8 +23,16 @@ import {
   decryptRowIfEncrypted,
   decryptRowsIfEncrypted,
   isPhiEncryptV7Enabled,
+  setPhiEncryptV7Enabled,
+  wrapPatientForWrite,
+  wrapNoteForWrite,
+  wrapRosterForWrite,
 } from '@/crypto/phiRow';
-import type { SealedPatientRow, SealedNoteRow } from '@/crypto/phiRow';
+import type {
+  SealedPatientRow,
+  SealedNoteRow,
+  SealedRosterRow,
+} from '@/crypto/phiRow';
 import {
   derivePhiKey,
   setPhiKey,
@@ -313,5 +321,104 @@ describe('isPhiEncryptV7Enabled (write-side flag gate)', () => {
     expect(isPhiEncryptV7Enabled()).toBe(false);
     localStorage.setItem('phi_encrypt_v7', '');
     expect(isPhiEncryptV7Enabled()).toBe(false);
+  });
+});
+
+// ─── setPhiEncryptV7Enabled (PR-B2.2 flipper) ──────────────────────────
+
+describe('setPhiEncryptV7Enabled (PR-B2.2 backfill-completion flipper)', () => {
+  it('flips the flag from OFF to ON', () => {
+    expect(isPhiEncryptV7Enabled()).toBe(false);
+    setPhiEncryptV7Enabled();
+    expect(isPhiEncryptV7Enabled()).toBe(true);
+  });
+
+  it('is idempotent: calling twice leaves the flag ON', () => {
+    setPhiEncryptV7Enabled();
+    setPhiEncryptV7Enabled();
+    expect(isPhiEncryptV7Enabled()).toBe(true);
+  });
+});
+
+// ─── wrap helpers (PR-B2.2 write seam) ─────────────────────────────────
+
+describe('wrapPatientForWrite / wrapNoteForWrite / wrapRosterForWrite', () => {
+  it('wrapPatientForWrite produces { id, enc } and round-trips through decryptRowIfEncrypted', async () => {
+    setPhiKey(await derivePhiKey(PASSWORD, randomSalt(), TEST_ITERATIONS));
+    const patient = {
+      id: 'p-1',
+      name: 'מטופל',
+      teudatZehut: '123456789',
+      dob: '1945-03-21',
+      room: 'C12',
+      tags: ['fall-risk'],
+      createdAt: 1700000000000,
+      updatedAt: 1700000000001,
+    };
+    const sealed = await wrapPatientForWrite(patient);
+    expect(sealed.id).toBe('p-1');
+    expect(sealed.enc.iv).toBeInstanceOf(Uint8Array);
+    expect(sealed.enc.ciphertext).toBeInstanceOf(Uint8Array);
+    expect(isEncryptedRow(sealed)).toBe(true);
+    const recovered = await decryptRowIfEncrypted<typeof patient>(sealed, 'patient');
+    expect(recovered).toEqual(patient);
+  });
+
+  it('wrapNoteForWrite preserves patientId at row top level (by-patient index survives)', async () => {
+    setPhiKey(await derivePhiKey(PASSWORD, randomSalt(), TEST_ITERATIONS));
+    const note = {
+      id: 'n-1',
+      patientId: 'p-1',
+      type: 'admission' as const,
+      bodyHebrew: 'פניאופוניה',
+      structuredData: { hr: 96 },
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const sealed = await wrapNoteForWrite(note);
+    expect(sealed.id).toBe('n-1');
+    expect(sealed.patientId).toBe('p-1');
+    expect(sealed.enc.iv).toBeInstanceOf(Uint8Array);
+    const recovered = await decryptRowIfEncrypted<typeof note>(sealed, 'note');
+    expect(recovered).toEqual(note);
+  });
+
+  it('wrapRosterForWrite produces { id, enc } and round-trips', async () => {
+    setPhiKey(await derivePhiKey(PASSWORD, randomSalt(), TEST_ITERATIONS));
+    const roster = {
+      id: 'r-1',
+      tz: '111222333',
+      name: 'roster pt',
+      age: 78,
+      sex: 'M' as const,
+      room: '7',
+      bed: 'B',
+      losDays: 2,
+      dxShort: 'COPD',
+      sourceMode: 'manual' as const,
+      importedAt: Date.now(),
+    };
+    const sealed: SealedRosterRow = await wrapRosterForWrite(roster);
+    expect(sealed.id).toBe('r-1');
+    expect(isEncryptedRow(sealed)).toBe(true);
+    const recovered = await decryptRowIfEncrypted<typeof roster>(sealed, 'roster');
+    expect(recovered).toEqual(roster);
+  });
+
+  it('throws when no PHI key set (delegated from sealRow)', async () => {
+    clearPhiKey();
+    const patient = { id: 'p-1', name: 'x', teudatZehut: '1', dob: '', room: null, tags: [], createdAt: 1, updatedAt: 1 };
+    await expect(wrapPatientForWrite(patient)).rejects.toThrow(/no PHI key set/);
+  });
+
+  it('produces a different IV each call (no key/IV reuse hazard)', async () => {
+    setPhiKey(await derivePhiKey(PASSWORD, randomSalt(), TEST_ITERATIONS));
+    const p = { id: 'p-1', name: 'x', teudatZehut: '1', dob: '', room: null, tags: [], createdAt: 1, updatedAt: 1 };
+    const a = await wrapPatientForWrite(p);
+    const b = await wrapPatientForWrite(p);
+    // AES-GCM is randomized by IV — same plaintext + same key + different IV
+    // ⇒ different ciphertexts. This is the no-IV-reuse safety property.
+    const ivsEqual = a.enc.iv.every((byte, i) => byte === b.enc.iv[i]);
+    expect(ivsEqual).toBe(false);
   });
 });

@@ -6,6 +6,9 @@ import {
   decryptRowIfEncrypted,
   decryptRowsIfEncrypted,
   isEncryptedRow,
+  isPhiEncryptV7Enabled,
+  wrapNoteForWrite,
+  wrapPatientForWrite,
   type SealedNoteRow,
   type SealedPatientRow,
 } from '@/crypto/phiRow';
@@ -96,6 +99,24 @@ export interface Settings {
    * PR-A only persists this; the encrypt/decrypt callers ship in PR-B.
    */
   phiSalt?: Uint8Array<ArrayBuffer> | null;
+  /**
+   * Durable PHI-encryption sentinel. Source of truth for "this install has
+   * completed the one-time PHI backfill and every patients/notes/roster row
+   * on disk is sealed." Set by the B2.2 backfill runner ONLY AFTER every
+   * existing row was successfully sealed and written back; the
+   * `localStorage.phi_encrypt_v7` flag is flipped in the same operation.
+   *
+   * Re-derives the flag on cold-start: the auth/boot path reads this
+   * sentinel and re-flips the localStorage flag, so a per-tab localStorage
+   * wipe (private-window, profile reset) doesn't downgrade a previously-
+   * backfilled install to plaintext writes (which would leave sealed rows
+   * on disk and break new-write reads of those rows).
+   *
+   * Null/undefined = backfill not yet completed (or this install pre-dates
+   * v1.46.0). True = backfill done, all writes seal. There is no "false"
+   * state — once true, never reverts (matches the one-way flag policy).
+   */
+  phiEncryptedV7?: boolean | null;
 }
 
 let dbPromise: Promise<IDBPDatabase> | null = null;
@@ -253,7 +274,17 @@ export async function resetDbForTests(): Promise<void> {
 }
 
 export async function putPatient(p: Patient): Promise<void> {
-  await (await getDb()).put('patients', p);
+  // PR-B2.2 pure-writer wrapping: not in the brief's 9-throw enumeration
+  // (no read-first) but writes to a PHI-scope store, so under flag-on
+  // the row must be sealed or new writes leak plaintext while old reads
+  // expect sealed-or-plaintext mixed state. wrapPatientForWrite seals
+  // via the same dynamic-import-of-sealRow path the read seam uses, so
+  // no module-cycle concerns at top level.
+  const db = await getDb();
+  await db.put(
+    'patients',
+    isPhiEncryptV7Enabled() ? await wrapPatientForWrite(p) : p,
+  );
 }
 
 /**
@@ -380,7 +411,14 @@ export async function listPatients(): Promise<Patient[]> {
 }
 
 export async function putNote(n: Note): Promise<void> {
-  await (await getDb()).put('notes', n);
+  // PR-B2.2 pure-writer wrapping — see putPatient. patientId stays at
+  // row top level in the sealed shape so the by-patient index keeps
+  // working post-encryption.
+  const db = await getDb();
+  await db.put(
+    'notes',
+    isPhiEncryptV7Enabled() ? await wrapNoteForWrite(n) : n,
+  );
 }
 
 export async function listNotes(patientId: string): Promise<Note[]> {
@@ -441,22 +479,28 @@ export async function deleteNote(id: string): Promise<void> {
  */
 export async function markNoteSent(id: string, ts: number = Date.now()): Promise<void> {
   const db = await getDb();
-  // PR-B2.1: sync-sniff-inside-tx pattern. Under flag-off + no encrypted
-  // rows (B2.1's world), this is a no-op gate — sniff returns false,
-  // plaintext fast path runs identical to today. Under a premature flag-on
-  // (encrypted row in storage before B2.2's full staged-write lands at
-  // this site), throw an explicit error rather than corrupting the row
-  // by writing a plaintext-shaped mutation back over an encrypted row.
-  // B2.2 will replace this throw with the staged write pattern.
+  // PR-B2.2 staged pattern (Pattern A — note variant). markNoteSent was
+  // already a non-atomic get+put (no explicit tx) so this is the simplest
+  // of the 9 staged-pattern replacements: decrypt-if-encrypted out-of-band,
+  // mutate, reseal-if-flagged, put. Atomicity unchanged from B2.1 — still
+  // a non-atomic get+put.
   const raw = (await db.get('notes', id)) as Note | SealedNoteRow | undefined;
   if (!raw) return;
-  if (isEncryptedRow(raw)) {
-    throw new Error(
-      'markNoteSent: encountered encrypted note row but B2.2 staged-write pattern not yet wired at this site',
-    );
+  const note: Note | null | undefined = isEncryptedRow(raw)
+    ? await decryptRowIfEncrypted<Note>(raw, 'note')
+    : raw;
+  if (!note) {
+    // Decrypt-failure: the row exists on disk in sealed shape but we can't
+    // recover it (wrong key, corrupt ciphertext). Throw explicitly so the
+    // caller surfaces it — silent return would hide a "this note can't be
+    // marked sent" UX bug.
+    throw new Error(`markNoteSent: decrypt failed on note ${id}`);
   }
-  const note = raw;
-  await db.put('notes', { ...note, sentToEmrAt: ts, updatedAt: ts });
+  const next: Note = { ...note, sentToEmrAt: ts, updatedAt: ts };
+  await db.put(
+    'notes',
+    isPhiEncryptV7Enabled() ? await wrapNoteForWrite(next) : next,
+  );
   // Header-strip pending-sync subscribes — drop the count by 1 immediately.
   // `glanceableEvents` is a tiny no-dep module (just `window.dispatchEvent`)
   // so the storage layer can statically import it without pulling in the
@@ -507,6 +551,7 @@ export async function patchSettings(partial: Partial<Settings>): Promise<void> {
     cachedUnlockBlob: existing?.cachedUnlockBlob ?? null,
     loginPwdXor: existing?.loginPwdXor ?? null,
     phiSalt: existing?.phiSalt ?? null,
+    phiEncryptedV7: existing?.phiEncryptedV7 ?? null,
     ...partial,
   };
   await setSettings(merged);

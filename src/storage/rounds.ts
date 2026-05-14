@@ -2,7 +2,11 @@ import { getDb } from './indexed';
 import type { Patient } from './indexed';
 import { notifyDayArchived, notifyPatientsChanged } from '@/ui/hooks/glanceableEvents';
 import {
+  decryptRowIfEncrypted,
+  decryptRowsIfEncrypted,
   isEncryptedRow,
+  isPhiEncryptV7Enabled,
+  wrapPatientForWrite,
   type SealedPatientRow,
 } from '@/crypto/phiRow';
 
@@ -60,34 +64,59 @@ export async function archiveDay(): Promise<DaySnapshot> {
   const archivedAt = Date.now();
   const db = await getDb();
 
-  const tx = db.transaction(['daySnapshots', 'patients'], 'readwrite');
-  const snapshotsStore = tx.objectStore('daySnapshots');
-  const patientsStore = tx.objectStore('patients');
+  // PR-B2.2 Pattern-C staged multi-store pattern. The pre-B2.2 version
+  // ran getAll + structuredClone + put + per-patient clears inside one
+  // [daySnapshots, patients] readwrite tx. That worked when patients
+  // were plaintext, but B2.2's reseal-on-write would inject
+  // `crypto.subtle.encrypt` awaits inside the tx and poison it.
+  //
+  // Three phases:
+  //   Phase 1 — readonly tx on patients, get all raw rows, close tx.
+  //   Phase 2 — out-of-tx: decrypt-if-encrypted, then PRE-SEAL each
+  //             planToday-clear write (so the Phase-3 tx contains no
+  //             non-IDB awaits).
+  //   Phase 3 — readwrite multi-store tx, write snapshot + sealed
+  //             (or plaintext) patient updates.
+  //
+  // daySnapshots stays plaintext at rest per the carve-out
+  // (`src/crypto/phi.ts` header) — the snapshot's `patients` field is a
+  // structuredClone of the DECRYPTED array, not of sealed rows. Downstream
+  // consumers (MorningArchivePrompt, dayContinuity) read this field as
+  // Patient[], not SealedPatientRow[].
+  //
+  // Atomicity downgrade (DELIBERATE — flag for future reader): another
+  // patient-mutation (e.g. a tomorrow-note add) landing between Phase 1
+  // and Phase 3 will appear in the post-clear patient row but NOT in the
+  // frozen snapshot. Single-tab single-user UX bounds this; archiveDay
+  // has exactly 2 call sites (`MorningArchivePrompt::handleArchive` and
+  // `handleConfirmReplace`) both gated on user button taps.
 
-  // Read live patients within the same tx (consistency).
-  // PR-B2.1: sync-sniff-inside-tx. Under flag-off + no encrypted rows
-  // (B2.1's world) every row is plaintext, fast path runs identical to
-  // today. Under premature flag-on we throw — archiveDay's structuredClone
-  // would otherwise produce a daySnapshot containing encrypted-shaped
-  // rows that downstream consumers (MorningArchivePrompt, dayContinuity)
-  // expect to be plaintext. B2.2 will refactor this into the staged
-  // multi-store pattern: read patients out, close tx, decrypt out-of-tx,
-  // reopen multi-store tx for the snapshot put + planToday clears.
-  // daySnapshots itself stays plaintext at rest per the carve-out
-  // (`src/crypto/phi.ts` header — cloud-side already encrypted, local-rest
-  // threat model assumes OS disk encryption).
-  const rawPatients = (await patientsStore.getAll()) as Array<Patient | SealedPatientRow>;
-  if (rawPatients.some((r) => isEncryptedRow(r))) {
-    throw new Error(
-      'archiveDay: encountered encrypted patient row but B2.2 staged multi-store pattern not yet wired at this site',
-    );
+  // Phase 1 — readonly read.
+  const readTx = db.transaction('patients', 'readonly');
+  const rawPatients = (await readTx.objectStore('patients').getAll()) as Array<
+    Patient | SealedPatientRow
+  >;
+  await readTx.done;
+
+  // Phase 2 — decrypt out-of-tx.
+  const patients = await decryptRowsIfEncrypted<Patient>(rawPatients, 'patient');
+
+  // Phase 2b — pre-seal every planToday-clear write so Phase 3 has no
+  // crypto await. Only patients with non-empty planToday need a write;
+  // every other row is unchanged.
+  const flagOn = isPhiEncryptV7Enabled();
+  const writes: Array<{ value: Patient | SealedPatientRow }> = [];
+  for (const p of patients) {
+    if (p.planToday !== '') {
+      const next: Patient = { ...p, planToday: '', updatedAt: archivedAt };
+      writes.push({
+        value: flagOn ? await wrapPatientForWrite(next) : next,
+      });
+    }
   }
-  const patients = rawPatients as Patient[];
 
-  // Frozen copy — capture planToday BEFORE clearing. structuredClone
-  // isolates the returned snapshot from any future caller mutation
-  // (ward-helper targets es2022, which has structuredClone in all
-  // supported runtimes including the test env).
+  // Frozen snapshot of the DECRYPTED patients array — daySnapshots carve-
+  // out leaves these plaintext at rest.
   const snapshot: DaySnapshot = {
     id: today,
     date: today,
@@ -95,9 +124,11 @@ export async function archiveDay(): Promise<DaySnapshot> {
     patients: structuredClone(patients),
   };
 
-  // Snapshot write + cap (mirrors putDaySnapshot's logic, inlined so the
-  // whole archive runs inside one tx — calling putDaySnapshot here would
-  // open a second tx and break atomicity).
+  // Phase 3 — readwrite multi-store tx; sync writes only.
+  const writeTx = db.transaction(['daySnapshots', 'patients'], 'readwrite');
+  const snapshotsStore = writeTx.objectStore('daySnapshots');
+  const patientsStore = writeTx.objectStore('patients');
+
   await snapshotsStore.put(snapshot);
   const allSnaps = (await snapshotsStore.getAll()) as DaySnapshot[];
   if (allSnaps.length > SNAPSHOT_HISTORY_CAP) {
@@ -106,14 +137,11 @@ export async function archiveDay(): Promise<DaySnapshot> {
     for (const s of toDelete) await snapshotsStore.delete(s.id);
   }
 
-  // Clear planToday for all live patients (skip rows already empty).
-  for (const p of patients) {
-    if (p.planToday !== '') {
-      await patientsStore.put({ ...p, planToday: '', updatedAt: archivedAt });
-    }
+  for (const w of writes) {
+    await patientsStore.put(w.value);
   }
 
-  await tx.done;
+  await writeTx.done;
 
   localStorage.setItem(LAST_ARCHIVED_KEY, today);
   notifyDayArchived();
@@ -167,23 +195,32 @@ export async function runV1_40_0_BackfillIfNeeded(): Promise<void> {
     }
     await readTx.done;
 
-    // Phase 2 — out-of-tx classification. The staging exists explicitly
-    // so we can do non-IDB work here without poisoning the tx. Under
-    // B2.1 every row is plaintext (flag-off, no encrypted rows present).
-    // If we encounter an encrypted row, abort — re-sealing requires
-    // wrapPatientForWrite which lands in B2.2.
-    if (collected.some((r) => isEncryptedRow(r))) {
+    // Phase 2 — out-of-tx classification + decryption. Under B2.1 every
+    // row was plaintext; B2.2 replaces the abort-on-encrypted branch with
+    // decrypt-and-continue, so v1.40.0 backfill can re-run even after the
+    // PHI backfill has sealed some rows (e.g. a fresh schema migration
+    // landing AFTER the PHI flag is on).
+    const decryptedRows = await Promise.all(
+      collected.map((r) =>
+        isEncryptedRow(r)
+          ? decryptRowIfEncrypted<Patient>(r, 'patient')
+          : Promise.resolve(r as Patient),
+      ),
+    );
+    if (decryptedRows.some((r) => r === null)) {
       throw new Error(
-        'runV1_40_0_BackfillIfNeeded: encountered encrypted patient row but B2.2 re-seal-on-write not yet wired at this site',
+        'runV1_40_0_BackfillIfNeeded: decrypt failed on some rows',
       );
     }
-    const plaintextRows = collected as Patient[];
+    const rows = decryptedRows as Patient[];
 
-    // Phase 3 — readwrite tx, apply mutations.
-    const writeTx = db.transaction('patients', 'readwrite');
-    const writeStore = writeTx.objectStore('patients');
-    for (const p of plaintextRows) {
-      await writeStore.put({
+    // Phase 2b — pre-compute (and pre-seal if flag on) every write so
+    // the Phase-3 tx contains no non-IDB awaits. Same discipline as
+    // archiveDay's Pattern-C staging.
+    const flagOn = isPhiEncryptV7Enabled();
+    const writeValues: Array<Patient | SealedPatientRow> = [];
+    for (const p of rows) {
+      const next: Patient = {
         ...p,
         discharged: p.discharged ?? false,
         tomorrowNotes: p.tomorrowNotes ?? [],
@@ -191,7 +228,15 @@ export async function runV1_40_0_BackfillIfNeeded(): Promise<void> {
         planLongTerm: p.planLongTerm ?? '',
         planToday: p.planToday ?? '',
         clinicalMeta: p.clinicalMeta ?? {},
-      });
+      };
+      writeValues.push(flagOn ? await wrapPatientForWrite(next) : next);
+    }
+
+    // Phase 3 — readwrite tx, sync IDB writes only.
+    const writeTx = db.transaction('patients', 'readwrite');
+    const writeStore = writeTx.objectStore('patients');
+    for (const v of writeValues) {
+      await writeStore.put(v);
     }
     await writeTx.done;
 
@@ -204,42 +249,77 @@ export async function runV1_40_0_BackfillIfNeeded(): Promise<void> {
 }
 
 /**
+ * Pattern-A staged-update helper (PR-B2.2). Shared by the 5 patient-mutation
+ * sites in this file (dischargePatient, unDischargePatient, addTomorrowNote,
+ * dismissTomorrowNote, promoteToHandover) — each of which reduces to "read
+ * one patient, mutate it, write it back." The shape was documented by the
+ * brief's Pattern A pseudocode; this helper is the single source of truth.
+ *
+ * The staging:
+ *   Phase 1 — readonly tx, get the raw row, close tx.
+ *   Phase 2 — out-of-tx: decrypt if encrypted (`crypto.subtle.decrypt` is a
+ *             non-IDB Promise and would poison a still-open tx).
+ *   Phase 3 — readwrite tx, mutate + reseal-if-flagged + put, close tx.
+ *
+ * Atomicity downgrade (DELIBERATE — flag for future reader): the pre-B2.2
+ * single-tx pattern held the readonly lock through the write, preventing a
+ * "two concurrent calls read the same row and both append" race. The
+ * staged version reintroduces that race. ward-helper is single-tab single-
+ * user per CLAUDE.md so concurrent double-tap is UX-mitigated (button
+ * disabled while in-flight, no parallel tabs), and the brief explicitly
+ * accepts this trade. Do NOT "fix" by reopening a multi-step single-tx —
+ * that would re-poison the tx with decrypt-await.
+ */
+async function _stagedPatientUpdate(
+  patientId: string,
+  caller: string,
+  mutator: (p: Patient) => Patient,
+): Promise<void> {
+  const db = await getDb();
+  // Phase 1 — readonly tx, get raw row.
+  const readTx = db.transaction('patients', 'readonly');
+  const raw = (await readTx.objectStore('patients').get(patientId)) as
+    | Patient
+    | SealedPatientRow
+    | undefined;
+  await readTx.done;
+  if (!raw) throw new Error(`Patient ${patientId} not found`);
+  // Phase 2 — decrypt out-of-tx.
+  const p: Patient | null | undefined = isEncryptedRow(raw)
+    ? await decryptRowIfEncrypted<Patient>(raw, 'patient')
+    : (raw as Patient);
+  if (!p) {
+    throw new Error(`${caller}: decrypt failed on patient ${patientId}`);
+  }
+  // Phase 3a — mutate + pre-seal (if flag on) BEFORE opening writeTx.
+  // Doing `await wrapPatientForWrite(next)` after `db.transaction(...)`
+  // returns would await crypto.subtle.encrypt inside the open tx, the
+  // microtask queue would yield, and the tx would close before .put()
+  // fires (TransactionInactiveError). Same discipline as archiveDay
+  // Phase 2b and the runV1_40_0_BackfillIfNeeded cursor.
+  const next = mutator(p);
+  const valueToWrite: Patient | SealedPatientRow = isPhiEncryptV7Enabled()
+    ? await wrapPatientForWrite(next)
+    : next;
+  // Phase 3b — readwrite tx, sync writes only.
+  const writeTx = db.transaction('patients', 'readwrite');
+  await writeTx.objectStore('patients').put(valueToWrite);
+  await writeTx.done;
+}
+
+/**
  * Mark a patient as discharged. Records `dischargedAt = Date.now()` so the UI
  * can sort/show discharged-today rosters and so re-admit (`unDischargePatient`)
  * can compute the gap.
  *
- * Atomicity: the read+write run inside a single `readwrite` transaction so a
- * concurrent caller can't observe a stale row between get and put. Mirrors
- * `unDischargePatient` for consistency even though `dischargePatient` itself
- * doesn't have a read-modify-write hazard (its writes are absolute, not
- * additive).
+ * Atomicity: now uses the staged Pattern-A helper. See helper docblock for
+ * the deliberate atomicity downgrade vs the pre-B2.2 single-tx version.
  */
 export async function dischargePatient(patientId: string): Promise<void> {
-  const db = await getDb();
-  const tx = db.transaction('patients', 'readwrite');
-  const store = tx.objectStore('patients');
-  // PR-B2.1 sync-sniff-inside-tx (see design pin). Throw on encrypted —
-  // B2.2 lands the staged read+decrypt+reseal+write pattern.
-  const raw = (await store.get(patientId)) as Patient | SealedPatientRow | undefined;
-  if (!raw) {
-    await tx.done;
-    throw new Error(`Patient ${patientId} not found`);
-  }
-  if (isEncryptedRow(raw)) {
-    await tx.done;
-    throw new Error(
-      `dischargePatient: encrypted patient row ${patientId} but B2.2 staged-pattern not yet wired at this site`,
-    );
-  }
-  const p = raw;
-  const now = Date.now();
-  await store.put({
-    ...p,
-    discharged: true,
-    dischargedAt: now,
-    updatedAt: now,
+  await _stagedPatientUpdate(patientId, 'dischargePatient', (p) => {
+    const now = Date.now();
+    return { ...p, discharged: true, dischargedAt: now, updatedAt: now };
   });
-  await tx.done;
   notifyPatientsChanged();
 }
 
@@ -259,37 +339,20 @@ export async function unDischargePatient(
   gapDays: number,
   reason: string,
 ): Promise<void> {
-  const db = await getDb();
-  const tx = db.transaction('patients', 'readwrite');
-  const store = tx.objectStore('patients');
-  // PR-B2.1 sync-sniff-inside-tx (see design pin). See dischargePatient
-  // for the rationale; same pattern repeats at every read-then-write tx
-  // site until B2.2 replaces with staged-pattern.
-  const raw = (await store.get(patientId)) as Patient | SealedPatientRow | undefined;
-  if (!raw) {
-    await tx.done;
-    throw new Error(`Patient ${patientId} not found`);
-  }
-  if (isEncryptedRow(raw)) {
-    await tx.done;
-    throw new Error(
-      `unDischargePatient: encrypted patient row ${patientId} but B2.2 staged-pattern not yet wired at this site`,
-    );
-  }
-  const p = raw;
-  const today = new Date().toLocaleDateString('en-CA');
-  const reAdmitLine = `חזר לאשפוז ב-${today} לאחר ${gapDays} ימים: ${reason}`;
-  const newHandoverNote = p.handoverNote
-    ? `${p.handoverNote}\n${reAdmitLine}`
-    : reAdmitLine;
-  await store.put({
-    ...p,
-    discharged: false,
-    dischargedAt: undefined,
-    handoverNote: newHandoverNote,
-    updatedAt: Date.now(),
+  await _stagedPatientUpdate(patientId, 'unDischargePatient', (p) => {
+    const today = new Date().toLocaleDateString('en-CA');
+    const reAdmitLine = `חזר לאשפוז ב-${today} לאחר ${gapDays} ימים: ${reason}`;
+    const newHandoverNote = p.handoverNote
+      ? `${p.handoverNote}\n${reAdmitLine}`
+      : reAdmitLine;
+    return {
+      ...p,
+      discharged: false,
+      dischargedAt: undefined,
+      handoverNote: newHandoverNote,
+      updatedAt: Date.now(),
+    };
   });
-  await tx.done;
   notifyPatientsChanged();
 }
 
@@ -304,28 +367,11 @@ export async function unDischargePatient(
  * same `p` and overwrite each other's appended line.
  */
 export async function addTomorrowNote(patientId: string, text: string): Promise<void> {
-  const db = await getDb();
-  const tx = db.transaction('patients', 'readwrite');
-  const store = tx.objectStore('patients');
-  // PR-B2.1 sync-sniff-inside-tx (see design pin).
-  const raw = (await store.get(patientId)) as Patient | SealedPatientRow | undefined;
-  if (!raw) {
-    await tx.done;
-    throw new Error(`Patient ${patientId} not found`);
-  }
-  if (isEncryptedRow(raw)) {
-    await tx.done;
-    throw new Error(
-      `addTomorrowNote: encrypted patient row ${patientId} but B2.2 staged-pattern not yet wired at this site`,
-    );
-  }
-  const p = raw;
-  await store.put({
+  await _stagedPatientUpdate(patientId, 'addTomorrowNote', (p) => ({
     ...p,
     tomorrowNotes: [...(p.tomorrowNotes ?? []), text],
     updatedAt: Date.now(),
-  });
-  await tx.done;
+  }));
   notifyPatientsChanged();
 }
 
@@ -338,25 +384,10 @@ export async function addTomorrowNote(patientId: string, text: string): Promise<
  * a stale `p` snapshot.
  */
 export async function dismissTomorrowNote(patientId: string, lineIdx: number): Promise<void> {
-  const db = await getDb();
-  const tx = db.transaction('patients', 'readwrite');
-  const store = tx.objectStore('patients');
-  // PR-B2.1 sync-sniff-inside-tx (see design pin).
-  const raw = (await store.get(patientId)) as Patient | SealedPatientRow | undefined;
-  if (!raw) {
-    await tx.done;
-    throw new Error(`Patient ${patientId} not found`);
-  }
-  if (isEncryptedRow(raw)) {
-    await tx.done;
-    throw new Error(
-      `dismissTomorrowNote: encrypted patient row ${patientId} but B2.2 staged-pattern not yet wired at this site`,
-    );
-  }
-  const p = raw;
-  const next = (p.tomorrowNotes ?? []).filter((_, i) => i !== lineIdx);
-  await store.put({ ...p, tomorrowNotes: next, updatedAt: Date.now() });
-  await tx.done;
+  await _stagedPatientUpdate(patientId, 'dismissTomorrowNote', (p) => {
+    const next = (p.tomorrowNotes ?? []).filter((_, i) => i !== lineIdx);
+    return { ...p, tomorrowNotes: next, updatedAt: Date.now() };
+  });
   notifyPatientsChanged();
 }
 
@@ -374,38 +405,26 @@ export async function dismissTomorrowNote(patientId: string, lineIdx: number): P
  * would risk losing an appended handover line on a concurrent write.
  */
 export async function promoteToHandover(patientId: string, lineIdx: number): Promise<void> {
-  const db = await getDb();
-  const tx = db.transaction('patients', 'readwrite');
-  const store = tx.objectStore('patients');
-  // PR-B2.1 sync-sniff-inside-tx (see design pin).
-  const raw = (await store.get(patientId)) as Patient | SealedPatientRow | undefined;
-  if (!raw) {
-    await tx.done;
-    throw new Error(`Patient ${patientId} not found`);
-  }
-  if (isEncryptedRow(raw)) {
-    await tx.done;
-    throw new Error(
-      `promoteToHandover: encrypted patient row ${patientId} but B2.2 staged-pattern not yet wired at this site`,
-    );
-  }
-  const p = raw;
-  const lines = p.tomorrowNotes ?? [];
-  const line = lines[lineIdx];
-  if (line === undefined) {
-    await tx.done;
-    throw new Error(
-      `Patient ${patientId} tomorrowNotes[${lineIdx}] not found (length: ${lines.length})`,
-    );
-  }
-  const nextHandover = (p.handoverNote ?? '') + (p.handoverNote ? '\n' : '') + line;
-  const nextTomorrow = lines.filter((_, i) => i !== lineIdx);
-  await store.put({
-    ...p,
-    handoverNote: nextHandover,
-    tomorrowNotes: nextTomorrow,
-    updatedAt: Date.now(),
+  await _stagedPatientUpdate(patientId, 'promoteToHandover', (p) => {
+    const lines = p.tomorrowNotes ?? [];
+    const line = lines[lineIdx];
+    if (line === undefined) {
+      // Out-of-bounds index throws explicitly — symmetric with the
+      // patient-not-found branch in the helper. The mutator throw
+      // propagates cleanly: Phase 1's readTx is already closed, the
+      // writeTx hasn't opened yet, so nothing is left dangling.
+      throw new Error(
+        `Patient ${patientId} tomorrowNotes[${lineIdx}] not found (length: ${lines.length})`,
+      );
+    }
+    const nextHandover = (p.handoverNote ?? '') + (p.handoverNote ? '\n' : '') + line;
+    const nextTomorrow = lines.filter((_, i) => i !== lineIdx);
+    return {
+      ...p,
+      handoverNote: nextHandover,
+      tomorrowNotes: nextTomorrow,
+      updatedAt: Date.now(),
+    };
   });
-  await tx.done;
   notifyPatientsChanged();
 }

@@ -700,6 +700,17 @@ function GuestAccount() {
       }
     }
     // All steps succeeded (or email was skipped). Auto-login last.
+    // PR-B2.2: stash + persist the password BEFORE setAuthSession (same
+    // unmount-race discipline as onLogin above). Without this, the new
+    // App.tsx auth subscriber's attemptPhiUnlock() would find no password
+    // in memory and skip backfill — a fresh register would then never
+    // seal its (zero) plaintext rows, but the sentinel wouldn't get
+    // written either, leaving the install in a permanent "backfill not
+    // yet done" state.
+    stashLastLoginPassword(password);
+    persistLoginPassword(password)
+      .then(() => pushBreadcrumb('register.persisted'))
+      .catch((e) => pushBreadcrumb('register.persistErr', (e as Error).message));
     setAuthSession(res.user.username, res.user.display_name, 'register');
     setBusy(false);
     setPassword('');

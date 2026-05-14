@@ -31,6 +31,7 @@
 
 import { getSupabase } from '@/storage/cloud';
 import { reencryptUnlockCache } from '@/crypto/unlock';
+import { isPhiBackfillComplete } from '@/storage/phiBackfill';
 // ESM cycle with @/notes/save — save.ts imports getCurrentUser +
 // getLastLoginPasswordOrNull from this module. Both directions are runtime
 // function refs only, NEVER invoked at module-eval time. Adding a top-level
@@ -338,12 +339,43 @@ export async function authSetApiKey(
  * the new password — so the user's auto-unlock keeps working after the change.
  * Without the re-encrypt step, the user would silently lose their auto-unlock
  * and have to retype the backup passphrase on next login.
+ *
+ * PR-B2.2 guard (`phi_rotation_not_supported`):
+ *
+ * The PHI-at-rest layer derives its AES-GCM key from PBKDF2(loginPassword,
+ * persistedSalt). Rotating the login password produces a different derived
+ * key — every sealed row on disk becomes permanently unrecoverable (decrypts
+ * return null, the row gets filtered out by the read seam, the user sees
+ * a quiet "record couldn't be loaded" banner without realizing this was
+ * caused by their own action).
+ *
+ * The proper fix is a re-encrypt sweep at rotation time: decrypt every
+ * row with the old key, derive the new key, re-seal each row with the new
+ * key, then commit. That's a separate Tier-2 workstream — until it ships,
+ * refusing rotation when the sentinel is set prevents silent data loss.
+ *
+ * Detection: `isPhiBackfillComplete()` checks the durable
+ * `Settings.phiEncryptedV7` sentinel. If true, every PHI row on disk is
+ * sealed; the rotation MUST refuse.
+ *
+ * The guard fires BEFORE the Supabase RPC — we don't want the server-side
+ * password to change (and the cached unlock blob to be re-encrypted) only
+ * to leave the user permanently locked out of their PHI on next login.
  */
 export async function changePasswordWithReencrypt(
   username: string,
   oldPwd: string,
   newPwd: string,
 ): Promise<RpcResult> {
+  if (await isPhiBackfillComplete()) {
+    return {
+      ok: false,
+      error: 'phi_rotation_not_supported',
+      message:
+        'שינוי סיסמה לא נתמך כרגע: הנתונים על המכשיר מוצפנים עם הסיסמה הנוכחית. ' +
+        'שינוי הסיסמה ימחק את הגישה אליהם. תכונה זו תתווסף בעדכון עתידי.',
+    };
+  }
   const result = await authChangePassword(username, oldPwd, newPwd);
   if (result.ok) {
     await reencryptUnlockCache(oldPwd, newPwd);

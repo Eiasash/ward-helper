@@ -30,7 +30,8 @@
 import { getDb } from './indexed';
 import {
   decryptRowsIfEncrypted,
-  isEncryptedRow,
+  isPhiEncryptV7Enabled,
+  wrapRosterForWrite,
   type SealedRosterRow,
 } from '@/crypto/phiRow';
 
@@ -69,10 +70,19 @@ export interface RosterPatient {
  */
 export async function setRoster(patients: RosterPatient[]): Promise<void> {
   const db = await getDb();
+  // PR-B2.2: setRoster is a PURE WRITER (not in the brief's 9-throw
+  // enumeration because it never read first) but it writes to a store
+  // in PHI scope. Under flag-on, each row needs wrapping. Pre-seal
+  // out-of-tx so the readwrite clear+put tx contains no crypto await.
+  const flagOn = isPhiEncryptV7Enabled();
+  const writes: Array<RosterPatient | SealedRosterRow> = [];
+  for (const p of patients) {
+    writes.push(flagOn ? await wrapRosterForWrite(p) : p);
+  }
   const tx = db.transaction(STORE, 'readwrite');
   await tx.store.clear();
-  for (const p of patients) {
-    await tx.store.put(p);
+  for (const w of writes) {
+    await tx.store.put(w);
   }
   await tx.done;
 }
@@ -109,31 +119,31 @@ export async function clearRoster(): Promise<void> {
 export async function ageOutRoster(now: number = Date.now()): Promise<number> {
   const cutoff = now - ROSTER_AGE_OUT_MS;
   const db = await getDb();
-  const tx = db.transaction(STORE, 'readwrite');
-  // PR-B2.1: sync-sniff-inside-tx. Under flag-off + no encrypted rows
-  // (B2.1's world), every row is plaintext — sniff returns false, fast
-  // path runs identical to today (importedAt at row top-level, drop if
-  // expired). Under premature flag-on the throw branch surfaces a clear
-  // error rather than silently failing to expire stale rosters (which
-  // would leave stale PHI on the device past the 24h TTL).
+  // PR-B2.2 Pattern-B staged delete. Phase 1 read, Phase 2 decrypt out-
+  // of-tx (so `importedAt` is reachable even on sealed rows), Phase 3
+  // readwrite-delete of expired rows. The 24h TTL must keep working
+  // under flag-on or stale PHI lingers past the documented window.
   //
-  // B2.2 will replace this with the staged-pattern: read out, close tx,
-  // decrypt out-of-tx (or check importedAt via a metadata field at row
-  // top-level — TBD in B2.2 design), reopen for deletes. Sibling case
-  // to runV1_40_0_BackfillIfNeeded.
-  const rows = (await tx.store.getAll()) as Array<RosterPatient | SealedRosterRow>;
+  // Atomicity downgrade vs the pre-B2.2 single-tx: a concurrent
+  // setRoster call landing between Phase 1 and Phase 3 could re-import
+  // a roster whose rows are all newer-than-cutoff; the Phase-3 deletes
+  // then race against those fresh rows by id. In practice setRoster
+  // and ageOutRoster don't run concurrently — ageOutRoster fires once
+  // at boot, setRoster fires from the modal commit. UX-mitigated.
+  const readTx = db.transaction(STORE, 'readonly');
+  const rawRows = (await readTx.objectStore(STORE).getAll()) as Array<
+    RosterPatient | SealedRosterRow
+  >;
+  await readTx.done;
+  const rows = await decryptRowsIfEncrypted<RosterPatient>(rawRows, 'roster');
+  const writeTx = db.transaction(STORE, 'readwrite');
   let dropped = 0;
   for (const r of rows) {
-    if (isEncryptedRow(r)) {
-      throw new Error(
-        'ageOutRoster: encountered encrypted roster row but B2.2 staged-pattern not yet wired at this site',
-      );
-    }
     if (r.importedAt < cutoff) {
-      await tx.store.delete(r.id);
+      await writeTx.objectStore(STORE).delete(r.id);
       dropped++;
     }
   }
-  await tx.done;
+  await writeTx.done;
   return dropped;
 }
