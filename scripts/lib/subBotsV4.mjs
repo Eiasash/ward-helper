@@ -90,10 +90,20 @@ export async function scenEmailToSelf(page, _browser, scenario, persona, guard, 
 
   // V4.1 — wait for Save screen to mount before any innerText reads.
   // Without this, evaluate() races React render and finds nothing useful.
+  //
+  // 2026-05-14: removed `^...$` anchors. waitForSubject runs each regex
+  // against `document.body.innerText` (the full page text, not a single
+  // node), so `^...$` anchors require the ENTIRE body to be literally
+  // "שמירה" — never matches a populated page. The 2026-05-13 overnight
+  // run mount-timeouted 100% of emailToSelf attempts (321/321) because
+  // of this — the screen was rendering fine; the bot's regex couldn't
+  // see it. The resetPassword + orthoCalc scenarios already use
+  // non-anchored patterns and worked correctly; bringing emailToSelf
+  // into line with that convention.
   const wait = await waitForSubject(page, [
-    /^שמירה$/,        // section heading on /save
-    /^שמור$/,         // Save button
-    /^נשמר ✓$/,       // already-done state
+    /שמירה/,        // section heading on /save
+    /שמור/,         // Save button (also matches "שומר..." busy state)
+    /נשמר ✓/,       // already-done state
   ], 5000);
   if (!wait.ok) {
     logBug('MEDIUM', scenario.scenario_id, `${persona.name}/emailToSelf/mount-timeout`,
@@ -203,11 +213,15 @@ export async function scenMorningRoundsPrep(page, _browser, scenario, persona, g
   // MorningArchivePrompt useEffect runs on mount and checks lastArchivedDate;
   // we set yesterday above, so the banner should appear). Without this
   // ratchet, evaluate races useEffect and reports banner-missing falsely.
+  // 2026-05-14: removed `^...$` anchors on /ארכב/ /דחה/ — full-string
+  // anchoring against document.body.innerText can never match a populated
+  // page. The 3 unanchored banner patterns also tested OK, so this is
+  // belt-and-braces. Same anchor bug as emailToSelf above.
   const wait = await waitForSubject(page, [
     /זוהה יום חדש/,        // banner text
     /כבר ארכבת היום/,      // confirm-replace state
-    /^ארכב$/,              // archive button
-    /^דחה$/,              // dismiss button
+    /ארכב/,                // archive button
+    /דחה/,                 // dismiss button (still anchored-free; substring-matches)
     /היום אין מטופלים/,   // empty-roster fallback (banner WILL render but list-section text)
   ], 5000);
   // Note: a no-banner result is itself a valid signal — don't bail on
