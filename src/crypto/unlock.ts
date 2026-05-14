@@ -1,4 +1,4 @@
-import { getSettings, setSettings, type CachedUnlockBlob } from '@/storage/indexed';
+import { getSettings, setSettings, patchSettings, type CachedUnlockBlob } from '@/storage/indexed';
 import { deriveAesKey } from '@/crypto/pbkdf2';
 import { aesEncrypt, aesDecrypt } from '@/crypto/aes';
 
@@ -10,6 +10,12 @@ import { aesEncrypt, aesDecrypt } from '@/crypto/aes';
  * Threat model: a thief with the device + the login password gets the
  * passphrase. Same posture as iOS Keychain "available when unlocked" — the
  * device login is the gate, not a separate secret.
+ *
+ * Note: prior to 2026-05-14 this function used a hand-listed setSettings
+ * call that omitted `loginPwdXor` (latent bug: every password-change
+ * wiped the persisted login password). Migrating to patchSettings made
+ * the bug structurally impossible — fields not named in the partial are
+ * preserved.
  */
 export async function cacheUnlockBlob(
   passphrase: string,
@@ -18,14 +24,7 @@ export async function cacheUnlockBlob(
   const salt = crypto.getRandomValues(new Uint8Array(16)) as Uint8Array<ArrayBuffer>;
   const key = await deriveAesKey(loginPassword, salt);
   const { iv, ciphertext } = await aesEncrypt(passphrase, key);
-  const existing = await getSettings();
-  await setSettings({
-    apiKeyXor: existing?.apiKeyXor ?? new Uint8Array(0),
-    deviceSecret: existing?.deviceSecret ?? new Uint8Array(0),
-    lastPassphraseAuthAt: existing?.lastPassphraseAuthAt ?? null,
-    prefs: existing?.prefs ?? {},
-    cachedUnlockBlob: { v: 1, ciphertext, iv, salt },
-  });
+  await patchSettings({ cachedUnlockBlob: { v: 1, ciphertext, iv, salt } });
 }
 
 /**
