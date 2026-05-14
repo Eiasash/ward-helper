@@ -126,7 +126,24 @@ let dbPromise: Promise<IDBPDatabase> | null = null;
 // backed. Schema invariants live in src/storage/roster.ts. No indexes
 // — daily roster is bounded at <50 rows, full scan is cheaper than
 // a B-tree lookup on a dataset that small.
-const DB_VERSION = 6;
+//
+// v7 (PR-B1, 2026-05-14): drops the patients.by-tz index. Preparing
+// for PR-B2's PHI-at-rest encryption layer — once Patient row values
+// are encrypted, the IDB index can no longer key on plaintext tz, and
+// a hashed-index alternative would leak the SET of tz hashes via a
+// cloud backup (defeating the password-derived-key threat model). The
+// three storage-layer functions that used by-tz (getPatientByTz,
+// upsertPatientByTz, listNotesByTeudatZehut) now scan-and-filter on
+// the full patients list. Latency math (PR-A grounding pass): scan
+// cost is ~30-100ms at ward scale (50-100 patients), inside existing
+// budgets on every site except Census's per-row loop, which is
+// addressed by the new listPatientsByTzMap helper.
+//
+// Note: B1 ships this against PLAINTEXT data. PR-B2 layers encryption
+// on top via the localStorage.phi_encrypt_v7 flag. By shipping the
+// schema change separately first, "scan-based lookup works" is proven
+// in production before any encryption complexity layers on.
+const DB_VERSION = 7;
 
 export function getDb(): Promise<IDBPDatabase> {
   if (!dbPromise) {
@@ -180,6 +197,26 @@ export function getDb(): Promise<IDBPDatabase> {
           // (idb upgrade callback transaction lifetime is finicky; spec § decisions Q5c).
           if (!db.objectStoreNames.contains('daySnapshots')) {
             db.createObjectStore('daySnapshots', { keyPath: 'id' });
+          }
+        }
+        if (oldVersion < 7) {
+          // PR-B1 (2026-05-14): drop the patients.by-tz index. PR-B2 will
+          // add encrypted-row shape on top, at which point a plaintext-tz
+          // index would either be useless (encrypted rows) or leaky (hashed).
+          // Pre-emptive drop now lets B1 prove the scan-based caller
+          // refactor in production before B2 layers encryption.
+          //
+          // Ordering note: this block runs AFTER v2's by-tz createIndex
+          // when migrating a v1 install — the chain v1 → v2 → ... → v7
+          // creates the index then drops it, which is wasted-but-correct.
+          // For a v6 install (the common case in May 2026), v2 already
+          // ran historically; only this block fires.
+          //
+          // Idempotency guard: deleting a missing index throws
+          // InvalidStateError, so check `indexNames.contains` first.
+          const patientsForV7 = tx.objectStore('patients');
+          if (patientsForV7.indexNames.contains('by-tz')) {
+            patientsForV7.deleteIndex('by-tz');
           }
         }
       },
@@ -251,11 +288,45 @@ export async function putPatient(p: Patient): Promise<void> {
 export async function getPatientByTz(tz: string): Promise<Patient | null> {
   const trimmed = tz.trim();
   if (!trimmed) return null;
-  const db = await getDb();
-  const matches = (await db.getAllFromIndex('patients', 'by-tz', trimmed)) as Patient[];
+  // v7+: by-tz index dropped; full-scan + JS filter. At ward scale
+  // (50-100 patients) one scan costs ~30ms on a phone, inside the
+  // budget of every caller (Review/Census/continuity/PriorNotesBanner).
+  // Census loops over rows and should use listPatientsByTzMap below
+  // instead of calling this function per-row.
+  const all = await listPatients();
+  const matches = all.filter((p) => p.teudatZehut === trimmed);
   if (matches.length === 0) return null;
   matches.sort((a, b) => b.updatedAt - a.updatedAt);
   return matches[0]!;
+}
+
+/**
+ * One-shot map of patients keyed by trimmed teudatZehut. Used by Census
+ * import which iterates census rows and looks up each tz — pre-v7 that
+ * was N × index lookups (O(N) total); post-v7 without this helper it
+ * would be N × full-scan (O(N²)). The helper collapses it to O(N) total
+ * by paying the scan cost once.
+ *
+ * Patients with a blank tz are silently skipped — they have no key for
+ * the map and per-row callers fall back to mint-new behavior.
+ * Duplicates (rare; would represent a prior index-bug or manual import
+ * corruption) resolve to the most-recently-updated row, matching
+ * getPatientByTz's contract.
+ */
+export async function listPatientsByTzMap(): Promise<Map<string, Patient>> {
+  const all = await listPatients();
+  // Sort first so the LAST entry written to the Map for a given tz
+  // is the most-recently-updated one (Map.set replaces). Ascending
+  // sort means the newest patient lands on top of any duplicate older
+  // ones at the same key.
+  all.sort((a, b) => a.updatedAt - b.updatedAt);
+  const out = new Map<string, Patient>();
+  for (const p of all) {
+    const tz = p.teudatZehut?.trim();
+    if (!tz) continue;
+    out.set(tz, p);
+  }
+  return out;
 }
 
 export async function upsertPatientByTz(p: Omit<Patient, 'id'>): Promise<Patient> {
@@ -265,8 +336,10 @@ export async function upsertPatientByTz(p: Omit<Patient, 'id'>): Promise<Patient
     await putPatient(row);
     return row;
   }
-  const db = await getDb();
-  const matches = (await db.getAllFromIndex('patients', 'by-tz', tz)) as Patient[];
+  // v7+: by-tz index dropped; scan + JS filter. Called once per
+  // patient-save (saveBoth in src/notes/save.ts), not in a hot loop.
+  const all = await listPatients();
+  const matches = all.filter((x) => x.teudatZehut === tz);
   if (matches.length > 0) {
     matches.sort((a, b) => b.updatedAt - a.updatedAt);
     const existing = matches[0]!;
@@ -433,13 +506,19 @@ export async function listNotesByTeudatZehut(
   const tz = teudatZehut.trim();
   if (!tz) return { patient: null, notes: [] };
   const db = await getDb();
-  // Index lookup instead of getAll + filter. Before this change, resolving
-  // SOAP continuity was O(N_patients) on every Review mount — a phone with
-  // 200 patients took 30+ms for a hot cache lookup. Now it's one B-tree hit.
-  const matches = (await db.getAllFromIndex('patients', 'by-tz', tz)) as Patient[];
+  // v7+: by-tz index dropped; full-scan patients + JS filter. The
+  // by-patient index on notes survives (patientId is a random UUID,
+  // non-PII) — once we know the patient id(s) the notes lookup is
+  // still O(log N) per match.
+  const allPatients = (await db.getAll('patients')) as Patient[];
+  const matches = allPatients.filter((p) => p.teudatZehut === tz);
   if (matches.length === 0) return { patient: null, notes: [] };
   matches.sort((a, b) => b.updatedAt - a.updatedAt);
   const patient = matches[0]!;
+  // Pull notes for ALL tz-matches (handles the duplicate-tz edge case
+  // where two patient rows share a teudatZehut from a prior index-era
+  // miss-split; combined notes are returned so continuity / banner show
+  // the union).
   const notesByPatient = await Promise.all(
     matches.map((p) => db.getAllFromIndex('notes', 'by-patient', p.id)),
   );

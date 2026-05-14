@@ -275,8 +275,24 @@ describe('v6 daySnapshots store', () => {
   it('opens DB_VERSION 6 and exposes daySnapshots store', async () => {
     const { getDb } = await import('@/storage/indexed');
     const db = await getDb();
-    expect(db.version).toBe(6);
+    // v7 bump (PR-B1, 2026-05-14): version increments to 7 to drop the
+    // patients.by-tz index. The daySnapshots store from v6 survives.
+    expect(db.version).toBe(7);
     expect(db.objectStoreNames.contains('daySnapshots')).toBe(true);
+  });
+});
+
+describe('v7 by-tz index drop', () => {
+  it('opens DB_VERSION 7 and the patients store has NO by-tz index', async () => {
+    const { getDb } = await import('@/storage/indexed');
+    const db = await getDb();
+    expect(db.version).toBe(7);
+    const tx = db.transaction('patients', 'readonly');
+    const patients = tx.objectStore('patients');
+    expect(patients.indexNames.contains('by-tz')).toBe(false);
+    // by-patient index on `notes` is unrelated and must survive.
+    const notes = db.transaction('notes', 'readonly').objectStore('notes');
+    expect(notes.indexNames.contains('by-patient')).toBe(true);
   });
 });
 
