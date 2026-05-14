@@ -15,9 +15,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 
 import { Unlock } from '@/ui/screens/Unlock';
-import { resetDbForTests, patchSettings } from '@/storage/indexed';
-import { clearPhiKey } from '@/crypto/phi';
+import { resetDbForTests, patchSettings, getDb, getSettings, type Patient } from '@/storage/indexed';
+import { clearPhiKey, derivePhiKey, setPhiKey, sealRow } from '@/crypto/phi';
 import { clearLastLoginPassword } from '@/auth/auth';
+import type { SealedPatientRow } from '@/crypto/phiRow';
 
 const AUTH_LS_KEY = 'ward-helper.auth.user';
 const FLAG_KEY = 'phi_encrypt_v7';
@@ -84,6 +85,42 @@ describe('Unlock screen', () => {
     });
     expect(input.value).toBe('');
   });
+
+  it('wrong password against sealed rows: shows "סיסמה שגויה" + clears field + no onUnlocked', async () => {
+    // PR v1.46.1: this is the bug-fix path. Pre-1.46.1 the gate accepted
+    // any well-formed password as success (sentinel-gated backfill made
+    // the wrong-key acceptance silent). Now the probe-verify catches it.
+    loginAs('alice');
+    // Seed a sealed row using the SAME derive iterations the production
+    // gate path will use. Sealed under 'correct-pwd'; we'll type 'WRONG'.
+    if (!(await getSettings())?.phiSalt) {
+      const salt = crypto.getRandomValues(new Uint8Array(16)) as Uint8Array<ArrayBuffer>;
+      await patchSettings({ phiSalt: salt });
+    }
+    const salt = (await getSettings())!.phiSalt!;
+    const correctKey = await derivePhiKey('correct-pwd', salt);
+    setPhiKey(correctKey);
+    const patient: Patient = {
+      id: 'p-1', name: 'x', teudatZehut: '1', dob: '', room: null,
+      tags: [], createdAt: 1, updatedAt: 1,
+    };
+    const enc = await sealRow(patient);
+    const db = await getDb();
+    await db.put('patients', { id: 'p-1', enc } as unknown as SealedPatientRow as unknown as Patient);
+    await patchSettings({ phiEncryptedV7: true });
+    clearPhiKey();
+
+    const onUnlocked = vi.fn();
+    render(<Unlock onUnlocked={onUnlocked} />);
+    const input = screen.getByLabelText(/סיסמה:/) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'WRONG' } });
+    fireEvent.submit(input);
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toMatch(/סיסמה שגויה — נסה שוב/);
+    });
+    expect(input.value).toBe('');
+    expect(onUnlocked).not.toHaveBeenCalled();
+  }, 30_000);
 
   it('decrypt failure surfaces the wrong-password error and keeps the field cleared', async () => {
     loginAs('alice');
