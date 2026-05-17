@@ -83,6 +83,35 @@ const BUGS = [];
 const TIMELINE = [];
 
 // ============================================================================
+// Armed known-issue triggers (anti-lapse for trigger-bound deferrals)
+// ----------------------------------------------------------------------------
+// When a finding matches one of these, writeReport() emits a loud routing
+// block at the TOP of wm-*.md AND a console.warn — so a deferred
+// investigation is trigger-BOUND (self-announcing in the artifact the
+// triager always reads), not parked-and-hoping a human notices the string
+// and remembers a doc exists. Added 2026-05-17 after a fresh-eye review
+// caught the #176 H3 trigger was documented but NOT armed (the cited
+// "existing triage routing" was manual + the TRIAGE doc is gitignored).
+// Minimal by intent: one rule, the one the evidence requires (YAGNI).
+const KNOWN_ISSUE_TRIGGERS = [
+  {
+    match: /NotFoundError/i,
+    label: 'H3 — non-IDB NotFoundError (Cache / Blob / OPFS) [#176]',
+    kickoff: 'docs/audit/2026-05-17-h3-cache-blob-opfs-kickoff.md',
+  },
+];
+
+/** Findings matching an armed trigger, with the matched rule. */
+function matchedKnownIssues() {
+  return KNOWN_ISSUE_TRIGGERS
+    .map((t) => ({
+      t,
+      hits: BUGS.filter((b) => t.match.test(`${b.where} ${b.what} ${b.evidence ?? ''}`)),
+    }))
+    .filter((x) => x.hits.length > 0);
+}
+
+// ============================================================================
 // Logging
 // ============================================================================
 
@@ -411,6 +440,9 @@ async function main() {
   console.log(`Wall: ${((Date.now() - mainStart) / 60000).toFixed(2)} min`);
   console.log(`Cost: $${costTracker.total().toFixed(2)} (${costTracker.calls} Opus calls)`);
   console.log(`Bugs: ${BUGS.length} (${countSev('CRITICAL')}C/${countSev('HIGH')}H/${countSev('MEDIUM')}M/${countSev('LOW')}L)`);
+  for (const { t, hits } of matchedKnownIssues()) {
+    console.warn(`[KNOWN-ISSUE TRIGGER ARMED] ${t.label}: ${hits.length} match — open ${t.kickoff} before triaging`);
+  }
   console.log(`Report:  ${REPORT_PATH}`);
   console.log(`Patient gallery (${gallery.count} charts):`);
   console.log(`         ${gallery.indexPath}`);
@@ -457,6 +489,23 @@ async function writeReport(results, costTracker, scheduler) {
   lines.push(`- Total bugs: ${BUGS.length}`);
   lines.push(`- Fixture mode: ${FIXTURE_MODE}`);
   lines.push('');
+
+  // Armed known-issue routing — FIRST section so a triager cannot miss it.
+  // This is what makes a parked deferral genuinely trigger-bound: the
+  // report self-announces the kickoff instead of relying on human memory.
+  const triggered = matchedKnownIssues();
+  if (triggered.length) {
+    lines.push('## ⚠ ARMED KNOWN-ISSUE TRIGGER — READ BEFORE TRIAGING');
+    for (const { t, hits } of triggered) {
+      lines.push(
+        `- **${t.label}** — ${hits.length} finding(s) match \`${t.match}\`. ` +
+        `This is the ARMED trigger for a PARKED investigation: **open ` +
+        `\`${t.kickoff}\`** before triaging this run. Deferred = ` +
+        `trigger-bound (this line), not parked-and-hoping someone remembers.`,
+      );
+    }
+    lines.push('');
+  }
 
   // V4: cost itemization (Web-Claude challenge #2 — itemize so $80 isn't theater).
   if (costTracker) {

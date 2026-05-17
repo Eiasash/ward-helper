@@ -564,3 +564,44 @@ unassignable**; original artifact cannot be closed. What changes: the
 downgrade is now *earned* (severity-bounded + trigger-backstopped), and
 "surveilled" is honestly scoped — **the IDB surface is surveilled; H3 is
 trigger-bound-parked, not surveilled.**
+
+### 2026-05-17 — trigger ARMED (verified). Recursion test, third pass.
+
+> Append-only. Fix 2's text above is **not** rewritten — it is the audit
+> trail of the iteration. A second in-session review pressed the right
+> question: Fix 2 *claimed* the trigger "inherits the existing mega-bot
+> triage routing" — but that was an unverified **mechanism claim**, the
+> exact class wrong twice already ("surveilled"; then "inherits
+> routing"). Verified against the repo, not asserted:
+
+- **It was NOT armed.** `ward-helper-mega-bot.mjs` classified by
+  *severity* only; `analyze-mega-run.mjs` had zero `NotFoundError`/route
+  logic; the cited "triage routing" was a **manual Claude-session**
+  artifact (`chaos-reports/TRIAGE-*.md`, *gitignored* — invisible to a
+  fresh-eye clone). Fix 2 reproduced the scope-overclaim one layer down:
+  "trigger-bound" where the trigger was parked-and-hoping.
+- **Now armed (mechanism).** Added `KNOWN_ISSUE_TRIGGERS`
+  (`/NotFoundError/i` → `docs/audit/2026-05-17-h3-cache-blob-opfs-kickoff.md`)
+  to `scripts/ward-helper-mega-bot.mjs`: `writeReport()` emits a
+  top-of-report `## ⚠ ARMED KNOWN-ISSUE TRIGGER` block + a stdout
+  `[KNOWN-ISSUE TRIGGER ARMED]` line on any run whose `BUGS` contains the
+  string (same `logBug` HIGH path as the original finding). One rule, the
+  one the evidence requires (YAGNI; do not generalise until a second real
+  trigger).
+- **Verified empirically (the recursion test).** Replaying the *exact*
+  original 2026-05-17 finding string fires the rule and routes to the
+  kickoff path; a benign finding does **not** fire (discriminating).
+  Re-runnable: `node -e` predicate test in the arming PR description.
+- **Residual, stated honestly.** This arms **detection, not response**:
+  the bot runs on the weekly-medical-pwa-qa schedule (+ on demand) and a
+  human opens the kickoff on the self-announce — correct for a parked
+  workflow. The remaining dependency is "the bot runs" (scheduled), not
+  "a human remembers a doc." The **production-telemetry** path is
+  *structurally unarmable* (ward-helper "no analytics" invariant — no
+  automated telemetry exists); it remains user-initiated, by design, not
+  as a gap.
+
+**The boundary-honesty fix held on the third pass — by verification, not
+assertion.** That is the whole point: the test of "the dishonesty lived
+in the scope of the claim" is whether the next claim was *checked*. It
+was.

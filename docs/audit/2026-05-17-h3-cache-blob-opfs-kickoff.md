@@ -9,15 +9,31 @@ formally unassignable**. See
 
 ## Trigger (concrete — this is the anti-lapse binding)
 
-Open this kickoff when **any** of the following fires:
+Open this kickoff when **either** path fires. The two paths differ in
+*arming* — stated honestly per trigger granularity:
 
-- A `[HIGH] unhandled-rejection: NotFoundError` (or any `NotFoundError`)
-  appears in `chaos-reports/ward-bot-mega/wm-*.md` (the mega-bot already
-  runs via the weekly-medical-pwa-qa routine + on demand; its existing
-  HIGH-finding triage routing — see memory
-  `project_wardhelper_bot_run_2026-05-17` — routes here).
-- A `NotFoundError` surfaces in production telemetry / a real
-  clinical-session error report.
+- **ARMED (mechanism, verified).** `scripts/ward-helper-mega-bot.mjs`
+  carries a `KNOWN_ISSUE_TRIGGERS` rule (`/NotFoundError/i` → this
+  kickoff). On any run whose `BUGS` contains the string (the *same*
+  `logBug` HIGH path that produced the original 2026-05-17 finding),
+  `writeReport()` emits an **`## ⚠ ARMED KNOWN-ISSUE TRIGGER`** block at
+  the **top** of `chaos-reports/ward-bot-mega/wm-*.md` **and** a stdout
+  `[KNOWN-ISSUE TRIGGER ARMED]` line — both naming this doc path. The
+  report self-announces; it does **not** depend on a human noticing the
+  string or remembering this doc. **Verified 2026-05-17**: replaying the
+  exact original finding (`unhandled-rejection` /
+  `NotFoundError: A requested file or directory could not be found…`)
+  fires the rule and routes here; a benign finding does not (test in the
+  arming PR). *Residual (honest):* this arms **detection, not response** —
+  the bot runs on the weekly-medical-pwa-qa schedule (+ on demand) and a
+  human still opens this kickoff on seeing the self-announce; that is the
+  correct posture for a parked-spec workflow. The unarmed dependency is
+  "the bot runs" (scheduled), not "a human remembers."
+- **Structurally UNARMABLE: production telemetry.** ward-helper has a
+  hard "no analytics, no 3rd-party scripts" invariant — there is **no**
+  automated prod telemetry to arm. A `NotFoundError` from a real
+  clinical session arrives as a user error report; that path is, and can
+  only be, user-initiated. Stated as a structural fact, not a gap.
 
 Until a trigger fires, the #176 horizon stays **downgraded** (not
 deadline-tier) because the H3 surface is structurally bounded to
