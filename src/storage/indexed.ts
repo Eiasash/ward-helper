@@ -121,6 +121,20 @@ export interface Settings {
 
 let dbPromise: Promise<IDBPDatabase> | null = null;
 
+/**
+ * Drop the memoized connection so the next getDb() opens a fresh one.
+ * Production-safe (no deleteDatabase, unlike resetDbForTests). Used when
+ * the connection is closed out from under the app — another context
+ * deleting/upgrading the DB (`versionchange`) or the browser evicting
+ * origin storage (`terminated` / `close`). Without it, one transient
+ * chaos-clear-storage / quota eviction left getDb() handing back a dead
+ * handle forever — every later IDB op on the PHI surface threw an
+ * unhandled rejection until a full reload.
+ */
+function invalidateDb(): void {
+  dbPromise = null;
+}
+
 // --- Schema migrations -----------------------------------------------------
 // Bump DB_VERSION when adding stores or indexes. The `upgrade` callback gets
 // the `oldVersion` param so you can run incremental migrations (e.g. add a
@@ -248,6 +262,28 @@ export function getDb(): Promise<IDBPDatabase> {
           }
         }
       },
+      // The browser closed this connection abnormally (storage eviction,
+      // OS memory pressure). idb routes that here. Drop the memo so the
+      // next getDb() re-opens a live connection instead of reusing a dead
+      // handle — the chaos-clear-storage / chaos-idb-quota failure surface.
+      terminated() {
+        invalidateDb();
+      },
+    }).then((db) => {
+      // Another context (another tab, clear-site-data, resetDbForTests) is
+      // deleting or upgrading the DB. idb does NOT auto-close on
+      // `versionchange`, so without this the delete blocks AND the memo
+      // keeps pointing at a soon-dead handle. Close so the delete can
+      // proceed, then invalidate. `close` covers forced closes that
+      // `terminated` does not route.
+      db.addEventListener('versionchange', () => {
+        db.close();
+        invalidateDb();
+      });
+      db.addEventListener('close', () => {
+        invalidateDb();
+      });
+      return db;
     });
   }
   return dbPromise;
