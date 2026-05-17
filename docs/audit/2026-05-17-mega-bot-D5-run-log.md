@@ -77,8 +77,11 @@ A first D6 draft inferred "2 candidate-real" without replay and invented an "inf
 
 - **Cluster A — clean non-chaos replay, DECISIVE.** `MorningArchivePrompt.tsx:35-42` `useEffect([])` reads `localStorage['ward-helper.lastArchivedDate']` **once at mount only** (intentional). Replay (set key to `2026-05-17` **before** a fresh mount → reload `?replayA=…` → observe): `bannerInDOM=true`, `archiveButtonInDOM=true` — **banner renders correctly**. The app is correct; the bot set the key *mid-session* (after mount) and expected a retroactive re-render. → **A = PERSONA-ARTIFACT** (reproduces only under the bot's unrealistic mid-session setup, not on clean replay — the exact locked criterion). Filed as bot defect **#194**.
 - **Cluster B — source verification, DECISIVE (clean replay = sending a real email = explicit-permission + PHI-carve-out, so NOT done; source read substitutes, no outward action).** `Consult.tsx:225-244 emailNote()` has **no in-flight `sending` state** (await edge-fn → success flips `emailedAt` ✓, error `setError`) → genuine UX gap = **REAL**. `Save.tsx:85-97 onSendEmail()` IS wired (`sending/sent/error`) → "no status" there is observation-artifact. → **B = 1 confirmed distinct REAL** (Consult path). Filed **#193**. Exact real-vs-observation split of the ~11 raw instances is bounded-not-resolved (depends on the bot's emailToSelf target screen) — honest residual, proportionate stop.
+  - **[Web-review fix #2, 2026-05-18 — contract note]** The locked REAL criterion's three *literal* routes are clean-replay / #176-fixture / armed-trigger; none fits a **structural** finding (a missing `sending` state) whose behavioral replay is contraindicated (real email = PHI + explicit-permission). Source-read at `file:line` (project Rule 7) is the decisive-verification equivalent, applied **in spirit — stronger, not weaker** than a behavioral replay for a missing-state defect. Flagged explicitly as an **extra-contractual-but-faithful** route, not a silent substitution of the criterion.
 
-### D6 triage — buckets per the frozen + post-lock-clarified interpretation contract (4 buckets ONLY: REAL / PERSONA-ARTIFACT / UNINTERPRETABLE-ABSENCE / chaos-infra)
+### D6 triage — the frozen contract's 4 buckets (REAL / PERSONA-ARTIFACT / UNINTERPRETABLE-ABSENCE / chaos-infra) **plus** an explicit out-of-contract `UNCLASSIFIED` residual
+
+> **[Web-review fix #1, 2026-05-18]** The frozen contract defines exactly four buckets *and* defines `UNINTERPRETABLE` only for **absences** — it never defined a bucket for a *present-but-unadjudicated* finding. `UNCLASSIFIED` below is therefore an **explicit out-of-contract residual**, not a fifth contract bucket and not "4 buckets ONLY" (that earlier wording was internally contradictory — corrected here). It is a *harsher* non-determination ("meets no locked-bucket criterion; not 'clean,' not 'infra-tinged'"), the structural opposite of the discredited "infra-tinged" laundering — it never lets the run pass more easily.
 
 67 raw flags → **6 clusters**:
 
@@ -152,7 +155,7 @@ A user-shared eyeball screenshot showed a manual extract failing: `POST toranot.
 - Proxy probes *during the run*: `/ → 200/208ms`, `/api/claude → 405/61ms,64ms`, `OPTIONS → 204/60ms`, ward-helper `200/342ms`. Proxy healthy/fast/consistent → **saturation hypothesis disproven**.
 - Bot interim: healthy, 0C/0H throughout, cost frozen $1.13 → bot not eating systematic proxy timeouts (consistent with the fast probes).
 
-**Resolution: NO ABORT.** The user's timeout was a transient (30s client cap vs a heavy Opus extract ± momentary upstream blip); ward-helper *handled it correctly* (specific Hebrew error + recovery — not a code bug). The frozen §5/D6 contract is precisely the machinery for bucketing any infra-tinged findings; aborting would bypass machinery pre-merged for this exact case.
+**Resolution: NO ABORT.** The user's timeout was a transient (30s client cap vs a heavy Opus extract ± momentary upstream blip); ward-helper *handled it correctly* (specific Hebrew error + recovery — not a code bug). The frozen §5/D6 contract is precisely the machinery for bucketing any infra-tinged findings; aborting would bypass machinery pre-merged for this exact case. *[2026-05-18 annotation — append-only, original sentence retained verbatim, NOT rewritten: "infra-tinged" here is the pre-correction **casual descriptor**, written before that bucket name was discredited in the §"D6 triage" above. It is NOT the discredited bucket and carries no triage weight; the actual unadjudicated findings are bucketed `UNCLASSIFIED` (out-of-contract residual) in D6 triage. This note disambiguates without altering the historical record.]*
 
 **Process lesson (the real defect):** a single external GET/HEAD is a *diagnostic, not load* — the eyeball no-extra-load rule (correct for clicking app flows) was over-applied to forbid the one cheap probe that resolves the premise, which is what turned "diagnose it" into "escalate it." Run the cheap external diagnostic *before* escalating a load-bearing hypothesis to a user decision; never frame an unestablished premise as "blocking/irreversible/your call." Both lanes' run-end inferences ("D6 value gone" / "findings probably real") are held to the same standard: neither pre-judges what the frozen contract adjudicates at exit.
 
@@ -172,3 +175,24 @@ D6 (and the D5+D6 results PR) MUST satisfy all four, and will be reviewed agains
 2. **Gate-text match:** the §5 gate D6 applies is the text actually in `main @ f1b6a42` (PR #192), not a drifted/same-named copy. Cite the SHA.
 3. **Honest trail:** the escalation episode is recorded with its disproof, append-only, no silent rewrite (this section + the one above are that record).
 4. **Completeness — per-dimension verdicts, not a bucketed pile (plan §0a):** D6 must synthesize the audit's commissioned answer — *is the bot a faithful simulator; are its bug reports trustworthy* — as explicit per-dimension verdicts D1–D5. Specifically: the real / persona-artifact / chaos-infra split of the run's findings (~41, all M/L, sustained 0C/0H) **is the D3 bug-reporter-trustworthiness rate** — D6 must state that number and the D3 verdict, not stop at correct bookkeeping. A run that bucketed every finding correctly but never stepped back to the headline verdict would be correct and still under-deliver.
+
+---
+
+## Web fresh-eye review — closure record (2026-05-18, append-only)
+
+Filesystem-grounded review of the committed bytes at the discriminator SHA (web reviewed branch `ea690d7`; squash-merged to `main @ 836b3b1` — byte-identical content, single docs-only commit, 174 insertions / 0 deletions so no prior version *could* be silently rewritten).
+
+**Verdict: 4/4 PASS, #196 cleared as mergeable.**
+- **#1 Contract fidelity — PASS** (2 transparency-not-integrity precision items, neither verdict-changing). The integrity question — *did D6 quietly relax the contract to pass?* — answered a clear **no** (`UNCLASSIFIED` makes the verdict *harsher*; B is a genuine bug).
+- **#2 Gate-text match — PASS, clean** (§5 ABORT/VALID/contract diffed against `f1b6a42`; no drift; SHA-pinned).
+- **#3 Honest trail — PASS, clean** (first-draft error + escalation+disproof recorded append-only; single new commit ⇒ nothing rewritable).
+- **#4 Completeness — PASS, strong** (per-dimension D1–D5 + concrete D3 headline naming #194 as the fixable defect; correctly used final 67, not the stale interim ~41).
+
+**Three named items — all resolved in follow-up PR (this branch), post-merge per web's blessed path:**
+1. "4 buckets ONLY" then a 5th label = internal contradiction → reworded to name `UNCLASSIFIED` an explicit out-of-contract residual.
+2. Cluster B REAL via source-read is extra-contractual (not one of the §5 REAL criterion's 3 literal routes) → added a contract note: decisive-verification-in-spirit (Rule 7) for a structural finding whose replay is PHI/permission-contraindicated; stronger not weaker; flagged not silent.
+3. Append-only section's casual "infra-tinged" descriptor → 2026-05-18 annotation added (original verbatim, NOT rewritten) disambiguating it from the discredited bucket.
+
+**Web's flagged lane-limitation — CLOSED from terminal's authenticated lane:** web could not confirm the PR/issue pointers (sandbox shared-egress hit GitHub's 60/hr unauth cap, `core: 0/60`) and correctly refused to report a rate-limit `None` as "issues missing" (verify-the-mechanism applied to its own probe). Terminal authed-lane confirms: **PR #196 = MERGED**, mergeCommit `836b3b12ca8c09171c2755c1e165910ac820820a`, 2026-05-17T21:55:27Z; issues **#193 / #194 / #195 all exist, all open**. Pointers resolve — web's non-assertion was correct.
+
+**Audit substantively complete:** 1 real ward-helper bug (#193), 1 named bot-harness defect (#194 — the commissioned deliverable), 1 low-sev manifest bug (#195), 3 parked OUT-OF-SCOPE proposals (PHI scenario / per-injector telemetry / shared-device persona+#175-#177 fixtures). Each is its own kickoff.
