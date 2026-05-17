@@ -487,3 +487,80 @@ HARNESS_ITERS=30 EXPECT_WARD_VERSION=ward-v1.46.3 node scripts/ward-helper-notfo
 Any future build where R1(a) goes RED has regressed PR #182. Any future
 build where R1(b) v2's contamination re-check trips, or it fires
 non-contaminated, is a genuine new signal worth a kickoff.
+
+---
+
+# STEP 2 — post-ship correction (2026-05-17): H3 severity-triage + horizon trigger + authority split
+
+> Append-only. The "STEP 2 answer" above is NOT rewritten. This section
+> corrects three under-justified moves in that conclusion, raised by
+> in-session review immediately after PR #187 merged (`cfb45b8`).
+
+**The hole.** The conclusion promoted **H3** to the most-weighted live
+hypothesis for the original production `NotFoundError`, then downgraded
+the #176 horizon from deadline-tier — while (a) H3 is **not surveilled**
+(R1(a)/R1(b) watch only the IDB surface), (b) no **severity** read of H3
+was done, and (c) the deferral had **no trigger** — violating this
+session's own trigger-bound-deferral discipline. The downgrade was
+asserted, not earned.
+
+## Fix 1 — H3 severity prior (code-grounded, not asserted)
+
+Full grep of the non-IDB `NotFoundError`-capable surface
+(`caches.*`/`cache.*`, `create/revokeObjectURL`, `navigator.storage`,
+OPFS/FileSystem):
+
+- **SW Cache API** (`public/sw.js`): `SHELL` is static app-shell +
+  bundle — **PHI-free** (PHI = IDB AES-GCM + Supabase ciphertext only).
+  `caches.match()` has explicit network fallback → a miss self-heals,
+  does not throw. `chaos-clear-storage` never calls `caches.delete()`.
+- **`revokeObjectURL`** (`camera/session.ts`, `Census/Settings.tsx`):
+  on a stale/absent URL it is a **silent no-op**, not a throw. The blob
+  URLs *do* hold PHI in memory (AZMA screenshots) but are **never
+  persisted** (hard invariant). A transient mishandling is **bounded by
+  that existing in-memory invariant** — an H3 `NotFoundError` does not
+  relax it. (Precise claim: *no persisted-PHI loss*, not "zero PHI".)
+- **No OPFS / File System Access** usage exists today.
+
+→ H3's worst case is a **transient, self-healing app-shell / screenshot
+hiccup — not persisted-PHI loss**. This *bounds severity by code
+structure* (not by observation; the original artifact is still
+unassignable). The downgrade is justified **only with this read attached
++ the trigger below**.
+
+## Fix 2 — concrete reopen trigger (anti-lapse)
+
+The H3 follow-up is parked at
+[`docs/audit/2026-05-17-h3-cache-blob-opfs-kickoff.md`](2026-05-17-h3-cache-blob-opfs-kickoff.md)
+with a **concrete trigger**: any `NotFoundError` in
+`chaos-reports/ward-bot-mega/wm-*.md` (the mega-bot already runs via the
+weekly-medical-pwa-qa routine; its existing HIGH-finding triage routing
+— memory `project_wardhelper_bot_run_2026-05-17` — routes there) **or**
+a production-telemetry `NotFoundError`. The downgrade is *backstopped by
+this trigger*, not by closure.
+
+## Fix 3 — authority split (H2 is disfavoured by TWO independent arguments)
+
+Keep these separate; do not let one borrow the other's weight:
+
+- **(a) String-provenance argument** — the mega-bot message is the
+  *generic* `DOMException` `NotFoundError` default ("A requested file or
+  directory could not be found…"), **not** IndexedDB's store-specific
+  string ("One of the specified object stores was not found"). This is
+  **independent of any harness/calibration**, near-certain on its own
+  terms, and disfavours H2 (and the H1-scan-symptom) **generally**.
+- **(b) R1(b) mechanism observation** — 30/30 `InvalidStateError` on the
+  post-fix mirror + the pre-fix control showing the **H1 blocked-delete**
+  (never an H2 `NotFoundError`) prove the IDB scan-vs-close path
+  **structurally cannot emit `NotFoundError`**. This is *mechanism
+  evidence* (stronger than mere 0/30 absence) but is **bounded to the IDB
+  surface only** — it does not disfavour non-IDB (H3) sources, and R1(b)
+  had no H2/H3 positive control (only H1 did, via the reverted-#182
+  build). The 0/30 *count* alone earns little; the *mechanism* finding is
+  what (b) contributes.
+
+Net unchanged: H2 + H1-scan-symptom disfavoured; **H3 OR formally
+unassignable**; original artifact cannot be closed. What changes: the
+downgrade is now *earned* (severity-bounded + trigger-backstopped), and
+"surveilled" is honestly scoped — **the IDB surface is surveilled; H3 is
+trigger-bound-parked, not surveilled.**
