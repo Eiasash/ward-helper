@@ -328,6 +328,11 @@ async function main() {
   console.log(`RED:      ${report.redCount}/${ITERATIONS}  (R3_H1_FLOOR=${R3_H1_FLOOR})`);
   console.log(`Verdict:  ${report.verdict?.path}`);
   console.log(report.verdict?.statement ?? '');
+  // A single invocation can't self-certify calibration (a fixed-build run
+  // truly is "pending calibration" in isolation). The cross-build RED/GREEN
+  // asymmetry that DID calibrate this probe lives here — point at it so a
+  // future regression-probe run isn't left wondering.
+  console.log('Calibration: docs/audit/2026-05-17-notfounderror-harness-run.md (PATH B1)');
   console.log(`Report:   ${outPath}`);
 
   // Exit code contract: 0 = ran cleanly & produced a verdict; 1 = RED
