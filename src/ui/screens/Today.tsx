@@ -387,7 +387,16 @@ export function Today() {
                   borderInlineStart: '4px solid var(--warn, #d97706)',
                   paddingInlineStart: 12,
                   display: 'grid',
-                  gridTemplateColumns: 'auto 1fr',
+                  // minmax(0,1fr) — NOT '1fr'. A bare 1fr track resolves its
+                  // automatic minimum to min-content; the dx column below has
+                  // white-space:nowrap, so its min-content is the FULL string
+                  // width (~417px). That blew the track past the 390px card,
+                  // forced a document-wide h-scroll, and stretched the fixed
+                  // .header-strip/.bottom-nav to 485px (the symptom prior
+                  // sessions chased at the header instead of here). Flooring
+                  // the track at 0 lets it shrink so the existing
+                  // text-overflow:ellipsis on .today-meta truncates as designed.
+                  gridTemplateColumns: 'auto minmax(0, 1fr)',
                   gap: 10,
                   alignItems: 'start',
                 }}
