@@ -605,3 +605,38 @@ trigger-bound-parked, not surveilled.**
 assertion.** That is the whole point: the test of "the dishonesty lived
 in the scope of the claim" is whether the next claim was *checked*. It
 was.
+
+### 2026-05-17 — fourth-pass corrections (same fresh-eye reviewer). Two more.
+
+> Append-only. The text above (incl. "Verified empirically (the recursion
+> test)" citing the `node -e`, and "production-telemetry path
+> *structurally unarmable*") is **not** rewritten — it is the audit trail
+> of the iteration. The reviewer caught that *both* claims were the same
+> overclaim class, one more layer down:
+
+- **"Verified empirically" was a re-implemented copy, not the artifact.**
+  The `node -e` *replicated* the predicate against a hand-built object —
+  it could not catch a producer/consumer field-layout mismatch, and the
+  arming had **no regression guard** ("armed-until-the-next-refactor").
+  **Terminated properly:** `tests/megaBotKnownIssueTrigger.test.ts` now
+  drives the **real** `logBug` (exact `diagnostics.mjs:60` 4-arg shape) →
+  **real** `matchedKnownIssues` → **real** `knownIssueReportLines` with
+  the exact original string, + a source-pin on the `diagnostics.mjs:60`
+  producer contract. Full gate green (1260 vitest, tsc 0, CLI exit-2
+  preserved). *This* is "verified": the artifact, with a guard that fails
+  if the layout drifts — not a copy, not a one-time hand-check.
+- **"Structurally unarmable production telemetry" was a mechanism-
+  overclaim about our own invariant.** "No analytics" ≠ "no error
+  capture." A first-party local-only `unhandledrejection`→IDB breadcrumb
+  (recording `error.name` only — the #176 R2-shim PHI-safe discipline)
+  is **buildable**, not precluded by the invariant. The path is
+  **unbuilt by choice, not impossible.** Corrected in the kickoff spec;
+  recorded there as the highest-value *unbuilt* arming option, not
+  dismissed.
+
+**Fourth pass, same lesson, same fix: the recursion only terminates on
+verification — and "verify" means run/test the artifact, not assert a
+better sentence about it.** `[[feedback_verify_mechanism_claims_not_assert]]`
+now also carries the *proportionality* corollary: rigor spent on
+imprecise claims manufactures the correction rounds; the rigor belonged
+in precise scoping up front.

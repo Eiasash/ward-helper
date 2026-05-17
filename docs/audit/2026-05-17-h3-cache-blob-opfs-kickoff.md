@@ -29,11 +29,25 @@ Open this kickoff when **either** path fires. The two paths differ in
   human still opens this kickoff on seeing the self-announce; that is the
   correct posture for a parked-spec workflow. The unarmed dependency is
   "the bot runs" (scheduled), not "a human remembers."
-- **Structurally UNARMABLE: production telemetry.** ward-helper has a
-  hard "no analytics, no 3rd-party scripts" invariant — there is **no**
-  automated prod telemetry to arm. A `NotFoundError` from a real
-  clinical session arrives as a user error report; that path is, and can
-  only be, user-initiated. Stated as a structural fact, not a gap.
+- **UNBUILT (not "unarmable"): production-side detection.** Correction
+  to an earlier overclaim — "structurally unarmable" was itself a
+  mechanism-overclaim about ward-helper's own invariant. "No analytics,
+  no 3rd-party scripts" ≠ no error capture. A **first-party, local-only**
+  `addEventListener('unhandledrejection', …)` writing the last N
+  `error.name`s to IndexedDB is neither analytics nor a third-party
+  script — it is a local breadcrumb, and it is **buildable**, not
+  precluded by the invariant. So this path is **unbuilt, a choice — not
+  impossible.** The real (surmountable) design constraint is **PHI-safe
+  capture**: error `message`/`stack` in a clinical app can contain
+  patient data, so a breadcrumb must record `error.name` only (or a
+  scrubbed shape) — exactly the discipline the #176 R2 trace shim used
+  (string-literal, harness-only, name/op/store only, no message/stack).
+  We are **not building it in this scope** (it is its own kickoff line,
+  below); calling it impossible was wrong. It would be the *strongest*
+  arming available — it catches a real clinical-session `NotFoundError`
+  instead of waiting for the scheduled bot to maybe reproduce one — so
+  it is explicitly recorded here as the highest-value unbuilt option,
+  not dismissed.
 
 Until a trigger fires, the #176 horizon stays **downgraded** (not
 deadline-tier) because the H3 surface is structurally bounded to

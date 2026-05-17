@@ -26,6 +26,7 @@
 import process from 'node:process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { PERSONAS, runPersona, BOT_VERSION } from './lib/megaPersona.mjs';
 import { writePatientGallery } from './lib/patientChart.mjs';
@@ -36,23 +37,28 @@ import { MinCoverageScheduler, DEFAULT_MIN_COVERAGE_TARGETS } from './lib/person
 // Authorization gate
 // ============================================================================
 
-if (process.env.WARD_BOT_RUN_AUTHORIZED !== 'yes-i-reviewed') {
-  console.error('═══════════════════════════════════════════════════════════════');
-  console.error(' ward-helper-mega-bot: REFUSING TO RUN.');
-  console.error(' Set WARD_BOT_RUN_AUTHORIZED=yes-i-reviewed to authorize.');
-  console.error(' This bot runs 5-10 personas in parallel for 30 min by default.');
-  console.error('═══════════════════════════════════════════════════════════════');
-  process.exit(2);
-}
-
 const FIXTURE_MODE = process.env.WARD_BOT_FIXTURE === '1';
 const KEY = process.env.CLAUDE_API_KEY;
 
-if (!FIXTURE_MODE) {
-  if (!KEY) { console.error('CLAUDE_API_KEY not set (or WARD_BOT_FIXTURE=1 to skip)'); process.exit(2); }
-  if (KEY.length !== 108) {
-    console.error(`CLAUDE_API_KEY length=${KEY.length}, expected 108`);
+// A FUNCTION, not top-level — so importing this module (the regression
+// test) does NOT trip the gate or exit the process. Called only on the
+// CLI path (the import.meta guard at the bottom). CLI behavior unchanged:
+// running the bot still requires WARD_BOT_RUN_AUTHORIZED + a 108-char key.
+function assertRunAuthorized() {
+  if (process.env.WARD_BOT_RUN_AUTHORIZED !== 'yes-i-reviewed') {
+    console.error('═══════════════════════════════════════════════════════════════');
+    console.error(' ward-helper-mega-bot: REFUSING TO RUN.');
+    console.error(' Set WARD_BOT_RUN_AUTHORIZED=yes-i-reviewed to authorize.');
+    console.error(' This bot runs 5-10 personas in parallel for 30 min by default.');
+    console.error('═══════════════════════════════════════════════════════════════');
     process.exit(2);
+  }
+  if (!FIXTURE_MODE) {
+    if (!KEY) { console.error('CLAUDE_API_KEY not set (or WARD_BOT_FIXTURE=1 to skip)'); process.exit(2); }
+    if (KEY.length !== 108) {
+      console.error(`CLAUDE_API_KEY length=${KEY.length}, expected 108`);
+      process.exit(2);
+    }
   }
 }
 
@@ -101,14 +107,41 @@ const KNOWN_ISSUE_TRIGGERS = [
   },
 ];
 
-/** Findings matching an armed trigger, with the matched rule. */
-function matchedKnownIssues() {
+/**
+ * Findings matching an armed trigger, with the matched rule. Pure over an
+ * explicit `bugs` array (defaults to module BUGS for the CLI path) so the
+ * REAL function — not a re-implemented copy — is what tests exercise.
+ */
+function matchedKnownIssues(bugs = BUGS) {
   return KNOWN_ISSUE_TRIGGERS
     .map((t) => ({
       t,
-      hits: BUGS.filter((b) => t.match.test(`${b.where} ${b.what} ${b.evidence ?? ''}`)),
+      hits: bugs.filter((b) => t.match.test(`${b.where} ${b.what} ${b.evidence ?? ''}`)),
     }))
     .filter((x) => x.hits.length > 0);
+}
+
+/**
+ * The top-of-report routing block (markdown lines, or []) for any armed
+ * known-issue match. Pure: same input → same lines. writeReport() splices
+ * this in; the regression test asserts THIS function over a BUGS array
+ * built by the REAL logBug() — so a future logBug/diagnostics field-layout
+ * drift that silently disarms the trigger fails the test, not production.
+ */
+function knownIssueReportLines(bugs = BUGS) {
+  const triggered = matchedKnownIssues(bugs);
+  if (!triggered.length) return [];
+  const out = ['## ⚠ ARMED KNOWN-ISSUE TRIGGER — READ BEFORE TRIAGING'];
+  for (const { t, hits } of triggered) {
+    out.push(
+      `- **${t.label}** — ${hits.length} finding(s) match \`${t.match}\`. ` +
+      `This is the ARMED trigger for a PARKED investigation: **open ` +
+      `\`${t.kickoff}\`** before triaging this run. Deferred = ` +
+      `trigger-bound (this line), not parked-and-hoping someone remembers.`,
+    );
+  }
+  out.push('');
+  return out;
 }
 
 // ============================================================================
@@ -491,21 +524,8 @@ async function writeReport(results, costTracker, scheduler) {
   lines.push('');
 
   // Armed known-issue routing — FIRST section so a triager cannot miss it.
-  // This is what makes a parked deferral genuinely trigger-bound: the
-  // report self-announces the kickoff instead of relying on human memory.
-  const triggered = matchedKnownIssues();
-  if (triggered.length) {
-    lines.push('## ⚠ ARMED KNOWN-ISSUE TRIGGER — READ BEFORE TRIAGING');
-    for (const { t, hits } of triggered) {
-      lines.push(
-        `- **${t.label}** — ${hits.length} finding(s) match \`${t.match}\`. ` +
-        `This is the ARMED trigger for a PARKED investigation: **open ` +
-        `\`${t.kickoff}\`** before triaging this run. Deferred = ` +
-        `trigger-bound (this line), not parked-and-hoping someone remembers.`,
-      );
-    }
-    lines.push('');
-  }
+  // Pure knownIssueReportLines() is the single source of truth (tested).
+  for (const l of knownIssueReportLines()) lines.push(l);
 
   // V4: cost itemization (Web-Claude challenge #2 — itemize so $80 isn't theater).
   if (costTracker) {
@@ -634,4 +654,14 @@ async function writeReport(results, costTracker, scheduler) {
   await fs.writeFile(REPORT_PATH, lines.join('\n'), 'utf8');
 }
 
-main().catch((e) => { console.error('fatal:', e); process.exitCode = 1; });
+// Testable surface — imported by tests/megaBotKnownIssueTrigger.test.ts.
+// The .mjs is the runtime source of truth; scripts/ward-helper-mega-bot.d.mts
+// describes this shape to strict TS (tsconfig includes "scripts").
+export { KNOWN_ISSUE_TRIGGERS, matchedKnownIssues, knownIssueReportLines, logBug, BUGS };
+
+// CLI+importable guard — identical pattern to scripts/analyze-mega-run.mjs.
+// Importing this module (the regression test) must NOT launch the bot.
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  assertRunAuthorized();
+  main().catch((e) => { console.error('fatal:', e); process.exitCode = 1; });
+}
