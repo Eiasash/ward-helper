@@ -359,7 +359,18 @@ export async function scenResetPasswordLanding(page, _browser, scenario, persona
   const submit = await findByText(page, [/^🔐 אפס סיסמה$/, /^מאפס…$/]);
   if (submit) {
     await safeClick(page, persona, submit, 'reset-submit', guard);
-    await sleep(2500);
+    // Poll for the banner instead of a fixed sleep. PasswordReset awaits
+    // authResetPasswordWithToken → _rpc → getSupabase() + a Supabase RPC
+    // round-trip; a cold init routinely exceeds 2.5s. A fixed sleep(2500)
+    // here read while busy=true and produced a false HIGH
+    // silent-on-fake-token (2026-05-17 finding). waitForSubject resolves
+    // the instant the banner/ok text appears (fast path stays fast); only
+    // a genuinely stuck form waits the full 15s — and THEN the silent
+    // finding below is legitimate. 15s covers a cold auth RPC.
+    await waitForSubject(page, [
+      /הקישור לא תקין|הקישור הזה כבר נוצל|הקישור פג תוקף|בעיית רשת|שגיאת שרת|שגיאה/,
+      /הסיסמה אופסה/,
+    ], 15000);
     // Expect EITHER a token error message OR a network error — not silent.
     const post = await page.evaluate(() => {
       const txt = document.body.innerText || '';
