@@ -14,21 +14,25 @@
  * track minimum at 0 so it shrinks and the existing
  * text-overflow:ellipsis on .today-meta truncates as designed.
  *
- * SCOPE — read this before trusting the test name:
- *  - Tests 1-2 are a SOURCE-invariant pin on `Today.tsx` ONLY (mirrors
- *    a11yContrast2026-05-10.test.ts). They do NOT — and cannot, via a
- *    single readFileSync — guard RosterImportModal.tsx or Review.tsx.
- *  - The fresh-eye review (2026-05-17) flagged three OTHER bare-`fr`
- *    inline grids reachable from /today: RosterImportModal.tsx:479
- *    (`1fr auto`), :584 (8-col ManualRowEditor), Review.tsx:590. These
- *    were empirically tested with a real-pan oracle (iPhone-13,
- *    batch_features=1, scrollTo(9999,0)→scrollX across modal paste /
- *    manual / preview states): scrollX stayed 0 in EVERY state. They are
- *    contained by their `overflow:auto` parent (RosterImportModal.tsx:309
- *    input-tabs, :467 preview) — wide content scrolls inside the modal,
- *    the page never pans. So they are NOT blind-fixed (rule #2: no
- *    speculative change for a non-manifesting issue). Test 3 instead pins
- *    the real protective invariant: that `overflow:auto` containment.
+ * SCOPE — read this before trusting the test name. Both tests below are a
+ * SOURCE-invariant pin on `Today.tsx` ONLY (mirrors
+ * a11yContrast2026-05-10.test.ts). A single readFileSync CANNOT guard
+ * RosterImportModal.tsx or Review.tsx, and CANNOT see DOM structure — so it
+ * is not the place to guard the modal grids.
+ *
+ * The fresh-eye review (2026-05-17) flagged three OTHER bare-`fr` inline
+ * grids reachable from /today: RosterImportModal.tsx:479 (`1fr auto`), :584
+ * (8-col ManualRowEditor), Review.tsx:590. A real-pan oracle (iPhone-13,
+ * batch_features=1, scrollTo(9999,0)→scrollX across modal paste / manual /
+ * preview) showed scrollX=0 in every state — they are contained, page never
+ * pans — so they were NOT blind-fixed (rule #2). Their containment is now
+ * guarded STRUCTURALLY (DOM-ancestry, the real failure mode) by a separate
+ * render test: `tests/rosterModalGridContainment.test.tsx`. An earlier
+ * version of THIS file had a third test that counted `overflow:auto` tokens
+ * in the modal source; it was deleted — a token count cannot tell whether a
+ * token encloses a grid, so it read strong while being weak (a weak guard
+ * is worse than none). See the sibling file's docstring for what the
+ * structural guard does and does NOT catch.
  *
  * If you roll any pinned line back, delete the matching guard too — never
  * just edit source and watch the test fail. The pin is what makes the fix
@@ -38,11 +42,10 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-const read = (...p: string[]) =>
-  readFileSync(path.resolve(__dirname, '..', 'src', ...p), 'utf8');
-
-const todaySrc = read('ui', 'screens', 'Today.tsx');
-const modalSrc = read('ui', 'components', 'RosterImportModal.tsx');
+const todaySrc = readFileSync(
+  path.resolve(__dirname, '..', 'src', 'ui', 'screens', 'Today.tsx'),
+  'utf8',
+);
 
 describe('/today roster card grid — blowout guard (2026-05-17)', () => {
   it('Today.tsx: the roster-card grid floors the flexible track (minmax(0, 1fr))', () => {
@@ -65,18 +68,5 @@ describe('/today roster card grid — blowout guard (2026-05-17)', () => {
     const bareFr = /(?<!minmax\(\s*0\s*,\s*)\b\d*\.?\d+fr\b/;
     const offenders = inlineGrids.filter((g) => bareFr.test(g));
     expect(offenders).toEqual([]);
-  });
-
-  it('RosterImportModal.tsx: bare-`fr` grids stay contained by overflow:auto', () => {
-    // The modal's manual (:584, 8-col) + preview (:479, 1fr auto) grids
-    // ARE intentionally wide form layouts. They do not pan the page only
-    // because their phase wrappers (input-tabs :309, preview :467) are
-    // `overflow:auto` — verified by real-pan oracle 2026-05-17 (scrollX=0
-    // across paste/manual/preview). Pin that containment so a refactor
-    // that drops overflow:auto can't silently re-expose the h-scroll.
-    const wrappers = [
-      ...modalSrc.matchAll(/style=\{\{[^}]*overflow:\s*['"]auto['"][^}]*\}\}/g),
-    ];
-    expect(wrappers.length).toBeGreaterThanOrEqual(2);
   });
 });
