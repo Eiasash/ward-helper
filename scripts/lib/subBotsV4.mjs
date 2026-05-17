@@ -195,7 +195,8 @@ export async function scenEmailToSelf(page, _browser, scenario, persona, guard, 
 export async function scenMorningRoundsPrep(page, _browser, scenario, persona, guard, _reportDir, logBug) {
   const subject = 'morningRoundsPrep';
 
-  // Force the banner to fire by setting lastArchivedDate to yesterday.
+  // Force the banner to fire by setting lastArchivedDate to yesterday,
+  // then trigger a REAL remount so MorningArchivePrompt picks it up.
   await page.evaluate(() => {
     try {
       const yesterday = new Date(Date.now() - 86400_000).toLocaleDateString('en-CA');
@@ -203,10 +204,22 @@ export async function scenMorningRoundsPrep(page, _browser, scenario, persona, g
       // Clear the dismissed flag for today so banner shows.
       const today = new Date().toLocaleDateString('en-CA');
       sessionStorage.removeItem(`ward-helper.bannerDismissed_${today}`);
+      window.location.hash = '#/today';
     } catch (_) {}
   }).catch(() => {});
 
-  await page.evaluate(() => { window.location.hash = '#/today'; });
+  // ROOT-CAUSE FIX (#194 — D5 audit wm-2026-05-17 false-positive cluster).
+  // MorningArchivePrompt mounts ONCE in the App shell (App.tsx:195) and
+  // its useEffect([]) reads lastArchivedDate ONLY at that mount. The
+  // previous `window.location.hash = '#/today'` is a hash route change
+  // that does NOT remount App, so the effect never re-ran and the banner
+  // never appeared — emitting ~19 false `banner-missing` MEDIUM per scoped
+  // run across all 3 personas. D6 clean replay proved the app is correct:
+  // set key -> real reload -> banner renders. A reload remounts App with
+  // the key already present; localStorage survives reload (same origin).
+  // `waitUntil:'domcontentloaded'` (not networkidle) keeps this cheap and
+  // avoids hanging on the app's long-poll/proxy connections.
+  await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
   await sleep(rand(800, 1500));
 
   // V4.1 — wait for /today to mount AND the banner effect to fire (the
