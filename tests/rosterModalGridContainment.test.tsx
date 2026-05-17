@@ -36,6 +36,16 @@
  *    the right shape is a callable script alongside scripts/ward-helper-
  *    bot-*.mjs, not a CI job.
  *  - An `overflow:auto` ancestor whose layout still fails to clip.
+ *  - Containment moved off inline style. `overflowOf` reads `el.style`
+ *    only. If the modal is refactored so the contained ancestor sets
+ *    overflow via a CSS *class* (not inline), or the modal moves to
+ *    `createPortal` (rendering outside `container`), this test FALSE-FAILS
+ *    — but in the SAFE direction: a loud RED, never a silent miss. A
+ *    future refactorer who sees this go red after such a change should
+ *    re-point the ancestor walk (computed style / portal root), not
+ *    assume a real regression. Inline-only is deliberate: happy-dom can't
+ *    resolve class-based overflow without layout anyway, so widening the
+ *    read would add false-greens, not coverage.
  * This guard catches exactly the decoupling failure mode the fresh-eye
  * review named, deterministically, in the existing gate. No more, no less.
  */
