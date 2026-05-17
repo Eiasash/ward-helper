@@ -30,3 +30,12 @@ docs/2026-05-10-remote-control-session.txt
 # and Supabase CLI scratch dir. Personal tooling, not project state.
 .mcp.json
 supabase/.temp/
+
+# 2026-05-17: PR-B2 bake-workstream local scratch. The DEVICE bake doc is
+# a fill-per-device template that says "delete before commit"; the
+# precision-repair script is a one-off bot-table fixer. Both are working
+# scratch, not project state — ignored so a stray `git add -A` can't
+# commit them. (b1-bake-witness.mjs is the opposite — spec-referenced
+# infra — and is tracked, not ignored.)
+docs/audit/2026-05-14-pr-b2-bake-DEVICE.md
+scripts/fix-precision-v4-1.mjs
