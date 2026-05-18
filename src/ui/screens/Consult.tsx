@@ -99,6 +99,7 @@ export function Consult() {
   const [error, setError] = useState<string | null>(null);
   const [pendingEmit, setPendingEmit] = useState(false);
   const [emitInFlight, setEmitInFlight] = useState<NoteType | null>(null);
+  const [emailInFlight, setEmailInFlight] = useState<number | null>(null);
 
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -225,11 +226,13 @@ export function Consult() {
   async function emailNote(idx: number) {
     const n = emitted[idx];
     if (!n) return;
+    if (emailInFlight !== null) return;
     if (!emailTarget) {
       setError('כתובת מייל לא הוגדרה — בהגדרות → שליחה במייל');
       return;
     }
     clearError();
+    setEmailInFlight(idx);
     try {
       const subject = defaultEmailSubject(NOTE_LABEL[n.noteType], undefined);
       await sendNoteEmail(emailTarget, subject, n.text);
@@ -240,6 +243,8 @@ export function Consult() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'שליחת מייל נכשלה';
       setError(msg);
+    } finally {
+      setEmailInFlight(null);
     }
   }
 
@@ -361,10 +366,15 @@ export function Consult() {
                   📋 העתק
                 </button>
                 {emailTarget ? (
-                  <button onClick={() => emailNote(idx)}>
-                    {note.emailedAt
-                      ? `✉ נשלח ל-${emailTarget}`
-                      : `✉ שלח ל-${emailTarget}`}
+                  <button
+                    onClick={() => emailNote(idx)}
+                    disabled={emailInFlight !== null}
+                  >
+                    {emailInFlight === idx
+                      ? '✉ שולח…'
+                      : note.emailedAt
+                        ? `✉ נשלח ל-${emailTarget}`
+                        : `✉ שלח ל-${emailTarget}`}
                   </button>
                 ) : (
                   <button
