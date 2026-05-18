@@ -55,6 +55,9 @@ describe('buildSoapPromptPrefix', () => {
     expect(out).toContain('admission note');
     expect(out).toContain('82yo male admitted for pneumonia');
     expect(out).not.toContain('MOST RECENT SOAP');
+    // R3 — first round after admission is the verbose anchor of the
+    // gradient (capsule + full problem list); subsequent rounds lean delta.
+    expect(out).toContain('MOST verbose SOAP of the admission');
   });
 
   it('case note includes 6-section template + Chameleon rules', () => {
@@ -110,5 +113,15 @@ describe('buildSoapPromptPrefix', () => {
     expect(out).toContain('MOST RECENT SOAP');
     expect(out).toContain('yesterday SOAP body');
     expect(out).toContain('trajectory vs today');
+    // R2 — P framed as a delta/MERGE into AZMA's carried-forward plan,
+    // not a reprint. Carve-out for complex active issues keeps it from
+    // fighting SOAP_STYLE's "4-8 specific lines".
+    expect(out).toContain('MERGE into AZMA');
+    expect(out).toContain('מה נוסף / מה הופסק או שונה');
+    expect(out).toContain('per SOAP_STYLE');
+    // R3 — explicit verbosity gradient: A stays more detailed than P,
+    // subsequent rounds lean toward delta.
+    expect(out).toContain('Verbosity gradient');
+    expect(out).toContain('more detailed than P');
   });
 });

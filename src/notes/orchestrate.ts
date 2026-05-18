@@ -354,6 +354,18 @@ export function buildSoapPromptPrefix(
       '- Changed: show the delta using a single ">" (e.g. "Cr: 2.1 > 1.8", "Apixaban הופסק", "חום 39.2 > afebrile")',
       '- Resolved: mark "נפתר"',
       '- New: add under the right *domain',
+      // R2 — P-as-delta. AZMA carries the prior SOAP's לביצוע forward
+      // verbatim across sessions, so a subsequent-round P is a MERGE, not
+      // a reprint. Framed as delta, NOT exclusion: complex active issues
+      // still get their specific action lines per SOAP_STYLE (line "P
+      // (לביצוע) — … 4-8 specific lines"); the delta framing governs only
+      // the standing/unchanged parts, so the two instructions don't fight.
+      'P (לביצוע) for a subsequent round is a MERGE into AZMA\'s carried-forward plan, not a reprint: AZMA keeps the prior SOAP\'s לביצוע verbatim across sessions. Lead with what changed vs the prior P — מה נוסף / מה הופסק או שונה. State unchanged continuations once as a single line ("ממשיך טיפול כפי שתואם"), not re-enumerated item by item. Genuinely active/complex issues still get their own specific action lines per SOAP_STYLE; the delta framing governs the standing, unchanged actions only.',
+      // R3 — verbosity gradient made explicit. A is the delta-bearing,
+      // reasoning-carrying section and stays more detailed than P; a
+      // subsequent round leans toward update/delta (the most-verbose SOAP
+      // is the first-after-admission branch below, with the full capsule).
+      'Verbosity gradient: A carries the clinical reasoning and stays more detailed than P — keep each *domain trajectory plus the actionable lab/decision inline. P stays tighter than A. This is a subsequent round (not the first after admission): lean toward delta/update over a full restatement.',
       '',
       '---',
       admBlock,
@@ -370,6 +382,12 @@ export function buildSoapPromptPrefix(
   return [
     'Emit a SOAP note in Hebrew — first SOAP after admission. This is the patient\'s first daily round in the dept.',
     'A opens with the SZMC patient capsule (3-4 lines) per the format in SOAP_STYLE below. Pull demographics, marital/parent count, living situation, baseline ADL/mobility, and active problems from the admission note. Then "בעיות:" introducing problem bullets per *domain (*אורתופדית / *זיהומית / *תפקודית / *עצמות / etc.). Do not restate the full admission.',
+    // R3 — anchor the top of the verbosity gradient. This first round is
+    // the most verbose SOAP of the admission; from the next round on the
+    // capsule drops and A leans toward delta, but A always stays more
+    // detailed than P. (No prior SOAP here, so no P-delta — this P seeds
+    // AZMA's carried-forward plan.)
+    'This first daily round is the MOST verbose SOAP of the admission (full capsule + complete problem list). From the next round on, the capsule drops and A leans toward delta/update — but A always stays more detailed than P.',
     '',
     '---',
     admBlock,
