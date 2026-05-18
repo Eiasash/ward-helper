@@ -11,7 +11,9 @@ import { useBidiAudit } from '../hooks/useSettings';
 import { snapshot as debugSnapshot } from '@/agent/debugLog';
 import {
   splitIntoSections,
+  type NoteSection,
 } from '@/notes/sections';
+import { splitSoapFields } from '@/notes/soapFields';
 import {
   loadSnippets,
   expandSnippetAt,
@@ -221,6 +223,30 @@ export function NoteEditor() {
   }, []);
 
   const sections = useMemo(() => splitIntoSections(body), [body]);
+
+  // SOAP → AZMA 4-field view. AZMA's SOAP entry has four separate
+  // pre-labeled fields; the generic section parser duplicates headers and
+  // mis-segments SOAP (A fragments into capsule + בעיות; the goal block is
+  // swallowed into P). For SOAP only — when the body conforms —
+  // `splitSoapFields` returns four header-less, correctly-bounded strings
+  // and we copy/show those instead. Non-conforming SOAP → null → fall back
+  // to the generic section UI. All non-SOAP types are untouched.
+  const soapFields = useMemo(
+    () => (noteType === 'soap' ? splitSoapFields(body) : null),
+    [noteType, body],
+  );
+  const soapView = soapFields !== null;
+  const displaySections = useMemo<NoteSection[]>(() => {
+    if (soapFields) {
+      return [
+        { name: 'S · דיווח המטופל', body: soapFields.s },
+        { name: 'O · בדיקה גופנית', body: soapFields.o },
+        { name: 'A · מסקנה והערכה', body: soapFields.a },
+        { name: 'P · לביצוע', body: soapFields.p },
+      ];
+    }
+    return sections;
+  }, [soapFields, sections]);
 
   // Live audit is a dev-time affordance, opt-in via Settings. In normal use
   // the clipboard sanitizer handles violations silently; the banner exists
@@ -503,11 +529,11 @@ export function NoteEditor() {
         </div>
       )}
 
-      {sections.length > 1 && (
+      {displaySections.length > 1 && (
         <div
           className="section-copy-row"
           role="toolbar"
-          aria-label="פעולות לפי קטע"
+          aria-label={soapView ? 'העתקה לשדות SOAP של אזמה' : 'פעולות לפי קטע'}
           style={{
             display: 'flex',
             gap: 8,
@@ -516,7 +542,7 @@ export function NoteEditor() {
             marginBottom: 8,
           }}
         >
-          {sections.map((s, i) => {
+          {displaySections.map((s, i) => {
             const regenInProgress = regenSectionIdx === i;
             return (
               <div
@@ -545,25 +571,32 @@ export function NoteEditor() {
                 >
                   {copiedSection === i ? '✓ הועתק' : s.name}
                 </button>
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={() => onRegenerateSection(i)}
-                  disabled={regenSectionIdx !== null}
-                  title={`צור מחדש את הקטע "${s.name}" (פנייה ממוקדת — לא רשומה שלמה)`}
-                  aria-label={`צור מחדש את הקטע ${s.name}`}
-                  style={{
-                    whiteSpace: 'nowrap',
-                    fontSize: 13,
-                    padding: '6px 10px',
-                    minHeight: 32,
-                    border: 'none',
-                    borderInlineStart: '1px solid var(--border)',
-                    borderRadius: 0,
-                  }}
-                >
-                  {regenInProgress ? '…' : '↻'}
-                </button>
+                {/* Per-section regenerate targets splitIntoSections
+                    indices; the SOAP 4-field view uses synthetic sections
+                    that don't map back, and Phase 1 makes no generation
+                    change — so the ↻ is hidden there. Full "🔄 צור מחדש"
+                    still works for SOAP. */}
+                {!soapView && (
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={() => onRegenerateSection(i)}
+                    disabled={regenSectionIdx !== null}
+                    title={`צור מחדש את הקטע "${s.name}" (פנייה ממוקדת — לא רשומה שלמה)`}
+                    aria-label={`צור מחדש את הקטע ${s.name}`}
+                    style={{
+                      whiteSpace: 'nowrap',
+                      fontSize: 13,
+                      padding: '6px 10px',
+                      minHeight: 32,
+                      border: 'none',
+                      borderInlineStart: '1px solid var(--border)',
+                      borderRadius: 0,
+                    }}
+                  >
+                    {regenInProgress ? '…' : '↻'}
+                  </button>
+                )}
               </div>
             );
           })}
@@ -597,10 +630,10 @@ export function NoteEditor() {
         />
       ) : (
         <div className="section-cards" aria-label="קטעי the femur exemplarומה — מוכנים להעתקה">
-          {sections.length === 0 ? (
+          {displaySections.length === 0 ? (
             <p className="muted">אין תוכן להצגה.</p>
           ) : (
-            sections.map((s, i) => (
+            displaySections.map((s, i) => (
               <article key={`${i}:${s.name}`} className="section-card">
                 <header className="section-card__header">
                   <h3 className="section-card__title">{s.name}</h3>
