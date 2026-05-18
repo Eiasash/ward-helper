@@ -31,37 +31,58 @@ Search before answering any clinical, pharmacological, legal, or regulatory ques
 
 ---
 
-## Hazzard 8e Chapter Map (verified by PyMuPDF scan, 2026-05-08)
+## Source PDF Chapter References
 
-**Source PDF:** `C:\Users\User\OneDrive\Documents\Claude\Projects\SZMC geriatrics\hazzard marked  (3).pdf` (460 MB single PDF; faster to text-search than the 11-part split at `Geriatrics/.audit_logs/upload_staging/hazzard_marked__partNN.pdf`).
+**Canonical TOC files (in the Geri repo, schema-guarded):**
+- `data/hazzard_chapters.json` — Hazzard 8e
+- `data/harrison_22e_toc.json` — Harrison 22e
 
-**Verified chapter ranges** (PDF page = book page + 34 offset):
+These are the audited source-of-truth for `q.ref` validation.
+`question_chapters.json` (`.haz` / `.har` fields) cross-references back into them.
+Trust the JSON before any in-skill table.
 
-| Ch | Title | PDF p | Book p |
-|---|---|---|---|
-| 33 | LOW VISION: ASSESSMENT AND REHABILITATION | 504–523 | 470–489 |
-| 34 | HEARING LOSS: ASSESSMENT AND MANAGEMENT | 524+ | 490+ |
+**TOC pre-flight is MANDATORY before any web Claude PDF prestage** (Bot D
+cluster-triage workflow): validate the target chapter against the TOC JSON
+*before* extracting source quotes from the PDF. Skipping pre-flight risks
+PDF-scan false positives that match body-text keywords instead of chapter
+titles (vision_eye batch v1 picked Ch 14 "Models of Hospital Care" because
+"eye" appeared in body text — title-position match is the fix).
 
-**Note for q.ref correctness on PWA questions:** the canonical title strings are exactly as they appear in the PDF chapter heading. When constructing or validating a `q.ref` value, match this exact form:
+### q.ref string format
 
-- `Hazzard Ch 33 — LOW VISION: ASSESSMENT AND REHABILITATION`
-- `Hazzard Ch 34 — HEARING LOSS: ASSESSMENT AND MANAGEMENT`
+When constructing or validating a `q.ref` value, use:
 
-The em-dash `—` (U+2014) is required. Hyphen-minus `-` will fail hazzard_chapters.json schema-guard. Trailing space / trailing colon / abbreviated titles all fail.
+- Hazzard 8e: `Hazzard Ch <N> — <TITLE>`
+- Harrison 22e: `Harrison 22e Ch <N> — <Title>`
 
-**Other verified chapter starts (incidental, from same scan):**
+The em-dash `—` (U+2014) is required by `hazzard_chapters.json` schema-guard.
+Hyphen-minus `-`, en-dash `–`, trailing space, trailing colon, and
+abbreviated/paraphrased titles all fail validation. Match the printed
+chapter title in the PDF — exact case, exact punctuation.
 
-| Ch | Title (head text) | PDF p |
-|---|---|---|
-| 14 | MODELS OF HOSPITAL AND OUTPATIENT CARE | 232 |
-| 15 | EMERGENCY DEPARTMENT CARE | 244 |
-| 27 | (section header — Surgical Management) | 142 |
-| 9 | MENTAL STATUS AND NEUROLOGIC EXAMINATION | 178 |
-| 10 | ASSESSMENT OF DECISIONAL CAPACITY AND COMPETENCIES | 186 |
+### Verified chapters (working subset for fast reference)
 
-(Add to this table as future PDF scans verify more chapters.)
+This is a working subset surfaced during recent Bot D triage batches. The
+TOC JSON files above are authoritative; consult them before trusting any
+entry here.
 
-**Workflow:** if a future cluster batch needs another Hazzard chapter verified, run `_web_lane_find_hazzard_eye_v2.py` (in `~/repos/.audit_logs/`) with the eye keywords swapped for the new target's keywords. Takes ~6 seconds per scan.
+**Hazzard 8e:**
+- Ch 33 — LOW VISION: ASSESSMENT AND REHABILITATION (PDF p504–523)
+- Ch 34 — HEARING LOSS: ASSESSMENT AND MANAGEMENT (PDF p524+)
+- Onc block (TOC-verified 2026-05-08):
+  - Ch 88 CANCER, Ch 89 BREAST, Ch 90 PROSTATE, Ch 91 LUNG,
+  - Ch 92 GI MALIGNANCIES, Ch 93 SKIN CANCER,
+  - Ch 94 HEME, Ch 95 HEME MALIGNANCIES
+
+**Harrison 22e onc** (TOC-verified 2026-05-08):
+- Ch 79 Infections in Cancer Patients
+- Ch 80 Oncologic Emergencies
+- Ch 81 Cancer of the Skin
+- Ch 83 Lung Cancer
+- Ch 84 Breast Cancer
+- Ch 86 Colorectal Cancer
+
+**PDF→book page offset** for Hazzard 8e: book page = PDF page − 34.
 
 ---
 
