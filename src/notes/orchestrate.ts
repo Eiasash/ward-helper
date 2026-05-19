@@ -106,6 +106,130 @@ Forbidden tokens (Chameleon corrupts these): arrows (→ ← ↑ ↓), ** for bo
 `.trim();
 
 /**
+ * Rehab daily-round (ביקור רופא בשיקום) house-style calibration.
+ *
+ * Encodes the 8 style patterns + 2 de-identified gold exemplars from
+ * docs/rehab-soap-style-guide.md (PHI-free; distilled from a signed-note
+ * gold corpus — provenance + the verbatim source live in that doc).
+ *
+ * Wired into buildSoapPromptPrefix via the `tail` array, so it is appended
+ * for every rehab-* SoapMode and NEVER for 'general' (acute-ward SOAP) nor
+ * for admission/discharge (those use ADMISSION_STYLE / DISCHARGE_STYLE).
+ *
+ * NOT placed in rehabPrompts.ts on purpose: that module is a verbatim port
+ * of public/skills/rehab-quickref/SKILL.md and is skill-sync-locked — new
+ * content there would trigger chore(skills) drift.
+ *
+ * NORMALIZATION: the source style guide writes problem-list bullets as
+ * `#domain:` (its gold-corpus convention). ward-helper's house format is
+ * `*domain -` (SOAP_STYLE line "*[domain] - ..." / "NOT #hashtag", the
+ * rehabPrompts.ts `*`-prefix invariant, and the tested soap fixtures). The
+ * style rules and BOTH exemplars below are normalized to `*domain` so the
+ * few-shot signal agrees with the prompt's own rule; the unaltered source
+ * is preserved verbatim in docs/rehab-soap-style-guide.md.
+ */
+const REHAB_STYLE_CALIBRATION = `
+Rehab daily-round (ביקור רופא בשיקום) house-style calibration — apply on top of SOAP_STYLE. Tightens register and section shape for the rehab daily-round note specifically.
+
+Style rules (imperative — follow exactly):
+1. S is a checklist of short patient-reported lines, NOT prose. One item per line, sentence fragments. Order: chief symptom + its control, sleep ("ישן בלילה"), urine + stool, appetite ("תאבון סביר" / "שמור"), mood + cooperation/motivation. End S with the literal encounter-location line — "ביקור ליד המיטה" or "ביקור באולם פיזי".
+2. O is a bedside exam in short lines. Open with "מצב כללי טוב" / alertness, then system findings (לב / ריאות / בטן / גפיים), then the one patient-specific finding the case turns on (wound + drain / fistula thrill+bruit / unilateral edema). Vitals may fold into one line. NO lab values in O.
+3. A opens with a one-line capsule — age + sex + key diagnosis + the acute event/date + day-of-rehab or POD — then the problem list of *domain bullets. Use the "*" prefix per SOAP_STYLE (the source guide's "#" is normalized to "*"). Each bullet = domain + current status + drugs + the decision. Drug levels / lab values go INLINE in the relevant *bullet, never in O.
+4. P is an action list, one action per line, telegraphic: "מעקב…", "ייעוץ…", "בדיקות דם חוזרות…", "המשך…", "החלטה לגבי…". Non-drug actions only — med/dose changes live in the A bullet.
+5. תוכנית טיפול is one short paragraph — restate the capsule, then the concrete rehab goal by indication. May be a single line.
+6. Drug names are English UPPERCASE always (VANCOMYCIN, ENOXAPARIN, CEFTAZIDIME) inside otherwise-Hebrew text.
+7. Register is telegraphic. S / O / P are fragments, not grammatical sentences. A bullets are denser but still compressed. No filler, no hedging, no skeleton/topic-word lines, no "[...]" placeholders.
+8. Keep house abbreviations as written: כ"א (כניסת אוויר), דו"צ / דוץ (דו-צדדי), פעמ"ם (פעולת מעיים), ל"ד.
+
+Two gold exemplars — genuine signed rehab daily-round notes, identifiers removed, #domain normalized to *domain. Match their register and section shape; do NOT reuse their clinical content.
+
+GOLD EXEMPLAR A — ESRD/HD on dialysis, infected hip wound, DM (dense, multi-bullet, upper end of range):
+S דיווח המטופל:
+יום 3 מניתוח NONEXCISIONAL DEBRIDEMENT OF WOUND, INFE Left
+יש PSEUDOMONAS רגיש
+מקבל VANCO לפי רמות (בדיקה היום) ופורטום מותאם דיאליזה
+היום יותר טוב וערני מאתמול, יש VAC 50-100 מל דם (400 ב-24 שעות אחרונות)
+מרגיש סביר
+ישן בלילה
+כאב בשליטה עם משככי כאבים קבוע
+שתן וצואה - יציאה העביר, שתן מעט (דיאליזה)
+תאבון סביר
+ביקור ליד המיטה
+
+O בדיקה גופנית וממצאי עזר:
+יציב המודינמית ונשימתית
+בהכרה מלאה
+ללא חום
+לב סדיר
+בטן רכה
+ריאות כניסת אוויר טובה דו צדדית
+גפיים בצקת ברגל מנותחת 1+ שמאל עם נקז MINIVAC, בזמן ביקור 50 מל דמי, לא מדמם פעיל אך חבישה על הפצע ספוגה בצבע דם
+
+A מסקנה והערכה:
+בן 62, ESRD על המודיאליזה כרונית, סוכרת. מצב לאחר קיבוע שבר סאב-טרוכנטרי, כעת לאחר הטריית פצע ניתוחי מזוהם בירך שמאל (16/05).
+
+*זיהומית - זיהום פולימיקרוביאלי - MRSA + PSEUDOMONAS AERUGINOSA (צמח בשתי תרביות פצע). ייעוץ VANCOMYCIN 1000 מ"ג תוך-ורידי, מינון לפי רמות סביב דיאליזה, יעד 15 עד 20 (רמה אחרונה 18/05 = 11.5, תת-טיפולית). CEFTAZIDIME (FORTUM) 2 גרם תוך-ורידי פעם ביום, הטרייה + MUPIROCIN + VAC מקומי.
+
+תרבית רקמה מפצע ניתוחי 16/05/26:
+1 צמיחה בינונית: STAPHYLOCOCCUS AUREUS MRSA - הרגישות אינה בדוח זה, מפנה לדגימה קודמת.
+2) רגישות PSEUDOMONAS חזרה - רגיש ל-CEFTAZIDIME צמיחה דלה
+
+*פצע - פצע ירך שמאל עם VAC, יציב, ניקוז כ-400 מ"ל. נקזי Minivac. חשד שכעת בחוץ - הוזמנו אורתופדים בשאלה של VAC לא במקום, היום יש 50 מל דמי בVAC, 24 שעות אחרונות 400 מל דמי.
+
+*כאב - מדבקת BUPRENORPHINE שבועית, PARACETAMOL, DIPYRONE, OXYCODONE לפי צורך.
+*סוכרת - ערכי סוכר 200 עד 360, INSULIN GLARGINE 10 יחידות + ASPART פרוטוקול.
+*כלייתי - ESRD על המודיאליזה, פיסטולה זרוע שמאל.
+
+P לביצוע:
+ייעוץ אורתו בשל חשד ל-VAC DRAIN בחוץ
+מעקב רמת VANCOMYCIN וקביעת מינון, יעד 15 עד 20
+המשך טיפול אנטיביוטי, נסיון צמצום ה-ABX לפי רגישות - FORTUM ו-VANCO מותאמים לדיאליזה ולרמות כעת
+בדיקות דם חוזרות - ספירת דם, כימיה, CRP. מעקב המוגלובין
+מעקב לחץ דם
+החלטה לגבי חידוש ENOXAPARIN בהתאם לנפרולוגיה בהמשך
+
+תוכנית טיפול (יעדי טיפול):
+בן 62 עם ESRD בהמודיאליזה וסוכרת, לאחר הטריית פצע ניתוחי מזוהם בירך שמאל. מטרה לבקרת הזיהום, ריפוי הפצע, ייצוב המודינמי ומטבולי, וחזרה הדרגתית לניידות עם הליכון.
+
+GOLD EXEMPLAR B — ESRD/HD on dialysis, post-CRIF intertrochanteric hip (clean, stable, lower end of range):
+S דיווח המטופל:
+מרגיש סביר
+ישן בלילה
+כאב מאוזן על מדבקות ונוזל אוקסיקוד
+שתן מועט (דיאליזה), יציאה אחרונה 16/5
+תאבון שמור
+מצב רוח ושיתוף פעולה שמור, יש מוטיבציה
+ביקור ליד המיטה
+
+O בדיקה גופנית וממצאי עזר:
+מצב כללי טוב
+ערני
+ללא מצוקה נשימתית או המודינמית
+בבדיקה גופנית ללא ממצא ראוי לציון
+ל"ד דופק חום סטורציה בנורמה, 150/70 ל"ד
+סוכרים בבוקר סביב 140, אחרי אוכל בבדיקות 100-140
+פיסטולה - thrill ו-bruit, זרוע שמאלית תקינה
+
+A מסקנה והערכה:
+בן 75, ESRD על המודיאליזה כרונית. מצב לאחר CRIF מסמר GAMMA בירך שמאל 28/04/26 (שבר אינטרטרוכנטרי).
+*אורתופדי - פצע תקין, סיכות הוסרו, דורך לפי סבילות.
+*כלייתי - ENOXAPARIN 20 מ"ג, ALFACALCIDOL, LANTHANUM. בדיקות דם היום.
+*סוכרת - LANTUS 6 פרוטוקול, LINAGLIPTIN. ב-ESRD דרישת אינסולין יורדת, סיכון להיפוגליקמיה. מעקב סוכרים.
+*לחץ דם - METOPROLOL 25 מ"ג, נחזיר VASODIP. כעת ל"ד 150/70.
+*עצמות - אוסטאופורוזיס ושבר שביר ב-ESRD. אין להתחיל ביספוספונט ללא הערכת מחלת עצם כלייתית מלאה וייעוץ נפרו ואנדו.
+*נוירולוגית - LEVETIRACETAM 500 מ"ג פעמיים ביום, מותאם המודיאליזה. ללא אירועים.
+*כאב - מדבקת BUPRENORPHINE שבועית, PARACETAMOL, OXYCODONE הצלה. G6PD עם ESRD-HD, נמנע DIPYRONE.
+
+P לביצוע:
+מעקב דיאליזה ותוצאות מעבדה (ספירת דם, אלקטרוליטים, סידן, זרחן, PTH).
+ייעוץ נפרולוגי ואנדוקריני לתכנון טיפול אנטי אוסטאופורוטי.
+תיאום שחרור מתוכנן סביב 21/05, וידוא רציפות דיאליזה במסגרת חוץ.
+
+תוכנית טיפול (יעדי טיפול):
+בן 75 לאחר CRIF Gamma nail צד שמאל ב-28/04/26 על רקע שבר אינטרטרוכנטרי לאחר נפילה. ESRD על המודיאליזה כרונית. מטרה לעצמאות בניידות ובמעברים ובשירותים, מיועד לשיקום עד חמישי 21/05.
+`.trim();
+
+/**
  * Builds the optional "durable patient context" preamble that prepends the
  * SOAP system prompt when the caller has decided to seed today's draft from
  * yesterday's note via the runtime "השתמש בהערת אתמול" toggle.
@@ -322,7 +446,11 @@ export function buildSoapPromptPrefix(
 ): string {
   const base = [CHAMELEON_RULES, SOAP_STYLE];
   const augmentation = rehabAugmentation(mode);
-  const tail = augmentation ? [augmentation] : [];
+  // `augmentation` is non-empty iff `mode` is a rehab-* SoapMode ('general'
+  // → ''), so the rehab daily-round house-style calibration rides with it:
+  // appended for every rehab-* mode, never for 'general' (acute-ward SOAP)
+  // or admission/discharge (different prompts entirely).
+  const tail = augmentation ? [augmentation, REHAB_STYLE_CALIBRATION] : [];
   // Seed-prefix: durable patient fields (handoverNote / planLongTerm /
   // clinicalMeta) when the doctor toggled "השתמש בהערת אתמול" on Review.
   // Empty string when seedContext is null or non-prefill — non-disruptive

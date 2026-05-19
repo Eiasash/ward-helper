@@ -107,4 +107,30 @@ describe('buildSoapPromptPrefix wiring (Phase C plumbing)', () => {
     expect(hd).toMatch(/Methotrexate/);
     expect(hd).toMatch(/פיסטולה/);
   });
+
+  // Phase 2 — rehab SOAP house-style calibration (the 8 patterns + 2 gold
+  // exemplars from docs/rehab-soap-style-guide.md). Guards the wiring so a
+  // future refactor of the `tail` array can't silently drop it.
+  it('appends the rehab house-style calibration (patterns + gold exemplars) for every rehab-* mode', () => {
+    for (const mode of [
+      'rehab-FIRST',
+      'rehab-STABLE',
+      'rehab-COMPLEX',
+      'rehab-HD-COMPLEX',
+    ] as const) {
+      const out = buildSoapPromptPrefix(null, mode);
+      expect(out).toMatch(/house-style calibration/);
+      expect(out).toMatch(/GOLD EXEMPLAR A/);
+      expect(out).toMatch(/GOLD EXEMPLAR B/);
+      // Normalized to the *domain house glyph, never the source guide's #.
+      expect(out).toMatch(/\*זיהומית - /);
+      expect(out).not.toMatch(/#זיהומית:/);
+    }
+  });
+
+  it('never leaks the rehab calibration into general (acute-ward) SOAP', () => {
+    const general = buildSoapPromptPrefix(null, 'general');
+    expect(general).not.toMatch(/house-style calibration/);
+    expect(general).not.toMatch(/GOLD EXEMPLAR/);
+  });
 });
