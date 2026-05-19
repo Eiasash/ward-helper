@@ -79,6 +79,25 @@ describe('splitSoapFields — guards & robustness', () => {
     expect(splitSoapFields(admission)).toBeNull();
   });
 
+  it('null when a header is present but its section body is empty (airtight)', () => {
+    // All four anchor headers exist but P has no content after it. The
+    // presence-based gate alone would pass and yield p:'' — a "P" button
+    // that copies an empty string into AZMA. The content-based gate must
+    // catch this and fall back to the generic UI (spec R1: each field
+    // pastes WITH correct content).
+    const emptyP = [
+      'דיווח המטופל:',
+      'מרגיש טוב.',
+      'בדיקה גופנית וממצאי עזר:',
+      'חום 36.8.',
+      'מסקנה והערכה:',
+      'בן 70, יציב.',
+      'לביצוע:',
+      '', // P header present, body empty
+    ].join('\n');
+    expect(splitSoapFields(emptyP)).toBeNull();
+  });
+
   it('null when the P anchor is missing (incomplete body)', () => {
     const noPlan = [
       'דיווח המטופל:',

@@ -127,16 +127,28 @@ export function splitSoapFields(body: string): SoapFields | null {
     if (current) buckets[current].push(line);
   }
 
-  // Require the structural anchors. A non-conforming body → null so the
-  // caller keeps the generic section UI instead of emitting empty fields.
+  // Require the structural anchors (the SOAP header LINES are present).
   if (!seen.s || !seen.o || !seen.p || !(seen.aCapsule || seen.aProblems)) {
     return null;
   }
 
-  return {
+  const fields: SoapFields = {
     s: normalize(buckets.s),
     o: normalize(buckets.o),
     a: normalize(buckets.a),
     p: normalize(buckets.p),
   };
+
+  // Content-based gate (airtight). The presence check above only proves the
+  // header line exists — a degenerate body like a bare "לביצוע:" with
+  // nothing after it passes it but yields an empty P, so the "P" button
+  // would silently copy an empty string into AZMA's P field. The spec's R1
+  // success criterion is each field "pastes WITH correct content", so if
+  // ANY of the four normalizes to empty, fall back to the generic section
+  // UI rather than hand AZMA a blank field.
+  if (!fields.s || !fields.o || !fields.a || !fields.p) {
+    return null;
+  }
+
+  return fields;
 }
