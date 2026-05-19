@@ -10,6 +10,12 @@ Source: distilled from a 4-note gold corpus of genuine signed notes
 (ESRD/HD wound, ESRD/HD ortho, SCI + endocarditis, post-op UTI). The named
 master corpus stays off any repo and out of cloud storage.
 
+**Rev 2 (2026-05-19):** patterns 2 and 3 sharpened — the capsule is now scoped
+to the first rehab SOAP (follow-up rounds omit it), and the lab rule
+distinguishes serum / central-lab results (A bullets) from bedside
+point-of-care readings (may sit in O). Fixes the two review findings on
+ward-helper PR #207.
+
 ---
 
 ## The 8 style patterns
@@ -24,11 +30,19 @@ Encode these into any SOAP-generation prompt.
 2. **O = bedside exam, short lines.** Opens `מצב כללי טוב` / alertness, then
    system findings (לב / ריאות / בטן / גפיים), then the patient-specific
    finding the case turns on (the wound + drain, the fistula thrill/bruit, the
-   unilateral edema). Vitals may be folded into one line. **No lab values in O.**
-3. **A opens with a one-line capsule** — age + sex + key diagnosis + the
-   acute event/date + day-of-rehab or POD — then a **problem list of `#domain:`
-   bullets.** Each bullet = domain + current status + drugs + the decision.
-   Drug levels / lab values go **inline in the relevant `#` bullet**, never in O.
+   unilateral edema). Vitals fold into one line, and bedside point-of-care
+   readings — fingerstick glucose — may sit in O; they are bedside findings.
+   **Serum / central-lab results — Hgb, CRP, creatinine, electrolytes, drug
+   levels — do NOT go in O; they belong inline in the relevant A bullet.**
+3. **A — capsule (first SOAP only) then problem list.** On the **first rehab
+   SOAP** for a patient, A opens with a one-line capsule — age + sex + key
+   diagnosis + the acute event/date + day-of-rehab or POD. On **follow-up
+   rounds there is no capsule** — A goes straight into the problem list as
+   delta updates (this is the STEPDOWN format; do not fight it). The problem
+   list is `#domain:` bullets; each bullet = domain + current status + drugs +
+   the decision. Serum lab values and drug levels go **inline in the relevant
+   `#` bullet** (see pattern 2). Both worked examples below are first-type
+   notes (capsule present); a follow-up note drops the capsule.
 4. **P = an action list**, one action per line, telegraphic: `מעקב…`, `ייעוץ…`,
    `בדיקות דם חוזרות…`, `המשך…`, `החלטה לגבי…`. Drug-level monitoring,
    consults, labs, follow-up. Non-drug actions; med changes live in the A bullet.
