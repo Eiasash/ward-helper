@@ -76,6 +76,24 @@ export const PERSONAS_V4 = {
     description: 'returning user on a new device — triggers PHI gate, types password (correct + wrong legs)',
     extraChaosRate: 0.10,
   },
+  // AbortError-final invariant owner — kickoff 2026-05-20. Exercises
+  // dispatch.ts:249 by firing a real callClaude through the bot adapter,
+  // aborting mid-fetch, and asserting on the surfaced error's identity +
+  // timing. Mirrors phiColdStarter — focused single-purpose persona so
+  // the bot's behavioral analysis isn't polluted by mixing invariant-
+  // probe ticks into a general-purpose persona's profile. Low
+  // extraChaosRate because the page.evaluate-driven probe runs in one
+  // self-contained ~5s window and chaos events mid-evaluate corrupt
+  // the timing measurement.
+  aiEmitRetrier: {
+    name: 'Dr. AI-Cancel',
+    minDelay: 600,
+    maxDelay: 1600,
+    missclickRate: 0.02,
+    typingSpeed: 'normal',
+    description: 'fires a Claude call, then aborts mid-fetch — tests AbortError-final invariant',
+    extraChaosRate: 0.05,
+  },
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -180,4 +198,9 @@ export const DEFAULT_MIN_COVERAGE_TARGETS = {
   // persona) means subsequent picks return _skipped — one real fire per
   // run is what §6.5 asks for and what §6.4 RED/GREEN evidence requires.
   phiColdUnlock: 1,
+  // AbortError-final invariant (kickoff 2026-05-20 §3 calibration).
+  // Same single-shot-per-persona shape as phiColdUnlock; target=1 ensures
+  // at least one real fire per bot run regardless of weighted-random
+  // sampling, which is what the §3 RED/GREEN calibration requires.
+  aiEmitRetry: 1,
 };

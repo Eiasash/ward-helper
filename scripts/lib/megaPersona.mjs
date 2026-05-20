@@ -38,6 +38,7 @@ import {
   scenOrthoCalcMath,
 } from './subBotsV4.mjs';
 import { scenPhiColdUnlock } from './scenPhiColdUnlock.mjs';
+import { scenAiEmitRetry } from './scenAiEmitRetry.mjs';
 import {
   PERSONAS_V4,
   PersonaMemory,
@@ -956,6 +957,14 @@ export const ACTION_MENU = [
   // Gate 2 (single-shot per persona) ensures only one real fire per persona,
   // so weight 12 does not inflate registration count.
   { weight: 12, name: 'phiColdUnlock',         fn: scenPhiColdUnlock,        botSubject: 'phiColdUnlock' },
+  // AbortError-final invariant — kickoff docs/audit/2026-05-20-scen-ai-emit-retry-kickoff.md.
+  // Weight 8 (~9% per non-chaos tick). Same rationale as phiColdUnlock:
+  // FIXTURE_MODE gate keeps non-fixture runs safe (every pick returns
+  // _skipped); single-shot-per-persona gate ensures only one real fire
+  // per persona; min-coverage target=1 guarantees ≥1 fire per run even
+  // if RNG misses. Weight 8 (vs phi's 12) because the probe is faster
+  // (~5s vs ~10s) and we don't want to crowd out the core flows.
+  { weight: 8,  name: 'aiEmitRetry',           fn: scenAiEmitRetry,          botSubject: 'aiEmitRetry' },
 ];
 
 export const CHAOS_MENU = [
