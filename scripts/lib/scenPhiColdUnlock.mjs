@@ -247,30 +247,26 @@ export async function scenPhiColdUnlock(
   } else {
     await wrongInput.press('Enter').catch(() => {});
   }
-  await sleep(rand(1200, 2000));
 
+  // Poll for the error banner up to 4s. Replaces the fixed 1.2-2s sleep +
+  // one-shot snapshot read that produced false MEDIUM `no-error-banner`
+  // bugs on GREEN + sanity runs when the banner rendered slightly after
+  // the snapshot tick. waitForSubject polls document.body.innerText, which
+  // is the same surface the alert <p> writes into, so /שגויה/ matches as
+  // soon as React commits — no race. (Other scen* sub-bots use this idiom;
+  // bringing phiColdUnlock into line.)
+  const bannerSeen = await waitForSubject(page, [/שגויה/], 4000);
+
+  // Snapshot the causal signals (keySet + stillLocked) regardless of banner
+  // outcome — those are the load-bearing probe-trap detectors. errorShown
+  // is the consequential signal and is what waitForSubject just polled.
   const wrongLegResult = await page
-    .evaluate(() => {
-      const txt = document.body.innerText || '';
-      // Prefer querying the actual alert element over body.innerText.
-      // RTL Hebrew + BIDI marks + em-dash variations in innerText made
-      // the original /סיסמה שגויה — נסה שוב/ literal regex unreliable;
-      // direct element query is robust. Fall back to body.innerText if
-      // the alert element isn't mounted yet (shouldn't happen after the
-      // 1.2-2s sleep, but covers a slow-render edge).
-      const alertEl = document.querySelector(
-        'p[role="alert"].unlock-error, p[role="alert"], .unlock-error',
-      );
-      const alertText = (alertEl && alertEl.textContent) || '';
-      return {
-        // Key-word match — survives em-dash variations and trailing punctuation.
-        errorShown:
-          /שגויה/.test(alertText) || /סיסמה שגויה/.test(txt),
-        stillLocked: /סיסמה:/.test(txt),
-        keySet: !!(window.__phiBotApi && window.__phiBotApi.hasPhiKey && window.__phiBotApi.hasPhiKey()),
-      };
-    })
-    .catch(() => ({ errorShown: false, stillLocked: false, keySet: false }));
+    .evaluate(() => ({
+      stillLocked: /סיסמה:/.test(document.body.innerText || ''),
+      keySet: !!(window.__phiBotApi?.hasPhiKey?.()),
+    }))
+    .catch(() => ({ stillLocked: false, keySet: false }));
+  wrongLegResult.errorShown = bannerSeen.ok;
 
   // PROBE TRAP detection — wrong password was silently accepted into the
   // PHI keychain. Primary signal: key got SET into memory (`hasPhiKey()`
