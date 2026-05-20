@@ -94,6 +94,26 @@ export const PERSONAS_V4 = {
     description: 'fires a Claude call, then aborts mid-fetch — tests AbortError-final invariant',
     extraChaosRate: 0.05,
   },
+  // Roster-import + by-tz dedup race owner — kickoff 2026-05-20. The
+  // real ward workflow models a doctor pasting 50 patients from AZMA
+  // TSV into the roster-import modal; this persona drives the parser
+  // robustness, dedup invariant, and listPatientsByTzMap stability
+  // probes through the bot adapter. Single-purpose focused persona —
+  // same rationale as phiColdStarter + aiEmitRetrier — so the bot's
+  // behavioral analysis isn't polluted by mixing invariant-probe ticks
+  // into a general-purpose persona's profile. Low extraChaosRate
+  // because the page.evaluate-driven probe runs in one self-contained
+  // ~5s window and chaos events mid-evaluate could clear the patients
+  // store mid-probe.
+  rosterImporter: {
+    name: 'Dr. RosterPaste',
+    minDelay: 700,
+    maxDelay: 1800,
+    missclickRate: 0.02,
+    typingSpeed: 'normal',
+    description: 'pastes 50-row adversarial AZMA TSV — tests parser + by-tz dedup invariant',
+    extraChaosRate: 0.05,
+  },
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -203,4 +223,10 @@ export const DEFAULT_MIN_COVERAGE_TARGETS = {
   // at least one real fire per bot run regardless of weighted-random
   // sampling, which is what the §3 RED/GREEN calibration requires.
   aiEmitRetry: 1,
+  // Roster-import + by-tz dedup race (kickoff 2026-05-20 §4 calibration).
+  // Same single-shot-per-persona shape as phiColdUnlock; target=1
+  // ensures at least one real fire per bot run regardless of weighted-
+  // random sampling, which is what the §4 RED/GREEN calibration
+  // requires.
+  rosterImportRace: 1,
 };

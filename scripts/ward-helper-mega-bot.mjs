@@ -69,9 +69,10 @@ function assertRunAuthorized() {
 const CONFIG = {
   url: process.env.WARD_BOT_URL || 'https://eiasash.github.io/ward-helper/',
   // Cap bumped 10→11 (2026-05-18 phiColdStarter) → 12 (2026-05-20
-  // aiEmitRetrier) so every dedicated invariant-probe persona stays in
-  // the rotation rather than displacing a behavioral persona.
-  personas: Math.min(12, Math.max(1, Number(process.env.WARD_BOT_PERSONAS || 5))),
+  // aiEmitRetrier) → 13 (2026-05-20 rosterImporter) so every dedicated
+  // invariant-probe persona stays in the rotation rather than displacing
+  // a behavioral persona.
+  personas: Math.min(13, Math.max(1, Number(process.env.WARD_BOT_PERSONAS || 5))),
   durationMs: Number(process.env.WARD_BOT_DURATION_MS || 1800000),
   // V4: default cost cap raised 50→80 per user spec. Real expected spend is
   // ~$15 (10 scenarios at ~$1.50 each via Opus 4.7 high-effort). Cap stays
@@ -326,6 +327,7 @@ const DEFAULT_PERSONA_ROTATION = [
   'postCallResident', 'dictatingAttending', 'intermittentConnection',
   'phiColdStarter',
   'aiEmitRetrier',
+  'rosterImporter',
 ];
 
 function pickPersonaKeys(n) {

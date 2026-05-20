@@ -26,15 +26,17 @@ import './styles.css';
 void runV1_40_0_BackfillIfNeeded();
 
 // Bot adapters — dynamic-import-gated on the localStorage flag so the
-// modules + their imports of crypto/phi, storage/indexed, ai/dispatch
-// stay out of the entry chunk for production users. Required by
-// scripts/lib/scenPhiColdUnlock.mjs (PHI gate probe trap) and
-// scripts/lib/scenAiEmitRetry.mjs (AbortError-final invariant probe).
-// See src/dev/__phiBotApi.ts and src/dev/__aiBotApi.ts for the security
-// profile; the gate check there remains as defense-in-depth.
+// modules + their imports of crypto/phi, storage/indexed, ai/dispatch,
+// notes/rosterImport stay out of the entry chunk for production users.
+// Required by scripts/lib/scenPhiColdUnlock.mjs (PHI gate probe trap),
+// scripts/lib/scenAiEmitRetry.mjs (AbortError-final invariant probe),
+// and scripts/lib/scenRosterImportRace.mjs (roster-import + by-tz dedup
+// race probe). See src/dev/__phiBotApi.ts, src/dev/__aiBotApi.ts, and
+// src/dev/__rosterBotApi.ts for the security profile; the gate check
+// there remains as defense-in-depth.
 //
-// Same flag triggers both — the bot scenarios share a single opt-in
-// surface, and a misconfigured flag value should fail both adapters
+// Same flag triggers all three — the bot scenarios share a single opt-in
+// surface, and a misconfigured flag value should fail all adapters
 // identically rather than partial-attach.
 (function maybeAttachBotApis() {
   try {
@@ -50,6 +52,11 @@ void runV1_40_0_BackfillIfNeeded();
     });
   void import('./dev/__aiBotApi')
     .then((m) => m.attachAiBotApiIfEnabled())
+    .catch(() => {
+      /* chunk load failed — bot will see the missing-attach signal */
+    });
+  void import('./dev/__rosterBotApi')
+    .then((m) => m.attachRosterBotApiIfEnabled())
     .catch(() => {
       /* chunk load failed — bot will see the missing-attach signal */
     });

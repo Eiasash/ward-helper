@@ -10,9 +10,22 @@ Claude lane, and no `claude/web-` vs `claude/term-` branch split.
 
 Workflow: branch `claude/<slug>` -> PR -> CI green + Codex review -> Claude Code
 self-merges -> post-merge `verify-deploy`. Codex is the independent automated
-reviewer. Codex green + CI green is sufficient self-merge authority. Eias sign-off is required only for: (a) PRs touching patient-data paths (ward-helper PHI crypto, IDB roster schema, rounds-data persistence — enumerated in ward-helper codeowners, queued as follow-up PR), and (b) per-PR gate docs that explicitly carry a "NO self-merge" clause (audit-8 R1.5 / R1.6 and subsequent R1.x gates). Claude Code never self-certifies its own audit — independence comes from cross-model review (Codex), not from human-vs-AI gates. All release,
-version-trinity, and verification rules in the repo's skill still apply
-unchanged.
+reviewer. Merge authority by path:
+  - **Audit-evidence paths** (`docs/audit/**`, `docs/AUDIT*.md`, `scripts/chaos-*`,
+    `scripts/analyze_*`, `scripts/build_stemhash*`, `scripts/lib/{audit,hashStem}*`,
+    `tests/{chaosBot,*audit}*`): Eias merges. Per-PR gate docs may also carry
+    explicit "NO self-merge" clause (audit-8 R1.5/R1.6 and subsequent R1.x).
+  - **Patient-data paths** (PHI crypto, IDB roster schema, rounds-data
+    persistence — enumerated in ward-helper codeowners, queued as follow-up PR):
+    Eias merges, no self-merge.
+  - **Everything else** (bot scenarios, dev adapters, scripts/lib/scen*,
+    src/dev/__*BotApi.ts, lint, deps, formatting, docs unrelated to audit):
+    Claude Code self-merges on CI green + Codex review surface clean (no
+    unresolved P1).
+Codex remains the independent automated reviewer on every PR; the carve-out
+drops the human rubber-stamp step on routine work, not the cross-model review.
+Claude Code never self-certifies its own audit. All release, version-trinity,
+and verification rules in the repo's skill still apply unchanged.
 
 
 <!-- working-rules-v1:start -->

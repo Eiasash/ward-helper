@@ -39,6 +39,7 @@ import {
 } from './subBotsV4.mjs';
 import { scenPhiColdUnlock } from './scenPhiColdUnlock.mjs';
 import { scenAiEmitRetry } from './scenAiEmitRetry.mjs';
+import { scenRosterImportRace } from './scenRosterImportRace.mjs';
 import {
   PERSONAS_V4,
   PersonaMemory,
@@ -965,6 +966,16 @@ export const ACTION_MENU = [
   // if RNG misses. Weight 8 (vs phi's 12) because the probe is faster
   // (~5s vs ~10s) and we don't want to crowd out the core flows.
   { weight: 8,  name: 'aiEmitRetry',           fn: scenAiEmitRetry,          botSubject: 'aiEmitRetry' },
+  // Roster-import + by-tz dedup race — kickoff 2026-05-20.
+  // Weight 6 (~7% per non-chaos tick). Same rationale as phiColdUnlock
+  // and aiEmitRetry: FIXTURE_MODE gate keeps non-fixture runs safe
+  // (every pick returns _skipped); single-shot-per-persona gate ensures
+  // only one real fire per persona; min-coverage target=1 guarantees
+  // ≥1 fire per run even if RNG misses. Weight 6 (slightly below the
+  // aiEmitRetry 8) because the probe writes to the patients IndexedDB
+  // store + cleans up, which is more invasive than aiEmitRetry's
+  // fetch-interceptor swap — keep its frequency conservative.
+  { weight: 6,  name: 'rosterImportRace',       fn: scenRosterImportRace,     botSubject: 'rosterImportRace' },
 ];
 
 export const CHAOS_MENU = [
