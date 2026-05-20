@@ -61,6 +61,21 @@ export const PERSONAS_V4 = {
     refreshSpamRate: 0.20,
     extraChaosRate: 0.40,
   },
+  // PHI cold-start owner — kickoff §8 q2. Returning-user-on-a-new-device
+  // flow; existing personas all assume a warm session. Bolting cold-start
+  // onto another persona would corrupt that persona's behavioral model
+  // for analysis. Low extraChaosRate so the gate flow actually completes
+  // before chaos destabilizes the page; spec §5 allows integration-under-
+  // load but does not require it for the cold-start scenario itself.
+  phiColdStarter: {
+    name: 'Dr. PHI-ColdStart',
+    minDelay: 500,
+    maxDelay: 1500,
+    missclickRate: 0.02,
+    typingSpeed: 'normal',
+    description: 'returning user on a new device — triggers PHI gate, types password (correct + wrong legs)',
+    extraChaosRate: 0.10,
+  },
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -159,4 +174,10 @@ export const DEFAULT_MIN_COVERAGE_TARGETS = {
   morningRoundsPrep: 5,
   orthoCalcMath: 5,
   resetPasswordLanding: 3,
+  // PHI cold-start unlock (kickoff §6.5 + §6.4 calibration). ACTION_MENU
+  // weight 2 = 3% baseline sampling, which a 3-min fixture run statistically
+  // missed on first calibration. target=1 because Gate 2 (single-shot per
+  // persona) means subsequent picks return _skipped — one real fire per
+  // run is what §6.5 asks for and what §6.4 RED/GREEN evidence requires.
+  phiColdUnlock: 1,
 };

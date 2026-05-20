@@ -25,6 +25,30 @@ import './styles.css';
 // patient records lacking the new optional fields. Idempotent.
 void runV1_40_0_BackfillIfNeeded();
 
+// PHI bot adapter — dynamic-import-gated on the localStorage flag so the
+// module + its imports of crypto/phi and storage/indexed stay out of the
+// entry chunk for production users. Required by
+// scripts/lib/scenPhiColdUnlock.mjs to satisfy the audit spec §3 PROBE
+// TRAP. See src/dev/__phiBotApi.ts for the security profile; the gate
+// check there remains as defense-in-depth.
+//
+// Kickoff deviation: original spec had a static import. The dynamic
+// import keeps the ~6 kB gz cost off the cold-start path; production
+// users without the flag never load the module at all.
+(function maybeAttachPhiBotApi() {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    if (localStorage.getItem('ward-helper.botApi') !== '1') return;
+  } catch {
+    return;
+  }
+  void import('./dev/__phiBotApi')
+    .then((m) => m.attachPhiBotApiIfEnabled())
+    .catch(() => {
+      /* chunk load failed — bot will see the missing-attach signal */
+    });
+})();
+
 const root = document.getElementById('root');
 if (!root) throw new Error('root element missing');
 ReactDOM.createRoot(root).render(

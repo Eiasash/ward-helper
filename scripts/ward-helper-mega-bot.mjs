@@ -68,7 +68,10 @@ function assertRunAuthorized() {
 
 const CONFIG = {
   url: process.env.WARD_BOT_URL || 'https://eiasash.github.io/ward-helper/',
-  personas: Math.min(10, Math.max(1, Number(process.env.WARD_BOT_PERSONAS || 5))),
+  // Cap bumped 10→11 to fit the phiColdStarter persona added by the
+  // 2026-05-18 PHI cold-start unlock kickoff — keeps every V4 persona
+  // present in the rotation rather than dropping one for the new entry.
+  personas: Math.min(11, Math.max(1, Number(process.env.WARD_BOT_PERSONAS || 5))),
   durationMs: Number(process.env.WARD_BOT_DURATION_MS || 1800000),
   // V4: default cost cap raised 50→80 per user spec. Real expected spend is
   // ~$15 (10 scenarios at ~$1.50 each via Opus 4.7 high-effort). Cap stays
@@ -321,6 +324,7 @@ const DEFAULT_PERSONA_ROTATION = [
   'speedrunner', 'methodical', 'misclicker', 'multitasker',
   'keyboardWarrior', 'batterySaver', 'unicodeChaos',
   'postCallResident', 'dictatingAttending', 'intermittentConnection',
+  'phiColdStarter',
 ];
 
 function pickPersonaKeys(n) {

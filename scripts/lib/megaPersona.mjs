@@ -37,6 +37,7 @@ import {
   scenResetPasswordLanding,
   scenOrthoCalcMath,
 } from './subBotsV4.mjs';
+import { scenPhiColdUnlock } from './scenPhiColdUnlock.mjs';
 import {
   PERSONAS_V4,
   PersonaMemory,
@@ -944,6 +945,17 @@ export const ACTION_MENU = [
   { weight: 4,  name: 'morningRoundsPrep',    fn: scenMorningRoundsPrep,    botSubject: 'morningRoundsPrep' },
   { weight: 3,  name: 'orthoCalcMath',        fn: scenOrthoCalcMath,        botSubject: 'orthoCalcMath' },
   { weight: 2,  name: 'resetPasswordLanding', fn: scenResetPasswordLanding, botSubject: 'resetPasswordLanding' },
+  // PHI cold-start unlock — kickoff docs/audit/2026-05-18-phi-unlock-scenario-kickoff.md.
+  // Weight 12 (~14% per non-chaos tick). First §6.4 RED calibration ran weight
+  // 2 + MIN_COVERAGE target 1; the scheduler bias kicks in only after 50%
+  // wall-time at 60% probability, which produced ~17% pick rate per biased
+  // tick — over a 3-min single-persona run we hit the ~25% RNG-miss bucket
+  // twice in a row, never firing. Weight 12 makes first-half firing reliable
+  // too (P(≥1 fire in 3min) ≈ 99%). Gate 1 (FIXTURE_MODE) keeps non-fixture
+  // runs safe: every pick returns _skipped immediately with no side effect.
+  // Gate 2 (single-shot per persona) ensures only one real fire per persona,
+  // so weight 12 does not inflate registration count.
+  { weight: 12, name: 'phiColdUnlock',         fn: scenPhiColdUnlock,        botSubject: 'phiColdUnlock' },
 ];
 
 export const CHAOS_MENU = [
