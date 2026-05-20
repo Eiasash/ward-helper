@@ -1,0 +1,23 @@
+# CODEOWNERS — ward-helper patient-data safety rail
+#
+# Per CLAUDE.md (post-2026-05-20 merge-rule update): PRs touching
+# patient-data paths require Eias review regardless of Codex/CI status.
+# This file enforces that via GitHub's "require review from code owners"
+# branch protection.
+#
+# Paths verified against ward-helper main on 2026-05-20.
+# If you're modifying any path below, expect a human-review block.
+
+# PHI crypto primitives — encrypt/decrypt + key derivation
+src/crypto/phi.ts           @Eiasash
+src/crypto/pbkdf2.ts        @Eiasash
+
+# Auth + PHI unlock — controls who can unlock the encrypted store
+src/auth/phiUnlock.ts       @Eiasash
+src/auth/auth.ts            @Eiasash
+
+# IndexedDB persistence — single boundary for roster + patients writes
+src/storage/indexed.ts      @Eiasash
+
+# Note save path — final write boundary for note PHI content
+src/notes/save.ts           @Eiasash
