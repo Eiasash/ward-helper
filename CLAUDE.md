@@ -21,10 +21,10 @@ reviewer. Merge authority by path:
   - **Everything else** (bot scenarios, dev adapters, scripts/lib/scen*,
     src/dev/__*BotApi.ts, lint, deps, formatting, docs unrelated to audit):
     Claude Code self-merges on CI green + Codex review surface clean (no
-    unresolved P1).
+    unresolved P0 or P1).
 Codex remains the independent automated reviewer on every PR; the carve-out
 drops the human rubber-stamp step on routine work, not the cross-model review.
-Claude Code never self-certifies its own audit. All release, version-trinity,
+Claude Code never self-certifies its own audit. Auto-merge (`gh pr merge --auto`) is disabled — every self-merge requires explicitly reading the latest Codex review surface and CI status before merging. All release, version-trinity,
 and verification rules in the repo's skill still apply unchanged.
 
 
