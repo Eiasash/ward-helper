@@ -287,7 +287,6 @@ export function Census() {
       <label
         className="visually-hidden"
         htmlFor="census-pick"
-        style={{ position: 'absolute', left: -9999 }}
       >
         בחר תמונות
       </label>

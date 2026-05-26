@@ -74,4 +74,29 @@ describe('Census — idle state', () => {
   it('mounts inside Suspense (smoke for lazy loader contract)', () => {
     expect(() => renderCensus()).not.toThrow();
   });
+
+  it('regression: the visually-hidden file-picker label has no left:-9999 inline style', async () => {
+    // History: until 2026-05-26 the screen-reader-only <label> for #census-pick
+    // had BOTH className="visually-hidden" (which already collapses to 1x1px
+    // via the styles.css rule) AND inline style={{ position: 'absolute',
+    // left: -9999 }}. The redundant inline `left:-9999` put the element at
+    // x=-9999px while still occupying its 1px width — which made <html>
+    // scrollWidth jump from 393px to 10393px on a 393px viewport. The
+    // resulting horizontal scroll caused the page to render at the wrong
+    // scroll position on Android Chrome RTL, with most of the viewport
+    // appearing black and content compressed to one edge (see images 1, 3
+    // of the 2026-05-26 user report).
+    //
+    // The fix: remove the inline style entirely; .visually-hidden CSS class
+    // handles the off-screen rendering correctly with 1x1 + overflow:hidden
+    // + clip:rect(0 0 0 0). This test fails if the inline style returns.
+    renderCensus();
+    await flushEffects();
+    const hiddenLabel = document.querySelector('label.visually-hidden[for="census-pick"]');
+    expect(hiddenLabel).not.toBeNull();
+    // Inline style should be absent or empty — class CSS does the work.
+    const inlineStyle = hiddenLabel?.getAttribute('style') ?? '';
+    expect(inlineStyle).not.toMatch(/-?9{4,}/);
+    expect(inlineStyle).not.toMatch(/left\s*:/i);
+  });
 });
