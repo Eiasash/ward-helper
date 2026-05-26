@@ -11,6 +11,7 @@ import {
 import { NOTE_LABEL } from '@/notes/templates';
 import { wrapForChameleon, auditChameleonRules } from '@/i18n/bidi';
 import { useBidiAudit } from '../hooks/useSettings';
+import { InlineConfirm } from '../components/InlineConfirm';
 
 /**
  * Read-only viewer for a saved note. Reached by tapping a note row in
@@ -29,6 +30,9 @@ export function NoteViewer() {
   const [copied, setCopied] = useState(false);
   const [err, setErr] = useState('');
   const [bidiAuditOn] = useBidiAudit();
+  // Inline confirm for the delete action — replaces window.confirm() which
+  // silently fails in Android PWA standalone mode (see InlineConfirm.tsx).
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   useEffect(() => {
     if (!id) {
@@ -94,7 +98,14 @@ export function NoteViewer() {
 
   async function onDelete() {
     if (!note) return;
-    if (!confirm('למחוק את the femur exemplarומה הזאת?')) return;
+    // Trigger the inline confirm modal instead of calling window.confirm()
+    // synchronously — confirm() silently fails on Android PWA standalone.
+    setConfirmDeleteOpen(true);
+  }
+
+  async function performDelete() {
+    if (!note) return;
+    setConfirmDeleteOpen(false);
     await deleteNote(note.id);
     nav('/history');
   }
@@ -204,6 +215,15 @@ export function NoteViewer() {
           ⚠ עדיין לא נשלח לאזמה — אחרי ההעתקה, בדוק שהפסטה הצליחה
         </p>
       )}
+      <InlineConfirm
+        open={confirmDeleteOpen}
+        message="למחוק את the femur exemplarומה הזאת? הפעולה לא ניתנת לשחזור."
+        confirmLabel="מחק"
+        cancelLabel="ביטול"
+        variant="danger"
+        onConfirm={performDelete}
+        onCancel={() => setConfirmDeleteOpen(false)}
+      />
     </section>
   );
 }

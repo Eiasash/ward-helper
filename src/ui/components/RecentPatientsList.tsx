@@ -25,6 +25,7 @@ import { notifyPatientChanged, notifyNoteTypeChanged } from '../hooks/useGlancea
 import { TomorrowBanner } from '@/ui/components/TomorrowBanner';
 import { PatientPlanFields } from '@/ui/components/PatientPlanFields';
 import { TomorrowNotesInput } from '@/ui/components/TomorrowNotesInput';
+import { InlineConfirm } from '@/ui/components/InlineConfirm';
 
 const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -92,6 +93,9 @@ export function RecentPatientsList({
 }) {
   const nav = useNavigate();
   const [recents, setRecents] = useState<RecentPatient[]>([]);
+  // Inline confirm for discharge — `window.confirm()` silently fails in
+  // Android PWA standalone mode (see InlineConfirm.tsx).
+  const [dischargeTarget, setDischargeTarget] = useState<RecentPatient | null>(null);
 
   // Stable refresher: re-runs on mount AND on the `ward-helper:patients-changed`
   // event. The discharge button below dispatches that event via
@@ -161,16 +165,13 @@ export function RecentPatientsList({
             <button
               type="button"
               className="recent-patient-discharge"
-              onClick={async (e) => {
+              onClick={(e) => {
                 // Sibling of the row button — `stopPropagation` is belt-and-
                 // braces (the row button is not an ancestor) but cheap.
                 e.stopPropagation();
-                if (window.confirm(`לשחרר את ${rp.patient.name}?`)) {
-                  await dischargePatient(rp.patient.id);
-                  // Refresh is also driven by the
-                  // `ward-helper:patients-changed` listener above; the explicit
-                  // call here keeps the UI snappy if the listener races.
-                }
+                // Trigger inline confirm instead of window.confirm() —
+                // the native dialog silently fails in Android PWA standalone.
+                setDischargeTarget(rp);
               }}
               aria-label={`שחרר את ${rp.patient.name}`}
               style={{ marginInlineStart: 8, fontSize: 12 }}
@@ -183,6 +184,26 @@ export function RecentPatientsList({
           </li>
         ))}
       </ul>
+      <InlineConfirm
+        open={dischargeTarget !== null}
+        message={dischargeTarget ? `לשחרר את ${dischargeTarget.patient.name}?` : ''}
+        confirmLabel="שחרר"
+        cancelLabel="ביטול"
+        variant="danger"
+        onConfirm={async () => {
+          if (!dischargeTarget) return;
+          const target = dischargeTarget;
+          // Close first so the modal animates out while the storage write
+          // happens; on slow IDB this prevents a perceived "stuck" feeling.
+          setDischargeTarget(null);
+          await dischargePatient(target.patient.id);
+          // Refresh is also driven by the `ward-helper:patients-changed`
+          // listener; this explicit call keeps the UI snappy if the listener
+          // races (mirrors the prior inline behavior).
+          await refresh();
+        }}
+        onCancel={() => setDischargeTarget(null)}
+      />
     </div>
   );
 }
