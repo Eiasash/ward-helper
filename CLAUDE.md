@@ -24,7 +24,11 @@ reviewer. Merge authority by path:
     unresolved P0 or P1).
 Codex remains the independent automated reviewer on every PR; the carve-out
 drops the human rubber-stamp step on routine work, not the cross-model review.
-Claude Code never self-certifies its own audit. Auto-merge (`gh pr merge --auto`) is disabled — every self-merge requires explicitly reading the latest Codex review surface and CI status before merging. All release, version-trinity,
+Claude Code never self-certifies its own audit.
+
+**"Codex green" is defined as:** review state ∈ {`APPROVED`, `COMMENTED`} AND no unresolved P0 or P1 inline comments at the moment of merge. P2 inline comments may self-merge with an in-thread reply explaining the decision. If Codex has not reviewed and the PR is substantive, wait or ping; do not deadline-out a missing reviewer on non-trivial changes.
+
+Auto-merge (`gh pr merge --auto`) is disabled — every self-merge requires explicitly reading the latest Codex review surface and CI status before merging. All release, version-trinity,
 and verification rules in the repo's skill still apply unchanged.
 
 
