@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { saveBoth } from '@/notes/save';
-import { getPassphrase, getEmailTarget } from '../hooks/useSettings';
+import { getEmailTarget } from '../hooks/useSettings';
+import { getCurrentUser, getLastLoginPasswordOrNull } from '@/auth/auth';
 import type { NoteType } from '@/storage/indexed';
 import { NOTE_LABEL } from '@/notes/templates';
 import { clearBlocks } from '@/camera/session';
@@ -210,9 +211,30 @@ export function Save() {
     <section>
       <h1>שמירה</h1>
       <p>
-        {getPassphrase()
-          ? '✓ גיבוי מוצפן יישלח ל-Supabase (ציפרטקסט בלבד)'
-          : '⚠ סיסמה לא פעילה — שמירה מקומית בלבד'}
+        {/* The pre-save status reflects the SAME gate that saveBoth uses
+           in notes/save.ts:
+             - guest (no logged-in user) → local-only
+             - logged in but no in-memory login password (post-reload,
+               pre-relogin) → local-only
+             - both present → encrypted cloud backup will run
+           Until 2026-05-26 this read getPassphrase() from useSettings,
+           which is a dead module-local that NO production code sets —
+           so the warning always fired even when cloud sync was actually
+           working. The user saw "סיסמה לא פעילה" then their save
+           succeeded with "גובה ל-Supabase מוצפן", which is exactly the
+           kind of contradictory affordance that drives doctors to
+           distrust the app. */}
+        {(() => {
+          const hasUser = getCurrentUser() !== null;
+          const hasPwd = getLastLoginPasswordOrNull() !== null;
+          if (hasUser && hasPwd) {
+            return '✓ גיבוי מוצפן יישלח ל-Supabase (ציפרטקסט בלבד)';
+          }
+          if (!hasUser) {
+            return '⚠ אתה כאורח — שמירה מקומית בלבד';
+          }
+          return '⚠ סשן ההתחברות אבד — התחבר מחדש לגיבוי בענן (שמירה מקומית עדיין פעילה)';
+        })()}
       </p>
       <button onClick={onSave} disabled={status === 'saving'}>
         {status === 'saving' ? 'שומר...' : 'שמור'}
