@@ -203,11 +203,19 @@ export function App() {
           // null-on-failure return. User would see a flicker of empty
           // data before Unlock appears. Renders the same fallback the
           // Suspense boundary uses for consistency.
-          <section><h1>טוען...</h1></section>
+          //
+          // CLS fix: reserve 60vh so the transition from this stub to the
+          // full route content (Capture is ~600px tall on mobile) doesn't
+          // push the footer + bottom-nav down by hundreds of pixels.
+          // Lighthouse caught two shifts of ~0.05 each (total 0.108) on this
+          // app — the phiGateState=loading→unlocked transition AND the
+          // Suspense fallback→Capture transition both flip the same DOM
+          // region from ~40px tall to ~600px tall.
+          <section style={{ minHeight: '60vh' }}><h1>טוען...</h1></section>
         ) : phiGateState === 'locked' ? (
           <Unlock />
         ) : (
-          <Suspense fallback={<section><h1>טוען...</h1></section>}>
+          <Suspense fallback={<section style={{ minHeight: '60vh' }}><h1>טוען...</h1></section>}>
             <Routes>
               <Route path="/" element={<Capture />} />
               <Route path="/consult" element={<Consult />} />
