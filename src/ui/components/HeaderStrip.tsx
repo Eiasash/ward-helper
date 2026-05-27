@@ -51,10 +51,17 @@ export function HeaderStrip() {
   const batteryLow = battery.level !== null && battery.level < 0.2 && !battery.charging;
 
   return (
-    <header
+    <div
       className="header-strip"
       role="status"
       aria-label="מצב מערכת"
+      // <div role="status"> is the right combo for a live status region. The
+      // earlier <header role="status"> failed Lighthouse aria-allowed-role
+      // because the <header> element has an implicit landmark role (banner /
+      // generic) that conflicts with role="status" — Lighthouse forbids the
+      // combination outright. This strip is not a page banner; it's a live
+      // region announcing online/offline, battery, patient counts.
+      //
       // Inline `dir` keeps the strip RTL even if a parent flips it. Hebrew
       // microcopy reads right-to-left; icon glyphs are direction-neutral.
       dir="rtl"
@@ -117,6 +124,6 @@ export function HeaderStrip() {
           ☁ {formatRelative(lastSync)}
         </span>
       </div>
-    </header>
+    </div>
   );
 }
