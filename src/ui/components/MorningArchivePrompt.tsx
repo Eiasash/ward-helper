@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { archiveDay, listDaySnapshots } from '@/storage/rounds';
 
 const LAST_ARCHIVED_KEY = 'ward-helper.lastArchivedDate';
@@ -30,16 +30,27 @@ const errorStyle: React.CSSProperties = {
 };
 
 export function MorningArchivePrompt(): JSX.Element | null {
-  const [state, setState] = useState<State>({ kind: 'hidden' });
-
-  useEffect(() => {
-    const today = new Date().toLocaleDateString('en-CA');
-    const last = localStorage.getItem(LAST_ARCHIVED_KEY);
-    const dismissed = sessionStorage.getItem(`ward-helper.bannerDismissed_${today}`) === '1';
-    if (last && last < today && !dismissed) {
-      setState({ kind: 'visible' });
+  // CLS fix: decide visibility synchronously in the initializer so the banner's
+  // final state is committed on the first render. The earlier pattern
+  // (useState({kind:'hidden'}) + useEffect that flips to 'visible' after paint)
+  // caused a layout shift on every morning the banner needed to appear — the
+  // app painted hidden, then mounted the banner, pushing all content below
+  // it down. Lighthouse CLS = 0.108 traced partly to this transition.
+  // localStorage/sessionStorage reads are synchronous and cheap, and ward-helper
+  // is a client-only SPA so SSR isn't a concern.
+  const [state, setState] = useState<State>(() => {
+    try {
+      const today = new Date().toLocaleDateString('en-CA');
+      const last = localStorage.getItem(LAST_ARCHIVED_KEY);
+      const dismissed = sessionStorage.getItem(`ward-helper.bannerDismissed_${today}`) === '1';
+      if (last && last < today && !dismissed) {
+        return { kind: 'visible' };
+      }
+    } catch {
+      /* storage disabled in some test envs — fall through to hidden */
     }
-  }, []);
+    return { kind: 'hidden' };
+  });
 
   const today = new Date().toLocaleDateString('en-CA');
 
