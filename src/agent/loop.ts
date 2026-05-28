@@ -1,4 +1,4 @@
-import { callClaude } from '@/ai/dispatch';
+import { callClaude, activeAiPath } from '@/ai/dispatch';
 import { type AnthropicContentBlock } from './client';
 import type { ParseResult, ParseFields } from './tools';
 import { addTurn } from './costs';
@@ -277,12 +277,100 @@ function blocksToContent(blocks: readonly CaptureBlock[]): AnthropicContentBlock
   return out;
 }
 
+/**
+ * Toranot proxy hard request-body ceiling. Mirrors the PDF_MAX_BYTES rationale
+ * in camera/session.ts: the proxy rejects bodies over ~5 MB with HTTP 413.
+ *
+ * The per-image cap (camera/compress.ts: ~400-700 kB after the 1600px/0.85
+ * downscale) and the per-PDF cap (session.ts: 5 MB each, PDFs are NOT
+ * compressed) are each individually satisfiable while their SUM exceeds this
+ * ceiling. A normal multi-photo round (IMAGE_HARD_CAP allows 20) or a single
+ * near-5 MB PDF therefore produces a cryptic "proxy HTTP 413 / phase=extract"
+ * with no actionable message — the exact failure reported 2026-05-28.
+ */
+const PROXY_MAX_BODY_BYTES = 5_000_000;
+/**
+ * Budget we guard against client-side, with headroom under the proxy ceiling
+ * for the JSON envelope (role/keys/quotes), the thinking + output_config
+ * blocks, and a little slack so a borderline payload fails on OUR clear
+ * message rather than the proxy's bare 413.
+ */
+const EXTRACT_WIRE_BUDGET = 4_700_000;
+
+/** base64 chars after the `base64,` marker = the bytes that travel on the wire. */
+function base64WireLength(dataUrl: string): number {
+  const marker = 'base64,';
+  const i = dataUrl.indexOf(marker);
+  return i < 0 ? dataUrl.length : dataUrl.length - i - marker.length;
+}
+
+/**
+ * UTF-8 byte length of a string. Critical for this tool: the request body is
+ * UTF-8 JSON and Hebrew code points are 2 bytes each, so JS string length
+ * (UTF-16 units ≈ chars) undercounts a Hebrew paste / skill prompt by ~2x.
+ * Using char length would let a multi-page Hebrew note estimate under budget
+ * while the real body exceeds the 5 MB proxy cap (Codex review, PR #226).
+ */
+function utf8Bytes(s: string): number {
+  return new TextEncoder().encode(s).length;
+}
+
+/**
+ * Estimate the HTTP request-body size the extract turn will put on the wire:
+ * every image/PDF block's base64 payload (the dominant term) + all text
+ * (extract instructions + the skill system prompt + any pasted notes) + a
+ * small fixed allowance for JSON scaffolding. Exported for the budget guard
+ * test. Intentionally a slight over-estimate — better to warn one image early
+ * than to let a 413 through.
+ */
+export function estimateExtractWireBytes(
+  blocks: readonly CaptureBlock[],
+  skillContent: string,
+): number {
+  // EXTRACT_JSON_INSTRUCTIONS rides in the content array; skillContent rides
+  // in `system`. Both count toward the proxy body. +512 covers JSON keys,
+  // quoting, the thinking/output_config blocks, and message scaffolding.
+  // Text is measured in UTF-8 bytes (Hebrew = ~2 B/char); base64 is ASCII so
+  // its char length already equals its byte length.
+  let total = utf8Bytes(EXTRACT_JSON_INSTRUCTIONS) + utf8Bytes(skillContent) + 512;
+  for (const b of blocks) {
+    if (b.kind === 'image' || b.kind === 'pdf') {
+      total += base64WireLength(b.dataUrl);
+    } else {
+      total += utf8Bytes(b.content) + 32; // + header text emitted in blocksToContent
+    }
+  }
+  return total;
+}
+
 export async function runExtractTurn(
   blocks: readonly CaptureBlock[],
   skillContent: string,
   abortSignal?: AbortSignal,
 ): Promise<ParseResult> {
   if (blocks.length === 0) throw new Error('אין קלט לעיבוד');
+
+  // Fail fast on oversize payloads BEFORE the network call, so the user gets
+  // an actionable message instead of the proxy's bare HTTP 413. See
+  // EXTRACT_WIRE_BUDGET / PROXY_MAX_BODY_BYTES above.
+  //
+  // Proxy path ONLY: the 5 MB ceiling is the Toranot proxy's. BYOK users POST
+  // direct to api.anthropic.com, which accepts far larger bodies, so guarding
+  // them would be a regression (Codex review, PR #226). The reporter and any
+  // guest are on the proxy path (no key), which is exactly the case we guard.
+  const wireBytes = estimateExtractWireBytes(blocks, skillContent);
+  if (activeAiPath() === 'proxy' && wireBytes > EXTRACT_WIRE_BUDGET) {
+    const sizeMb = (wireBytes / 1_000_000).toFixed(1);
+    const limitMb = (PROXY_MAX_BODY_BYTES / 1_000_000).toFixed(0);
+    const hasPdf = blocks.some((b) => b.kind === 'pdf');
+    const advice = hasPdf
+      ? 'הסר או צמצם קבצי PDF (קבצי PDF נשלחים ללא דחיסה), או שלח פחות פריטים בכל פעם.'
+      : 'שלח פחות תמונות בכל פעם — אפשר לחלק את הצילומים לכמה הרצות נפרדות.';
+    throw new Error(
+      `הבקשה גדולה מדי לשליחה: כ-${sizeMb}MB, המקסימום הוא ${limitMb}MB. ${advice}`,
+    );
+  }
+
   const content = blocksToContent(blocks);
   const imageCount = blocks.reduce((n, b) => n + (b.kind === 'image' ? 1 : 0), 0);
 
