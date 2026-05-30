@@ -45,9 +45,9 @@ These four rules are the floor. They override any conflicting guidance later in 
 
 Mobile-first Hebrew-RTL PWA for SZMC ward rounds. Camera an AZMA screen → reviewed Hebrew note → paste to Chameleon. Single-user, proxy-based Claude access (no BYO key), local-first IndexedDB, encrypted Supabase backup.
 
-## Snapshot (last audit 2026-05-14, v1.45.0 — bidi v5 structural run-tokenizer + UAX-9 broadening + bidi-audit interceptor; on top of v1.44.0's daySnapshots cloud sync + a11y contrast port + mobile /today overflow fix + SOAP roster confidence + ortho bot tuning; bot v5 SW-swap chaos injector + encrypted-blob runtime smoke layer)
+## Snapshot (last audit 2026-05-30 [read-only] → v1.46.13 live, IDB schema v7; prior feature snapshot v1.45.0 — bidi v5 structural run-tokenizer + UAX-9 broadening + bidi-audit interceptor; on top of v1.44.0's daySnapshots cloud sync + a11y contrast port + mobile /today overflow fix + SOAP roster confidence + ortho bot tuning; bot v5 SW-swap chaos injector + encrypted-blob runtime smoke layer)
 
-- **1107 vitest cases passing across 107 files** on main (+ 1 skipped live-eval gated on `ANTHROPIC_API_KEY`). WIP bot-v5.1 branch adds 12 more.
+- **1313 vitest cases passing across 133 files** on main (+ 1 skipped live-eval gated on `ANTHROPIC_API_KEY`).
 - Entry chunk **~81 kB** gzipped (45% of 180 kB CI ceiling) — well below the v1.42.0 145 kB figure after Vite 8's code-split surfaced `costs-` and `dist-` as separate chunks.
 - Total assets gz ~208 kB (~52% of 400 kB CI ceiling)
 - All 8 CI gates green; skill drift between `~/.claude/skills/` and `public/skills/` = none (5 skills synced incl. `geriatrics-knowledge`)
