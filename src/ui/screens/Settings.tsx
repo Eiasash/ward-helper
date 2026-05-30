@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import {
   useBidiAudit,
   useDebugPanel,
@@ -45,7 +45,6 @@ export function Settings() {
   // insertion order under JSON round-trip in some IDB implementations.
   const [snippetRows, setSnippetRows] = useState<{ key: string; val: string }[]>([]);
   const [snippetMsg, setSnippetMsg] = useState('');
-  const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadSnippets().then((m) => {
@@ -240,31 +239,34 @@ export function Settings() {
           ייצא גיבוי מקומי
         </button>
 
-        <input
-          type="file"
-          accept="application/json"
-          ref={importInputRef}
-          style={{ display: 'none' }}
-          onChange={async (e) => {
-            const f = e.target.files?.[0];
-            if (!f) return;
-            try {
-              const out = await importLocalBackup(f, {
-                loginPassword: getLastLoginPasswordOrNull() ?? '',
-              });
-              alert(
-                `יובאו ${out.imported.patients} מטופלים ו-${out.imported.notes} הערות.`,
-              );
-            } catch (err) {
-              alert((err as Error).message);
-            } finally {
-              e.target.value = '';
-            }
-          }}
-        />
-        <button type="button" onClick={() => importInputRef.current?.click()}>
+        {/* Label-wrapped file input — programmatic .click() on a hidden input
+            fails silently on mobile Chrome in PWA standalone mode (CLAUDE.md
+            invariant). Tapping the <label> dispatches a trusted click directly,
+            matching the Capture / BatchFlow / RosterImportModal pattern. */}
+        <label className="btn-like" aria-label="ייבא גיבוי מקומי">
           ייבא גיבוי מקומי
-        </button>
+          <input
+            type="file"
+            accept="application/json"
+            className="visually-hidden"
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              try {
+                const out = await importLocalBackup(f, {
+                  loginPassword: getLastLoginPasswordOrNull() ?? '',
+                });
+                alert(
+                  `יובאו ${out.imported.patients} מטופלים ו-${out.imported.notes} הערות.`,
+                );
+              } catch (err) {
+                alert((err as Error).message);
+              } finally {
+                e.target.value = '';
+              }
+            }}
+          />
+        </label>
       </div>
 
       {canaryOrphanPending && (
