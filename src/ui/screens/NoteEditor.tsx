@@ -58,6 +58,7 @@ export function NoteEditor() {
   const [noteType, setNoteType] = useState<NoteType>('admission');
   const [copied, setCopied] = useState(false);
   const [copiedSection, setCopiedSection] = useState<number | null>(null);
+  const [copyErr, setCopyErr] = useState('');
   // 'edit' = the editable textarea (default, lets the doctor tweak the draft).
   // 'cards' = a read-only stack of section cards with per-card copy buttons,
   // designed for the paste-into-Chameleon workflow where the user wants to
@@ -272,20 +273,34 @@ export function NoteEditor() {
   }
 
   async function onCopy() {
-    // Last-chance sanitize at the clipboard boundary — even if the draft
-    // somehow still contains forbidden chars (e.g. user just typed one),
-    // the pasted text is clean.
-    const clean = sanitizeForChameleon(body);
-    await navigator.clipboard.writeText(clean);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    // wrapForChameleon (sanitize + bidi marks), not bare sanitize — so any
+    // user-EDITED mixed Hebrew/Latin run picks up RLM/LRM marks too, not only
+    // the orchestrator's pre-wrapped generation. Idempotent: re-wrapping the
+    // already-wrapped body inserts no duplicate marks. try/catch surfaces a
+    // failed clipboard write instead of failing silently (matches NoteViewer).
+    try {
+      const clean = wrapForChameleon(body);
+      await navigator.clipboard.writeText(clean);
+      setCopyErr('');
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopyErr('העתקה נכשלה — נסה שוב או סמן והעתק ידנית.');
+      setTimeout(() => setCopyErr(''), 4000);
+    }
   }
 
   async function onCopySection(idx: number, sectionBody: string) {
-    const clean = sanitizeForChameleon(sectionBody);
-    await navigator.clipboard.writeText(clean);
-    setCopiedSection(idx);
-    setTimeout(() => setCopiedSection((c) => (c === idx ? null : c)), 1500);
+    try {
+      const clean = wrapForChameleon(sectionBody);
+      await navigator.clipboard.writeText(clean);
+      setCopyErr('');
+      setCopiedSection(idx);
+      setTimeout(() => setCopiedSection((c) => (c === idx ? null : c)), 1500);
+    } catch {
+      setCopyErr('העתקה נכשלה — נסה שוב או סמן והעתק ידנית.');
+      setTimeout(() => setCopyErr(''), 4000);
+    }
   }
 
   function onAutoClean() {
@@ -656,6 +671,14 @@ export function NoteEditor() {
       )}
       <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
         <button onClick={onCopy}>{copied ? '✓ הועתק' : '📋 העתק הכל'}</button>
+        {copyErr && (
+          <span
+            role="alert"
+            style={{ alignSelf: 'center', color: 'var(--red, #b91c1c)', fontSize: 13 }}
+          >
+            {copyErr}
+          </span>
+        )}
         <button
           type="button"
           className="ghost"
