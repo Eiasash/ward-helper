@@ -30,13 +30,16 @@
  */
 
 import { getSupabase } from '@/storage/cloud';
-import { reencryptUnlockCache } from '@/crypto/unlock';
+import { reencryptUnlockCache, clearUnlockCache } from '@/crypto/unlock';
 import { isPhiBackfillComplete } from '@/storage/phiBackfill';
 // ESM cycle with @/notes/save — save.ts imports getCurrentUser +
 // getLastLoginPasswordOrNull from this module. Both directions are runtime
 // function refs only, NEVER invoked at module-eval time. Adding a top-level
 // call to either side will trigger TDZ on the cycle binding — relocate it.
 import { resetCanaryArmed } from '@/notes/save';
+// Runtime-ref-only import (called inside logout(), never at module-eval) —
+// rides the existing canaryProtection -> MobileDebugPanel -> auth back-edge.
+import { resetCanaryProtection } from '@/storage/canaryProtection';
 
 const AUTH_LS_KEY = 'ward-helper.auth.user';
 const UID_LS_KEY = 'ward-helper.auth.uid';
@@ -519,6 +522,10 @@ export async function logout(): Promise<void> {
   // push, regressing into the pre-v1.36.0 state where wrong-password
   // attempts silently bulk-skip on the next fresh-device restore.
   resetCanaryArmed();
+  // Same cross-user concern for the canary-PROTECTION probe cache: it's a
+  // module global too, so a stale 'safe' from user A could bypass user B's
+  // orphan-canary guardrail on B's first push. Reset alongside the armed flag.
+  resetCanaryProtection();
   // Same cross-user concern for the personal Anthropic key — A's key
   // must not bleed into B's session. Next login rehydrates from the
   // auth_login_user response if B has one set server-side.
@@ -543,6 +550,14 @@ export async function logout(): Promise<void> {
   } catch {
     // Best-effort — IDB clear failure is non-fatal. Next login overwrites
     // the stash anyway.
+  }
+  // Drop the cached auto-unlock blob (user A's backup passphrase, sealed with
+  // A's login password). Benign across users — B can't decrypt it — but it
+  // should not linger; clearUnlockCache's own docstring says "used on logout".
+  try {
+    await clearUnlockCache();
+  } catch {
+    // Best-effort — next cacheUnlockBlob overwrites it anyway.
   }
 }
 

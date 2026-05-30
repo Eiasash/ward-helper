@@ -124,8 +124,17 @@ export function clearOrphanProtection(): void {
   }
 }
 
-/** Test-only reset. Production code never calls this. */
-export function _resetCanaryProtectionForTests(): void {
+/**
+ * Reset the session probe cache. Called from auth.ts::logout so the next user
+ * on the same tab re-probes instead of inheriting a stale 'safe'/'orphan' from
+ * the previous session (cross-user safety; mirrors resetCanaryArmed).
+ */
+export function resetCanaryProtection(): void {
   state = 'unknown';
   inFlight = null;
+}
+
+/** Test-only alias — delegates to the production reset. */
+export function _resetCanaryProtectionForTests(): void {
+  resetCanaryProtection();
 }
