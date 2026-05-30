@@ -6,6 +6,7 @@ import {
 } from '@/notes/consult';
 import { sendNoteEmail, defaultEmailSubject } from '@/notes/email';
 import { getEmailTarget } from '../hooks/useSettings';
+import { InlineConfirm } from '../components/InlineConfirm';
 import { NOTE_LABEL } from '@/notes/templates';
 import type { NoteType } from '@/storage/indexed';
 import { putPatient, putNote } from '@/storage/indexed';
@@ -100,6 +101,7 @@ export function Consult() {
   const [pendingEmit, setPendingEmit] = useState(false);
   const [emitInFlight, setEmitInFlight] = useState<NoteType | null>(null);
   const [emailInFlight, setEmailInFlight] = useState<number | null>(null);
+  const [confirmNewCaseOpen, setConfirmNewCaseOpen] = useState(false);
 
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -158,9 +160,17 @@ export function Consult() {
   }
 
   function newCase() {
-    if (messages.length > 0 && !confirm('להתחיל מקרה חדש? ההיסטוריה הנוכחית תימחק.')) {
+    // Inline confirm modal instead of window.confirm() — confirm() silently
+    // fails on Android Chrome PWA standalone (see InlineConfirm.tsx).
+    if (messages.length > 0) {
+      setConfirmNewCaseOpen(true);
       return;
     }
+    resetCase();
+  }
+
+  function resetCase() {
+    setConfirmNewCaseOpen(false);
     setMessages([]);
     setEmitted({});
     setPendingEmit(false);
@@ -482,6 +492,15 @@ export function Consult() {
           </button>
         </div>
       </form>
+      <InlineConfirm
+        open={confirmNewCaseOpen}
+        message="להתחיל מקרה חדש? ההיסטוריה הנוכחית תימחק."
+        confirmLabel="מקרה חדש"
+        cancelLabel="ביטול"
+        variant="danger"
+        onConfirm={resetCase}
+        onCancel={() => setConfirmNewCaseOpen(false)}
+      />
     </section>
   );
 }
