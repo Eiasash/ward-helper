@@ -24,7 +24,7 @@ const NSAID_RE = /ibuprofen|naproxen|diclofenac|indomethacin|ketorolac|nurofen|a
 // CKD). Excludes bare "renal"/"כליה" to avoid firing on renal cyst / RCC /
 // kidney stone, which carry no NSAID-specific risk.
 const CKD_RE =
-  /CKD|chronic\s+(kidney|renal)|renal\s+(failure|insufficiency)|nephropathy|CRF\b|ESRD|end[-\s]?stage\s+renal|dialysis|אי\s*ספיקת\s*כלי|מחלת\s*כליות|כליה\s*כרונית|דיאליז|המודיאליז/i;
+  /CKD|chronic\s+(kidney|renal)|renal\s+(failure|insufficiency)|nephropathy|CRF\b|ESRD|end[-\s]?stage\s+renal|dialysis|אי\s*ספיקת\s*כלי(ה|ות)|מחלת\s*כליות|כליה\s*כרונית|דיאליז|המודיאליז/i;
 const ANTICHOLINERGIC_HIGH_RE =
   /amitriptyline|oxybutynin|tolterodine|solifenacin|hydroxyzine|diphenhydramine|chlorphenamine|promethazine|scopolamine|imipramine|אמיטריפטילין|אוקסיבוטינין|דיפנהידרמין/i;
 const SLIDING_SCALE_RE = /sliding\s*scale|insulin\s+regular|reg\.?\s*insulin/i;

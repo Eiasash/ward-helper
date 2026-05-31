@@ -187,6 +187,16 @@ describe('runSafetyChecks — NSAID-CKD fires on documented CKD (live path, no e
     expect(nsaidCkd(['nephrolithiasis'])).toBeUndefined();
   });
 
+  it('does NOT fire on vascular insufficiency (אי ספיקת כלי דם ≠ kidney) — Codex P2 #234', () => {
+    // אי ספיקת כלי דם = vascular insufficiency; the kidney term is כליה/כליות.
+    // The CKD regex must require the kidney ending, not the shared כלי prefix.
+    expect(nsaidCkd(['אי ספיקת כלי דם'])).toBeUndefined();
+    expect(nsaidCkd(['PVD'])).toBeUndefined();
+    // ...but real kidney-failure wording (singular + plural) still fires:
+    expect(nsaidCkd(['אי ספיקת כליה'])).toBeTruthy();
+    expect(nsaidCkd(['אי ספיקת כליות'])).toBeTruthy();
+  });
+
   it('does NOT fire without an NSAID even when CKD is documented', () => {
     const r = runSafetyChecks([{ name: 'paracetamol 1g' }], { age: 80, conditions: ['CKD'] });
     expect(r.beers.find((h) => h.code === 'BEERS-NSAID-CKD')).toBeUndefined();
