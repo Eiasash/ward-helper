@@ -1,3 +1,4 @@
+import './debug/console'; // FIRST — installs PHI-scrubbed error capture before any app code runs
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './ui/App';
