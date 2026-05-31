@@ -16,6 +16,15 @@ import type { Hit, Med, PatientContext } from './types';
 const PPI_RE = /omeprazole|esomeprazole|pantoprazole|lansoprazole|rabeprazole|losec|nexium|controloc|אומפרזול|לוסק|פנטופרזול|קונטרולוק/i;
 const BENZO_RE = /lorazepam|diazepam|clonazepam|midazolam|oxazepam|alprazolam|לוראזפם|דיאזפם|קלונזפם/i;
 const NSAID_RE = /ibuprofen|naproxen|diclofenac|indomethacin|ketorolac|nurofen|advil|voltaren|איבופרופן|נפרוקסן/i;
+// Documented-CKD detection over the free-text condition list. Production never
+// supplies a numeric eGFR (Review.tsx builds PatientContext from {age, sex,
+// conditions} only), so this dx-string match is the rule's only live trigger.
+// Deliberately broad — over-warning on any renal-impairment string is safe for
+// an NSAID nephrotoxicity flag (NSAIDs are contraindicated in AKI as well as
+// CKD). Excludes bare "renal"/"כליה" to avoid firing on renal cyst / RCC /
+// kidney stone, which carry no NSAID-specific risk.
+const CKD_RE =
+  /CKD|chronic\s+(kidney|renal)|renal\s+(failure|insufficiency)|nephropathy|CRF\b|ESRD|end[-\s]?stage\s+renal|dialysis|אי\s*ספיקת\s*כלי|מחלת\s*כליות|כליה\s*כרונית|דיאליז|המודיאליז/i;
 const ANTICHOLINERGIC_HIGH_RE =
   /amitriptyline|oxybutynin|tolterodine|solifenacin|hydroxyzine|diphenhydramine|chlorphenamine|promethazine|scopolamine|imipramine|אמיטריפטילין|אוקסיבוטינין|דיפנהידרמין/i;
 const SLIDING_SCALE_RE = /sliding\s*scale|insulin\s+regular|reg\.?\s*insulin/i;
@@ -85,14 +94,17 @@ export const BEERS_RULES: Rule[] = [
   {
     fire(meds, patient) {
       const ckdByEgfr = patient.egfr !== undefined && patient.egfr < 60;
-      const ckdByDx = hasCondition(patient, /CKD|chronic\s+kidney|אי\s*ספיקת\s*כליות/i);
+      const ckdByDx = hasCondition(patient, CKD_RE);
       if (!ckdByEgfr && !ckdByDx) return null;
       const nsaid = findMed(meds, NSAID_RE);
       if (!nsaid) return null;
+      // Label the trigger basis so the doctor knows whether the flag came from
+      // a measured eGFR or from a documented CKD diagnosis in the problem list.
+      const basis = ckdByEgfr ? `eGFR ${patient.egfr}` : 'CKD מתועד';
       return {
         code: 'BEERS-NSAID-CKD',
         drug: nsaid.name,
-        recommendation: 'NSAID במטופל עם CKD — סיכון AKI גבוה. הפסק והחלף לפרצטמול',
+        recommendation: `NSAID במטופל עם CKD (${basis}) — סיכון AKI גבוה. הפסק והחלף לפרצטמול`,
         severity: 'critical',
       };
     },

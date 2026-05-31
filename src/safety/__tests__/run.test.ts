@@ -150,3 +150,52 @@ describe('runSafetyChecks — comfort-care suppression', () => {
     expect(result.acbScore).toBeGreaterThanOrEqual(3); // diphenhydramine = 3
   });
 });
+
+// Production-path NSAID-CKD coverage. Review.tsx builds PatientContext as
+// { age, sex, conditions } — it NEVER supplies egfr. The existing integration
+// test above sets egfr:42, which masks whether the documented-CKD (dx-string)
+// trigger actually fires through the orchestrator on the LIVE path. These tests
+// drive runSafetyChecks with conditions only (no egfr), as production does.
+describe('runSafetyChecks — NSAID-CKD fires on documented CKD (live path, no eGFR)', () => {
+  const nsaidCkd = (conditions: string[]) =>
+    runSafetyChecks([{ name: 'ibuprofen 400mg tid' }], { age: 80, conditions }).beers.find(
+      (h) => h.code === 'BEERS-NSAID-CKD',
+    );
+
+  it.each([
+    ['CKD'],
+    ['CKD stage 3'],
+    ['chronic kidney disease'],
+    ['chronic renal failure'],
+    ['CRF'],
+    ['ESRD on hemodialysis'],
+    ['diabetic nephropathy'],
+    ['אי ספיקת כליות כרונית'],
+    ['מחלת כליות כרונית'],
+    ['dialysis'],
+  ])('fires for documented CKD string %j with NSAID and no eGFR', (cond) => {
+    const hit = nsaidCkd([cond]);
+    expect(hit, `expected BEERS-NSAID-CKD to fire for "${cond}"`).toBeTruthy();
+    // Trigger basis is labelled as documented (not a measured eGFR).
+    expect(hit?.recommendation).toContain('CKD מתועד');
+    expect(hit?.recommendation).not.toContain('eGFR');
+  });
+
+  it('does NOT fire on non-CKD renal mentions (renal cyst / kidney stone)', () => {
+    expect(nsaidCkd(['renal cyst'])).toBeUndefined();
+    expect(nsaidCkd(['אבן בכליה'])).toBeUndefined();
+    expect(nsaidCkd(['nephrolithiasis'])).toBeUndefined();
+  });
+
+  it('does NOT fire without an NSAID even when CKD is documented', () => {
+    const r = runSafetyChecks([{ name: 'paracetamol 1g' }], { age: 80, conditions: ['CKD'] });
+    expect(r.beers.find((h) => h.code === 'BEERS-NSAID-CKD')).toBeUndefined();
+  });
+
+  it('still labels eGFR basis when an eGFR value IS supplied', () => {
+    const hit = runSafetyChecks([{ name: 'ibuprofen' }], { age: 80, egfr: 40 }).beers.find(
+      (h) => h.code === 'BEERS-NSAID-CKD',
+    );
+    expect(hit?.recommendation).toContain('eGFR 40');
+  });
+});
