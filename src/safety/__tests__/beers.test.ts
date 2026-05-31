@@ -5,17 +5,24 @@ import type { Med, PatientContext } from '@/safety/types';
 const MED = (name: string, extra: Partial<Med> = {}): Med => ({ name, ...extra });
 
 describe('Beers — PPI > 8 weeks', () => {
-  it('fires when PPI durationMonths >= 2', () => {
-    const hits = checkBeers([MED('omeprazole', { durationMonths: 6 })], {});
-    expect(hits.find((h) => h.code === 'BEERS-PPI-LONG')).toBeTruthy();
+  it('fires as a moderate violation when PPI durationMonths >= 2', () => {
+    const hit = checkBeers([MED('omeprazole', { durationMonths: 6 })], {}).find(
+      (h) => h.code === 'BEERS-PPI-LONG',
+    );
+    expect(hit).toBeTruthy();
+    expect(hit?.severity).toBe('moderate');
   });
 
-  it('does not fire when duration is unknown', () => {
-    const hits = checkBeers([MED('omeprazole')], {});
-    expect(hits.find((h) => h.code === 'BEERS-PPI-LONG')).toBeUndefined();
+  it('emits an honest "not assessed" info notice when duration is unknown (was a silent pass)', () => {
+    // Production never supplies durationMonths, so the old silent null falsely
+    // implied "assessed, clean". Now it reports a non-assessment at info severity.
+    const hit = checkBeers([MED('omeprazole')], {}).find((h) => h.code === 'BEERS-PPI-LONG');
+    expect(hit).toBeTruthy();
+    expect(hit?.severity).toBe('info');
+    expect(hit?.recommendation).toMatch(/לא תועד|לא הוערך/);
   });
 
-  it('does not fire when duration < 2 months', () => {
+  it('does not fire at all when duration < 2 months (genuinely fine)', () => {
     const hits = checkBeers([MED('omeprazole', { durationMonths: 1 })], {});
     expect(hits.find((h) => h.code === 'BEERS-PPI-LONG')).toBeUndefined();
   });

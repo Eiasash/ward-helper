@@ -51,7 +51,19 @@ export const BEERS_RULES: Rule[] = [
     fire(meds) {
       const ppi = findMed(meds, PPI_RE);
       if (!ppi) return null;
-      if (ppi.durationMonths === undefined) return null;
+      if (ppi.durationMonths === undefined) {
+        // Honest non-assessment. Production never supplies durationMonths (a
+        // meds snapshot at admission carries no start date), so silently
+        // returning null would falsely imply "assessed, no long-term-PPI
+        // concern". Emit an 'info' notice instead — excluded from the pill
+        // counts, so it surfaces in the panel without a false card alarm.
+        return {
+          code: 'BEERS-PPI-LONG',
+          drug: ppi.name,
+          recommendation: 'PPI פעיל — משך הטיפול לא תועד, לא הוערך מול סף 8 השבועות. בדוק אינדיקציה ומשך ידנית',
+          severity: 'info',
+        };
+      }
       if (ppi.durationMonths < 2) return null;
       return {
         code: 'BEERS-PPI-LONG',

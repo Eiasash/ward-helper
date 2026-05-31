@@ -18,8 +18,11 @@ export function SafetyPills({ notes }: { notes: Note[] }) {
   const flagged = notes.find((n) => n.safetyFlags);
   if (!flagged?.safetyFlags) return null;
   const f = flagged.safetyFlags;
-  const beersN = f.beers.length;
-  const stoppN = f.stopp.length;
+  // 'info' hits are honest non-assessments (e.g. PPI duration not captured),
+  // not violations — exclude them from the card pill counts so they don't
+  // raise a false alarm on every PPI patient. They still show in the panel.
+  const beersN = f.beers.filter((h) => h.severity !== 'info').length;
+  const stoppN = f.stopp.filter((h) => h.severity !== 'info').length;
   const acb = f.acbScore;
   if (beersN === 0 && stoppN === 0 && acb < 3) return null;
 

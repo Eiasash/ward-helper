@@ -30,6 +30,10 @@ const SEVERITY_TO_TONE: Record<Severity, 'red' | 'amber'> = {
   high: 'red',
   moderate: 'amber',
   low: 'amber',
+  // 'info' = honest non-assessment, not a violation — these hits are filtered
+  // out of `allHits` below before any tone lookup, so this value is never read.
+  // It exists only to satisfy the exhaustive Record<Severity> type.
+  info: 'amber',
 };
 
 /**
@@ -54,7 +58,11 @@ export function findHighlightRanges(
   if (!flags || !text) return [];
   // Combine the three rule families into one ordered hit list (severity
   // distinguishes them at render time; ordering only matters for tie-break).
-  const allHits: Hit[] = [...flags.beers, ...flags.stopp, ...flags.start];
+  // 'info' hits (honest non-assessments, e.g. PPI duration not captured) are
+  // not violations — don't highlight their drug name in the note text.
+  const allHits: Hit[] = [...flags.beers, ...flags.stopp, ...flags.start].filter(
+    (h) => h.severity !== 'info',
+  );
   if (allHits.length === 0) return [];
 
   const ranges: HighlightRange[] = [];

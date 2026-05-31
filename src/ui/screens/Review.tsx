@@ -706,7 +706,9 @@ export function Review() {
             }}
             aria-expanded={safetyOpen}
           >
-            🚨 בדיקת בטיחות תרופתית: Beers ×{safetyFlags.beers.length} · STOPP ×{safetyFlags.stopp.length} · START ×{safetyFlags.start.length} · ACB={safetyFlags.acbScore}
+            🚨 בדיקת בטיחות תרופתית: Beers ×{safetyFlags.beers.filter((h) => h.severity !== 'info').length} · STOPP ×{safetyFlags.stopp.filter((h) => h.severity !== 'info').length} · START ×{safetyFlags.start.length} · ACB={safetyFlags.acbScore}
+            {[...safetyFlags.beers, ...safetyFlags.stopp].filter((h) => h.severity === 'info').length > 0 &&
+              ` · ℹ️ לא הוערך ×${[...safetyFlags.beers, ...safetyFlags.stopp].filter((h) => h.severity === 'info').length}`}
           </button>
           {safetyOpen && (
             <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.5 }}>
@@ -720,6 +722,8 @@ export function Review() {
                       alignItems: 'baseline',
                       paddingBlock: 4,
                       borderBottom: '1px dashed var(--border, rgba(255,255,255,0.08))',
+                      // 'info' = honest non-assessment, not a violation — mute it.
+                      opacity: h.severity === 'info' ? 0.7 : 1,
                     }}
                   >
                     <code dir="ltr" style={{ fontSize: 11, color: 'var(--muted)' }}>

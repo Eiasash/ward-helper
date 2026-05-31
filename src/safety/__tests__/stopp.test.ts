@@ -104,6 +104,31 @@ describe('STOPP — dual antiplatelet without indication', () => {
   });
 });
 
+describe('STOPP — PPI > 8 weeks', () => {
+  it('fires as a low violation when durationMonths >= 2', () => {
+    const hit = checkStopp([MED('pantoprazole', { durationMonths: 6 })], {}).find(
+      (h) => h.code === 'STOPP-PPI-LONG',
+    );
+    expect(hit).toBeTruthy();
+    expect(hit?.severity).toBe('low');
+  });
+
+  it('emits an honest "not assessed" info notice when duration is unknown', () => {
+    const hit = checkStopp([MED('pantoprazole')], {}).find((h) => h.code === 'STOPP-PPI-LONG');
+    expect(hit).toBeTruthy();
+    expect(hit?.severity).toBe('info');
+    expect(hit?.recommendation).toMatch(/לא תועד|לא הוערך/);
+  });
+
+  it('does not fire at all when duration < 2 months', () => {
+    expect(
+      checkStopp([MED('pantoprazole', { durationMonths: 1 })], {}).find(
+        (h) => h.code === 'STOPP-PPI-LONG',
+      ),
+    ).toBeUndefined();
+  });
+});
+
 describe('STOPP — empty', () => {
   it('returns [] for empty list', () => {
     expect(checkStopp([], {})).toEqual([]);

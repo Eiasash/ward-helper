@@ -132,7 +132,18 @@ export const STOPP_RULES: Rule[] = [
     fire(meds) {
       const p = find(meds, PPI_RE);
       if (!p) return null;
-      if (p.durationMonths === undefined || p.durationMonths < 2) return null;
+      if (p.durationMonths === undefined) {
+        // Honest non-assessment (mirrors BEERS-PPI-LONG): duration is never
+        // captured at admission, so report it as not-assessed rather than
+        // silently passing. 'info' severity keeps it out of the STOPP count.
+        return {
+          code: 'STOPP-PPI-LONG',
+          drug: p.name,
+          recommendation: 'PPI פעיל — משך לא תועד, לא הוערך. תעד אינדיקציה ומשך',
+          severity: 'info',
+        };
+      }
+      if (p.durationMonths < 2) return null;
       return {
         code: 'STOPP-PPI-LONG',
         drug: p.name,

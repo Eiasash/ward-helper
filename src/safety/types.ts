@@ -36,7 +36,13 @@ export interface PatientContext {
   egfr?: number;
 }
 
-export type Severity = 'critical' | 'high' | 'moderate' | 'low';
+// 'info' = an honest non-assessment, NOT a violation. Used when a rule's input
+// is unavailable (e.g. PPI duration is never captured at admission) so the rule
+// can say "not assessed" instead of silently passing. 'info' hits are EXCLUDED
+// from the Beers/STOPP pill counts (SafetyPills + the Review panel header) so
+// they never raise a false card-level alarm; they surface only in the expanded
+// safety panel.
+export type Severity = 'critical' | 'high' | 'moderate' | 'low' | 'info';
 
 export interface Hit {
   /** Rule code — e.g. "BEERS-PPI-LONG", "STOPP-NSAID-WARFARIN". */

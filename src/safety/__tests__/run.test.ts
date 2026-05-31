@@ -209,3 +209,26 @@ describe('runSafetyChecks — NSAID-CKD fires on documented CKD (live path, no e
     expect(hit?.recommendation).toContain('eGFR 40');
   });
 });
+
+// Honest PPI-duration: a PPI with no captured duration (the production reality)
+// must surface a NON-ASSESSMENT notice, not silently pass — but it must NOT
+// count as a Beers/STOPP violation (that would raise a false card alarm on
+// every PPI patient). The card pill / panel header count only non-'info' hits.
+describe('runSafetyChecks — PPI duration honestly reported as not-assessed', () => {
+  it('PPI without duration: info notice in beers+stopp, zero counted violations', () => {
+    const r = runSafetyChecks([{ name: 'omeprazole 40mg' }], { age: 80 });
+    const beersPpi = r.beers.find((h) => h.code === 'BEERS-PPI-LONG');
+    const stoppPpi = r.stopp.find((h) => h.code === 'STOPP-PPI-LONG');
+    expect(beersPpi?.severity).toBe('info');
+    expect(stoppPpi?.severity).toBe('info');
+    // The contract SafetyPills + the Review header rely on: non-info count = 0.
+    expect(r.beers.filter((h) => h.severity !== 'info').length).toBe(0);
+    expect(r.stopp.filter((h) => h.severity !== 'info').length).toBe(0);
+  });
+
+  it('PPI with a long duration still counts as a real violation', () => {
+    const r = runSafetyChecks([{ name: 'omeprazole 40mg', durationMonths: 18 }], { age: 80 });
+    expect(r.beers.find((h) => h.code === 'BEERS-PPI-LONG')?.severity).toBe('moderate');
+    expect(r.beers.filter((h) => h.severity !== 'info').length).toBeGreaterThan(0);
+  });
+});
