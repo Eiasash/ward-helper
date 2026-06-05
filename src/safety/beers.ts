@@ -12,10 +12,9 @@
  */
 
 import type { Hit, Med, PatientContext } from './types';
+import { NSAID_RE, PPI_RE } from './drugPatterns';
 
-const PPI_RE = /omeprazole|esomeprazole|pantoprazole|lansoprazole|rabeprazole|losec|nexium|controloc|אומפרזול|לוסק|פנטופרזול|קונטרולוק/i;
 const BENZO_RE = /lorazepam|diazepam|clonazepam|midazolam|oxazepam|alprazolam|לוראזפם|דיאזפם|קלונזפם/i;
-const NSAID_RE = /ibuprofen|naproxen|diclofenac|indomethacin|ketorolac|nurofen|advil|voltaren|איבופרופן|נפרוקסן/i;
 // Documented-CKD detection over the free-text condition list. Production never
 // supplies a numeric eGFR (Review.tsx builds PatientContext from {age, sex,
 // conditions} only), so this dx-string match is the rule's only live trigger.

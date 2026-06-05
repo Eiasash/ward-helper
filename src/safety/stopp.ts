@@ -8,8 +8,8 @@
  */
 
 import type { Hit, Med, PatientContext } from './types';
+import { NSAID_RE, PPI_RE } from './drugPatterns';
 
-const NSAID_RE = /ibuprofen|naproxen|diclofenac|indomethacin|ketorolac|nurofen|advil|voltaren|איבופרופן|נפרוקסן/i;
 const WARFARIN_RE = /warfarin|וורפרין|coumadin/i;
 const APIXABAN_RE = /apixaban|אפיקסבן|eliquis|rivaroxaban|ריברוקסבן|xarelto|dabigatran|דביגטרן/i;
 const BETA_BLOCKER_RE = /metoprolol|bisoprolol|atenolol|carvedilol|propranolol|מטופרולול|ביסופרולול/i;
@@ -19,7 +19,6 @@ const LAXATIVE_RE = /lactulose|polyethylene\s*glycol|peg\b|senna|bisacodyl|לק�
 const ACEI_RE = /enalapril|ramipril|lisinopril|captopril|perindopril|אנלפריל|רמיפריל|קפטופריל/i;
 const ARB_RE = /losartan|valsartan|candesartan|telmisartan|olmesartan|לוסרטן|ולסרטן/i;
 const ANTIPLATELET_RE = /aspirin|clopidogrel|prasugrel|ticagrelor|אספירין|פלאביקס|plavix/i;
-const PPI_RE = /omeprazole|esomeprazole|pantoprazole|lansoprazole|losec|nexium|controloc/i;
 
 function find(meds: Med[], re: RegExp): Med | undefined {
   return meds.find((m) => re.test(m.name));
