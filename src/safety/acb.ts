@@ -51,7 +51,9 @@ export const ACB_DRUGS: AcbDrug[] = [
   { name: 'Warfarin', pattern: /warfarin|וורפרין|coumadin/i, score: 1 },
   { name: 'Codeine', pattern: /codeine|קודאין/i, score: 1 },
   { name: 'Fentanyl', pattern: /fentanyl|פנטניל/i, score: 1 },
-  { name: 'Morphine', pattern: /morphine|מורפין/i, score: 1 },
+  // Lookbehind excludes apomorphine (a dopamine agonist for Parkinson's, NOT
+  // anticholinergic) which contains the substring "morphine" / "מורפין".
+  { name: 'Morphine', pattern: /(?<!apo)morphine|(?<!אפו)מורפין/i, score: 1 },
   { name: 'Tramadol', pattern: /tramadol|טרמדול/i, score: 1 },
   { name: 'Paroxetine', pattern: /paroxetine|פרוקסטין/i, score: 1 },
 ];

@@ -71,6 +71,18 @@ describe('STOPP — opioid no laxative', () => {
     const hits = checkStopp(meds, {});
     expect(hits.find((h) => h.code === 'STOPP-OPIOID-NO-LAX')).toBeUndefined();
   });
+
+  it('fires for morphine alone', () => {
+    const hits = checkStopp([MED('morphine 10mg')], {});
+    expect(hits.find((h) => h.code === 'STOPP-OPIOID-NO-LAX')).toBeTruthy();
+  });
+
+  it('does NOT fire for apomorphine alone (not an opioid)', () => {
+    const en = checkStopp([MED('apomorphine 3mg')], {});
+    expect(en.find((h) => h.code === 'STOPP-OPIOID-NO-LAX')).toBeUndefined();
+    const he = checkStopp([MED('אפומורפין')], {});
+    expect(he.find((h) => h.code === 'STOPP-OPIOID-NO-LAX')).toBeUndefined();
+  });
 });
 
 describe('STOPP — duplicate ACEi/ARB', () => {

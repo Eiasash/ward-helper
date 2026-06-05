@@ -56,6 +56,19 @@ describe('ACB — Hebrew aliases', () => {
   });
 });
 
+describe('ACB — morphine vs apomorphine (substring precision)', () => {
+  it('morphine scores 1', () => {
+    expect(computeAcb([MED('morphine 10mg')]).totalScore).toBe(1);
+  });
+  it('Hebrew morphine (מורפין) scores 1', () => {
+    expect(computeAcb([MED('מורפין 10mg')]).totalScore).toBe(1);
+  });
+  it('apomorphine does NOT score as morphine (Parkinson dopamine agonist)', () => {
+    expect(computeAcb([MED('apomorphine 3mg')]).totalScore).toBe(0);
+    expect(computeAcb([MED('אפומורפין')]).totalScore).toBe(0);
+  });
+});
+
 describe('ACB — empty + non-AC drugs', () => {
   it('returns 0 for empty meds', () => {
     expect(computeAcb([]).totalScore).toBe(0);

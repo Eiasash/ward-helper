@@ -72,6 +72,25 @@ describe('Beers — anticholinergic in dementia', () => {
     const hits = checkBeers([MED('amitriptyline')], { age: 82 });
     expect(hits.find((h) => h.code === 'BEERS-AC-DEMENTIA')).toBeUndefined();
   });
+
+  it('does NOT fire for pseudodementia (depression mimic, not dementia)', () => {
+    const ctx: PatientContext = { age: 82, conditions: ['pseudodementia'] };
+    const hits = checkBeers([MED('amitriptyline')], ctx);
+    expect(hits.find((h) => h.code === 'BEERS-AC-DEMENTIA')).toBeUndefined();
+  });
+
+  it('does NOT fire when dementia is explicitly negated', () => {
+    const en = checkBeers([MED('amitriptyline')], { age: 82, conditions: ['no dementia'] });
+    expect(en.find((h) => h.code === 'BEERS-AC-DEMENTIA')).toBeUndefined();
+    const he = checkBeers([MED('amitriptyline')], { age: 82, conditions: ['ללא דמנציה'] });
+    expect(he.find((h) => h.code === 'BEERS-AC-DEMENTIA')).toBeUndefined();
+  });
+
+  it('still fires for a real dementia dx alongside other text', () => {
+    const ctx: PatientContext = { age: 82, conditions: ["Alzheimer's dementia, moderate"] };
+    const hits = checkBeers([MED('oxybutynin')], ctx);
+    expect(hits.find((h) => h.code === 'BEERS-AC-DEMENTIA')).toBeTruthy();
+  });
 });
 
 describe('Beers — NSAID + CKD', () => {

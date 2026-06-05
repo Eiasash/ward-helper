@@ -14,7 +14,9 @@ const WARFARIN_RE = /warfarin|וורפרין|coumadin/i;
 const APIXABAN_RE = /apixaban|אפיקסבן|eliquis|rivaroxaban|ריברוקסבן|xarelto|dabigatran|דביגטרן/i;
 const BETA_BLOCKER_RE = /metoprolol|bisoprolol|atenolol|carvedilol|propranolol|מטופרולול|ביסופרולול/i;
 const VERAPAMIL_RE = /verapamil|וראפמיל|diltiazem|דילטיאזם/i;
-const OPIOID_RE = /morphine|oxycodone|fentanyl|tramadol|codeine|hydromorphone|מורפין|אוקסיקודון|טרמדול/i;
+// (?<!apo) / (?<!אפו) exclude apomorphine (Parkinson's dopamine agonist, not an
+// opioid) which contains the "morphine" substring.
+const OPIOID_RE = /(?<!apo)morphine|oxycodone|fentanyl|tramadol|codeine|hydromorphone|(?<!אפו)מורפין|אוקסיקודון|טרמדול/i;
 const LAXATIVE_RE = /lactulose|polyethylene\s*glycol|peg\b|senna|bisacodyl|לקטולוז|מקוגול|movicol/i;
 const ACEI_RE = /enalapril|ramipril|lisinopril|captopril|perindopril|אנלפריל|רמיפריל|קפטופריל/i;
 const ARB_RE = /losartan|valsartan|candesartan|telmisartan|olmesartan|לוסרטן|ולסרטן/i;

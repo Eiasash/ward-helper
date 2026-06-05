@@ -90,7 +90,19 @@ export const BEERS_RULES: Rule[] = [
   {
     fire(meds, patient) {
       const dementiaRe = /dementia|alzheimer|דמנציה|אלצהיימר|cognitive\s+impairment/i;
-      if (!hasCondition(patient, dementiaRe)) return null;
+      // Exclude conditions that match the substring but are NOT dementia:
+      // pseudodementia (depression mimicking dementia — anticholinergic
+      // deprescribing does not apply) and explicit negations ("no dementia",
+      // "ללא דמנציה"). A condition counts only if it matches dementiaRe AND is
+      // not one of these. Over-warning is otherwise safe, but firing the
+      // "switch off the anticholinergic" advice on a ruled-OUT dementia is
+      // avoidable noise.
+      const dementiaExclRe =
+        /pseudo-?dementia|no\s+dementia|without\s+dementia|denies\s+dementia|ללא\s+דמנציה|לא\s+דמנציה|שלל\s+דמנציה/i;
+      const hasDementia = (patient.conditions ?? []).some(
+        (c) => dementiaRe.test(c) && !dementiaExclRe.test(c),
+      );
+      if (!hasDementia) return null;
       const ac = findMed(meds, ANTICHOLINERGIC_HIGH_RE);
       if (!ac) return null;
       return {
