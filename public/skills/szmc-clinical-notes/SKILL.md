@@ -216,7 +216,36 @@ Never append a "מילון מונחים" / glossary to discharge notes. If a ter
 4. Draft note in plain text, section by section in **printed-output order** (see below)
 5. Run geriatric analysis (ward notes only, show in chat AFTER note, NOT in HTML)
 6. Generate HTML export — RTL, David font, section divs with copy buttons
-7. If empiric ABX needed: always search SZMC DAG first
+7. **PRE-DELIVERY: skeleton-section self-check.** Scan every copy block for (a) lines that are bare section/topic headers (`מצב כללי`, `לב`, `ריאות`, `בטן`, `שינה`, `תאבון`, `כאב`, `מצב רוח`) without clinical data, and (b) `[...]` bracket placeholders. If any are found, the note is not finished — draft real prose before exporting.
+8. If empiric ABX needed: always search SZMC DAG first
+
+---
+
+## PRE-DELIVERY SELF-CHECK — SKELETON SECTIONS ARE NOT DELIVERY
+
+**No skeleton sections.** Every copy block must ship as real prose. A block whose lines are bare topic-words or contain a `[...]` bracket placeholder is **not done** — it is an empty section, regardless of character count. Char-count is not verification.
+
+### Lines that count as "empty"
+
+- Bare section headers stacked vertically: `מצב כללי` / `לב` / `ריאות` / `בטן` (a list of headings a section *would have* is a scaffold, not the section itself)
+- `*תפקודית` / `*תרופתית` followed by nothing
+- `[fill from nursing chart]` / `[bedside]` / any `[…]` bracket placeholder
+- A whole block like `שינה / תאבון / כאב` with no values
+
+### Acceptable
+
+Conventional exam defaults (`לב - קצב סדיר, ללא איוושות`, `ריאות - אוורור תקין דו"צ`) for the physician to confirm at bedside are legitimate note-drafting. Inventing specific *measured* numbers (a BP, a pulse, an O₂ sat) is not — when a measured value is genuinely missing, the honest line (`סימנים חיוניים - להשלים מגיליון הסיעוד של היום`) plus a flag in the team-flags box beats both fabrication and bare scaffold.
+
+### Self-check checklist (run before HTML export)
+
+1. Read every copy block line-by-line, not by scrolling speed.
+2. For each line: does it carry actual clinical data (a value, an observation, a finding, a decision)?
+3. If a line is a bare header or placeholder: rewrite as real prose from the available docs (admission letter, AZMA orders, prior SOAPs, PT/OT notes) or replace with the explicit "complete from <source>" line.
+4. SOAP S/O/A in particular: if there's nothing real to say, write the honest "complete from bedside / nursing chart" line — never ship the bare scaffold.
+
+### Why this gate exists
+
+A four-line repeat complaint of "this section is empty" means the previous fix is wrong, not under-applied. When the user names section A but the empties are in S and O (or vice versa), the symptom is "something is empty" — widen the scan to *every* block before responding. Char-count silently passes every skeleton; line-by-line scan does not.
 
 ---
 
