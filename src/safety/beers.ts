@@ -14,7 +14,16 @@
 import type { Hit, Med, PatientContext } from './types';
 import { NSAID_RE, PPI_RE } from './drugPatterns';
 
-const BENZO_RE = /lorazepam|diazepam|clonazepam|midazolam|oxazepam|alprazolam|לוראזפם|דיאזפם|קלונזפם/i;
+// All benzodiazepines are Beers-flagged in age ≥ 65 (falls, fractures,
+// delirium), so over-broad is the safe direction for this trigger. Israeli
+// prescribing skews heavily to brotizolam (Bondormin) for sleep in the elderly
+// — its absence was a silent miss of the most common offender. Brands carried
+// because extracted med lists arrive by brand: Bondormin (brotizolam), Xanax
+// (alprazolam), Clonex (clonazepam), Assival (diazepam), Dormicum (midazolam).
+// Z-drugs (zolpidem/Stilnox) are a SEPARATE Beers entry — deliberately NOT here;
+// see IMPROVEMENTS.md (BEERS-ZDRUG-ELDER) so they aren't mislabeled as benzos.
+const BENZO_RE =
+  /lorazepam|diazepam|clonazepam|midazolam|oxazepam|alprazolam|temazepam|triazolam|flurazepam|estazolam|chlordiazepoxide|bromazepam|brotizolam|clobazam|nitrazepam|flunitrazepam|xanax|clonex|assival|bondormin|dormicum|לוראזפם|דיאזפם|קלונזפם|בונדורמין|קלונקס|אסיבל|זנקס|דורמיקום/i;
 // Documented-CKD detection over the free-text condition list. Production never
 // supplies a numeric eGFR (Review.tsx builds PatientContext from {age, sex,
 // conditions} only), so this dx-string match is the rule's only live trigger.
@@ -27,7 +36,12 @@ const CKD_RE =
 const ANTICHOLINERGIC_HIGH_RE =
   /amitriptyline|oxybutynin|tolterodine|solifenacin|hydroxyzine|diphenhydramine|chlorphenamine|promethazine|scopolamine|imipramine|אמיטריפטילין|אוקסיבוטינין|דיפנהידרמין/i;
 const SLIDING_SCALE_RE = /sliding\s*scale|insulin\s+regular|reg\.?\s*insulin/i;
-const LONG_INSULIN_RE = /glargine|detemir|degludec|lantus|levemir|tresiba|toujeo/i;
+// Basal insulins whose presence means the sliding scale is NOT "alone". This is
+// a SUPPRESSOR, so over-broad would UNDER-warn — names are kept specific. NPH is
+// an intermediate-acting basal (Insulatard / Protaphane); `\bnph\b` is anchored
+// so it only matches the standalone token, never a substring of another drug.
+const LONG_INSULIN_RE =
+  /glargine|detemir|degludec|lantus|levemir|tresiba|toujeo|\bnph\b|insulatard|protaphane/i;
 const RAPID_INSULIN_RE =
   /aspart|lispro|glulisine|novorapid|humalog|apidra|insulin\s+(novo|hum)/i;
 

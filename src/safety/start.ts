@@ -12,10 +12,19 @@
 
 import type { Hit, Med, PatientContext } from './types';
 
+// Presence suppresses the "add anticoagulant" advice, so this is a SUPPRESSOR:
+// over-broad would UNDER-warn. Every alternative is a genuine anticoagulant (and
+// its brand) — a brand-recorded DOAC/warfarin (Eliquis/Xarelto/Pradaxa/Lixiana/
+// Coumadin) must suppress, or START bullies a doctor on an already-anticoagulated
+// AF patient. warfarin is retained here on purpose (do NOT collapse to DOAC-only).
 const ANTICOAG_RE =
-  /warfarin|apixaban|rivaroxaban|dabigatran|edoxaban|וורפרין|אפיקסבן|ריברוקסבן/i;
+  /warfarin|coumadin|apixaban|eliquis|rivaroxaban|xarelto|dabigatran|pradaxa|edoxaban|lixiana|וורפרין|קומדין|אפיקסבן|ריברוקסבן|אדוקסבן/i;
+// SUPPRESSOR for START-CHF-NO-RAAS — every alternative is genuinely RAAS-active.
+// sacubitril/valsartan (Entresto, an ARNI) is included deliberately: an ARNI
+// patient is already optimally RAAS-blocked, and recommending an ACEi on top is
+// contraindicated (ACEi + ARNI → angioedema; 36h washout required).
 const ACEI_OR_ARB_RE =
-  /enalapril|ramipril|lisinopril|captopril|losartan|valsartan|candesartan|אנלפריל|רמיפריל|לוסרטן/i;
+  /enalapril|ramipril|lisinopril|captopril|perindopril|fosinopril|quinapril|losartan|valsartan|candesartan|telmisartan|olmesartan|irbesartan|sacubitril|entresto|אנלפריל|רמיפריל|לוסרטן/i;
 const BISPHOSPHONATE_RE =
   /alendronate|risedronate|zoledronate|ibandronate|אלנדרונט|fosamax/i;
 const STATIN_RE =
@@ -126,7 +135,9 @@ export const START_RULES: Rule[] = [
   // Post-MI without beta-blocker (and not contraindicated).
   {
     fire(meds, patient) {
-      const postMi = /post.?MI|prior\s*MI|אוטם\s*בעבר|s\/p\s*MI/i;
+      // Same post-MI pattern as the statin rule above (kept aligned — the BB
+      // variant previously lacked the "MI old" branch).
+      const postMi = /post.?MI|prior\s*MI|אוטם\s*בעבר|s\/p\s*MI|MI\s*-?\s*old/i;
       if (!hasCondition(patient, postMi)) return null;
       if (hasMed(meds, BETA_BLOCKER_POSTMI_RE)) return null;
       if (isContraindicated(patient, /beta\s*blocker|חוסם\s*בטא/i)) return null;

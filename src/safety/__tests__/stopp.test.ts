@@ -33,6 +33,20 @@ describe('STOPP — NSAID + DOAC', () => {
     const hits = checkStopp([MED('ibuprofen'), MED('rivaroxaban')], {});
     expect(hits.find((h) => h.code === 'STOPP-NSAID-DOAC')).toBeTruthy();
   });
+
+  it('fires for diclofenac + edoxaban (was a silent miss — edoxaban absent from DOAC regex)', () => {
+    const hit = checkStopp([MED('diclofenac'), MED('edoxaban 60mg')], {}).find(
+      (h) => h.code === 'STOPP-NSAID-DOAC',
+    );
+    expect(hit).toBeTruthy();
+    expect(hit?.severity).toBe('critical');
+  });
+
+  it('fires for voltaren + Lixiana (edoxaban brand)', () => {
+    expect(
+      checkStopp([MED('voltaren'), MED('Lixiana')], {}).find((h) => h.code === 'STOPP-NSAID-DOAC'),
+    ).toBeTruthy();
+  });
 });
 
 describe('STOPP — beta-blocker + verapamil/diltiazem', () => {
@@ -113,6 +127,11 @@ describe('STOPP — dual antiplatelet without indication', () => {
   it('does not fire for single antiplatelet', () => {
     const hits = checkStopp([MED('aspirin 100mg')], {});
     expect(hits.find((h) => h.code === 'STOPP-DAPT-NO-IND')).toBeUndefined();
+  });
+
+  it('counts Micropirin (Israeli low-dose aspirin brand) as an antiplatelet', () => {
+    const hits = checkStopp([MED('Micropirin 100mg'), MED('clopidogrel 75mg')], {});
+    expect(hits.find((h) => h.code === 'STOPP-DAPT-NO-IND')).toBeTruthy();
   });
 });
 

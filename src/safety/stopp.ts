@@ -11,16 +11,30 @@ import type { Hit, Med, PatientContext } from './types';
 import { NSAID_RE, PPI_RE } from './drugPatterns';
 
 const WARFARIN_RE = /warfarin|וורפרין|coumadin/i;
-const APIXABAN_RE = /apixaban|אפיקסבן|eliquis|rivaroxaban|ריברוקסבן|xarelto|dabigatran|דביגטרן/i;
+// DOAC class for the critical NSAID-DOAC bleed rule (trigger → over-broad is
+// safe). edoxaban/Lixiana was missing here while START's ANTICOAG_RE carried it
+// — that asymmetry meant a Lixiana + NSAID patient got NO critical-bleed flag.
+// doacCoverage.test.ts now locks all four DOACs across both engines so the drift
+// cannot recur (full hoist to drugPatterns.ts deferred — START's set adds
+// warfarin and must not be collapsed into a DOAC-only pattern).
+const APIXABAN_RE =
+  /apixaban|אפיקסבן|eliquis|rivaroxaban|ריברוקסבן|xarelto|dabigatran|דביגטרן|pradaxa|edoxaban|אדוקסבן|lixiana/i;
 const BETA_BLOCKER_RE = /metoprolol|bisoprolol|atenolol|carvedilol|propranolol|מטופרולול|ביסופרולול/i;
 const VERAPAMIL_RE = /verapamil|וראפמיל|diltiazem|דילטיאזם/i;
 // (?<!apo) / (?<!אפו) exclude apomorphine (Parkinson's dopamine agonist, not an
 // opioid) which contains the "morphine" substring.
 const OPIOID_RE = /(?<!apo)morphine|oxycodone|fentanyl|tramadol|codeine|hydromorphone|(?<!אפו)מורפין|אוקסיקודון|טרמדול/i;
 const LAXATIVE_RE = /lactulose|polyethylene\s*glycol|peg\b|senna|bisacodyl|לקטולוז|מקוגול|movicol/i;
-const ACEI_RE = /enalapril|ramipril|lisinopril|captopril|perindopril|אנלפריל|רמיפריל|קפטופריל/i;
-const ARB_RE = /losartan|valsartan|candesartan|telmisartan|olmesartan|לוסרטן|ולסרטן/i;
-const ANTIPLATELET_RE = /aspirin|clopidogrel|prasugrel|ticagrelor|אספירין|פלאביקס|plavix/i;
+const ACEI_RE =
+  /enalapril|ramipril|lisinopril|captopril|perindopril|fosinopril|quinapril|benazepril|trandolapril|אנלפריל|רמיפריל|קפטופריל/i;
+const ARB_RE =
+  /losartan|valsartan|candesartan|telmisartan|olmesartan|irbesartan|azilsartan|eprosartan|לוסרטן|ולסרטן/i;
+// Antiplatelets for the dual-antiplatelet rule (trigger). Israeli low-dose
+// aspirin is dispensed as Micropirin far more often than recorded literally as
+// "aspirin". Cartia is deliberately omitted — it is aspirin in IL but diltiazem
+// in the US/AU, an ambiguity not worth the false match.
+const ANTIPLATELET_RE =
+  /aspirin|clopidogrel|prasugrel|ticagrelor|אספירין|פלאביקס|plavix|micropirin|מיקרופירין|brilinta|effient/i;
 
 function find(meds: Med[], re: RegExp): Med | undefined {
   return meds.find((m) => re.test(m.name));

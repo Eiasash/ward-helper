@@ -4,6 +4,43 @@ Auto-appended by the audit-fix-deploy pipeline. Most recent run on top.
 
 ---
 
+## 2026-06-08 — Drug-safety detection deep audit (PR #241, v1.46.21)
+
+Built a full coverage matrix of every drug/condition regex in `src/safety/`
+(beers/stopp/start/drugPatterns/acb) and judged each gap against Beers 2023 /
+STOPP v3 / START v3. Shipped the confirmed clinical-completeness gaps in PR #241
+(see commit body + PR for the full table). RLS sanity pass: **N/A** — no
+schema-adjacent change this run (pure client-side rule logic).
+
+### Deferred (prioritized) — surfaced by the audit, intentionally NOT in #241
+
+- **[P1] New rule `BEERS-ZDRUG-ELDER` (zolpidem / Stilnox / zopiclone / zaleplon /
+  eszopiclone).** Z-drugs are a *separate* Beers "avoid in older adults" entry —
+  adding them to `BENZO_RE` would mislabel them as benzodiazepines in the output.
+  Huge Israeli prescribing volume (Stilnox is the default elderly hypnotic), so
+  this is the highest-value next add. Model it exactly on `BEERS-BENZO-ELDER`
+  (age ≥ 65 gate, own recommendation text, own test). Needs Hebrew: סטילנוקס,
+  זולפידם, אימובן.
+- **[P2] Hoist the DOAC pattern to `drugPatterns.ts`.** STOPP `APIXABAN_RE` (DOAC-
+  only) and START `ANTICOAG_RE` (DOAC **+ warfarin**) still define DOAC names
+  twice. `doacCoverage.test.ts` (added in #241) locks behavioral coverage, but
+  the literal duplication remains. The hoist must be `START = DOAC_RE ∪ warfarin`
+  — a naive shared-regex swap would drop warfarin and regress AF detection. Do it
+  as a reviewed daytime refactor, not unattended.
+- **[P2] `BEERS-NSAID-CKD` relies entirely on the CKD dx-string** because
+  production (`Review.tsx`) never supplies a numeric `egfr` to `PatientContext`.
+  A patient with CKD by labs but no CKD wording in the PMH text gets no flag on
+  this CRITICAL rule. Closing it means plumbing an eGFR value through the extract
+  → PatientContext path (non-trivial; out of scope for a regex pass).
+- **[P3] ACB (`acb.ts`) coverage gaps.** Numeric burden score (lower stakes than a
+  rule trigger), so deferred: ~26 of 33 `ACB_DRUGS` entries have no per-drug test
+  assertion, and several lack Hebrew/brand aliases (Nortriptyline has neither).
+  `BETA_BLOCKER_POSTMI_RE` brand coverage and several insulin-suppressor brand
+  names are also thin. Batch these into a "drug-pattern brand/Hebrew completeness"
+  follow-up rather than piecemeal.
+
+---
+
 ## 2026-05-14 — Overnight audit pass (6 PRs, headline: bidi critical-flag bug)
 
 Single-session audit-fix-deploy cycle conducted overnight 2026-05-13→14 against v1.45.0.

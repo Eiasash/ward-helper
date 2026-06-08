@@ -23,6 +23,15 @@ describe('START — AF without anticoagulation', () => {
     expect(hits.find((h) => h.code === 'START-AF-NO-AC')).toBeUndefined();
   });
 
+  it('does not fire when on a brand-recorded anticoagulant (Eliquis / Lixiana / Coumadin)', () => {
+    const ctx: PatientContext = { age: 80, conditions: ['atrial fibrillation'] };
+    for (const name of ['Eliquis 5mg', 'Lixiana 60mg', 'Coumadin 2.5mg']) {
+      expect(
+        checkStart([MED(name)], ctx).find((h) => h.code === 'START-AF-NO-AC'),
+      ).toBeUndefined();
+    }
+  });
+
   it('suppressed when anticoag explicitly contraindicated', () => {
     const ctx: PatientContext = {
       age: 90,
@@ -50,6 +59,17 @@ describe('START — CHF without ACEi/ARB', () => {
     const ctx: PatientContext = { age: 70, conditions: ['HFrEF EF 25%'] };
     const hits = checkStart([], ctx);
     expect(hits.find((h) => h.code === 'START-CHF-NO-RAAS')).toBeTruthy();
+  });
+
+  it('does not fire when on Entresto (ARNI is RAAS-active; ACEi-on-top is contraindicated)', () => {
+    const ctx: PatientContext = { age: 72, conditions: ['CHF HFrEF'] };
+    // Recorded by brand and by generic — both must suppress.
+    expect(
+      checkStart([MED('Entresto 49/51 BID')], ctx).find((h) => h.code === 'START-CHF-NO-RAAS'),
+    ).toBeUndefined();
+    expect(
+      checkStart([MED('sacubitril/valsartan')], ctx).find((h) => h.code === 'START-CHF-NO-RAAS'),
+    ).toBeUndefined();
   });
 });
 
@@ -110,6 +130,35 @@ describe('START — post-MI without statin', () => {
     const ctx: PatientContext = { age: 70, conditions: ['אוטם בעבר 2022'] };
     const hits = checkStart([], ctx);
     expect(hits.find((h) => h.code === 'START-POSTMI-NO-STATIN')).toBeTruthy();
+  });
+});
+
+describe('START — post-MI without beta-blocker', () => {
+  it('fires for post-MI history without a beta-blocker', () => {
+    const ctx: PatientContext = { age: 68, conditions: ['s/p MI 2023'] };
+    const hits = checkStart([MED('aspirin'), MED('atorvastatin')], ctx);
+    expect(hits.find((h) => h.code === 'START-POSTMI-NO-BB')).toBeTruthy();
+  });
+
+  it('does not fire when on bisoprolol', () => {
+    const ctx: PatientContext = { age: 68, conditions: ['post-MI'] };
+    const hits = checkStart([MED('bisoprolol 5mg')], ctx);
+    expect(hits.find((h) => h.code === 'START-POSTMI-NO-BB')).toBeUndefined();
+  });
+
+  it('suppressed when beta-blocker explicitly contraindicated', () => {
+    const ctx: PatientContext = {
+      age: 70,
+      conditions: ['post-MI', 'beta blocker contraindicated (severe asthma)'],
+    };
+    const hits = checkStart([], ctx);
+    expect(hits.find((h) => h.code === 'START-POSTMI-NO-BB')).toBeUndefined();
+  });
+
+  it('matches the aligned "MI old" wording (parity with the statin rule)', () => {
+    const ctx: PatientContext = { age: 75, conditions: ['MI - old, 2019'] };
+    const hits = checkStart([], ctx);
+    expect(hits.find((h) => h.code === 'START-POSTMI-NO-BB')).toBeTruthy();
   });
 });
 

@@ -53,6 +53,30 @@ describe('Beers — benzodiazepines in elderly', () => {
     const hits = checkBeers([MED('דיאזפם')], { age: 75 });
     expect(hits.find((h) => h.code === 'BEERS-BENZO-ELDER')).toBeTruthy();
   });
+
+  it('fires for brotizolam (Bondormin) — the most common Israeli elderly hypnotic', () => {
+    expect(
+      checkBeers([MED('brotizolam 0.25mg qhs')], { age: 84 }).find(
+        (h) => h.code === 'BEERS-BENZO-ELDER',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('fires for the Bondormin brand name (he + en) and other Israeli brands', () => {
+    for (const name of ['Bondormin', 'בונדורמין', 'Xanax 0.5mg', 'Clonex', 'Assival', 'Dormicum']) {
+      expect(
+        checkBeers([MED(name)], { age: 78 }).find((h) => h.code === 'BEERS-BENZO-ELDER'),
+      ).toBeTruthy();
+    }
+  });
+
+  it('fires for the other missing benzo generics', () => {
+    for (const name of ['temazepam', 'triazolam', 'bromazepam', 'nitrazepam', 'chlordiazepoxide']) {
+      expect(
+        checkBeers([MED(name)], { age: 80 }).find((h) => h.code === 'BEERS-BENZO-ELDER'),
+      ).toBeTruthy();
+    }
+  });
 });
 
 describe('Beers — anticholinergic in dementia', () => {
@@ -130,6 +154,12 @@ describe('Beers — sliding-scale insulin alone', () => {
 
   it('does not fire when rapid analog scheduled', () => {
     const meds = [MED('regular insulin sliding scale'), MED('novorapid 8u tid')];
+    const hits = checkBeers(meds, {});
+    expect(hits.find((h) => h.code === 'BEERS-SS-INSULIN-ALONE')).toBeUndefined();
+  });
+
+  it('does not fire when NPH (intermediate basal) is also present', () => {
+    const meds = [MED('insulin sliding scale'), MED('NPH insulin 14u qam')];
     const hits = checkBeers(meds, {});
     expect(hits.find((h) => h.code === 'BEERS-SS-INSULIN-ALONE')).toBeUndefined();
   });
