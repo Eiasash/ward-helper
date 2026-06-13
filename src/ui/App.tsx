@@ -239,12 +239,10 @@ export function App() {
         </footer>
       </main>
       <nav className="bottom-nav" aria-label="ניווט ראשי">
-        <NavLink to="/capture" end>צלם</NavLink>
-        <NavLink to="/today">היום</NavLink>
-        <NavLink to="/consult">ייעוץ</NavLink>
-        <NavLink to="/history">היסטוריה</NavLink>
-        <NavLink to="/ortho">אורתו</NavLink>
-        <NavLink to="/settings">הגדרות</NavLink>
+        <NavLink to="/capture" end>Capture</NavLink>
+        <NavLink to="/today">Today</NavLink>
+        <NavLink to="/history">Notes</NavLink>
+        <NavLink to="/settings">Settings</NavLink>
       </nav>
       {/* Surfaces a one-shot cloud-restore offer when a fresh-device login
          lands on a zero-state IndexedDB. Mounted at router level so the

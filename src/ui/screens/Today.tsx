@@ -257,8 +257,14 @@ export function Today() {
       <h1>היום</h1>
 
       <div className="today-toolbar">
+        <button type="button" className="ghost" onClick={() => nav('/consult')}>
+          Consult
+        </button>
         <button type="button" className="ghost" onClick={() => nav('/census')}>
           📋 רשימת מחלקה
+        </button>
+        <button type="button" className="ghost" onClick={() => nav('/ortho')}>
+          Ortho
         </button>
         {featuresOn && (
           <button

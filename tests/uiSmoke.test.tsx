@@ -73,12 +73,13 @@ function renderAt(path: string, ui: React.ReactNode) {
 }
 
 describe('App shell', () => {
-  it('renders the bottom nav with the three Hebrew labels (no router wrapper — App owns its HashRouter)', async () => {
+  it('renders the shared four-tab bottom nav (no router wrapper — App owns its HashRouter)', async () => {
     render(<App />);
     await flushEffects();
-    expect(screen.getByText('צלם')).toBeInTheDocument();
-    expect(screen.getByText('היסטוריה')).toBeInTheDocument();
-    expect(screen.getByText('הגדרות')).toBeInTheDocument();
+    expect(screen.getByText('Capture')).toBeInTheDocument();
+    expect(screen.getByText('Today')).toBeInTheDocument();
+    expect(screen.getByText('Notes')).toBeInTheDocument();
+    expect(screen.getByText('Settings')).toBeInTheDocument();
   });
 });
 
