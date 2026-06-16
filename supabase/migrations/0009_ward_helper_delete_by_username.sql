@@ -1,10 +1,11 @@
 -- 0009: cloud-delete path for ward_helper_backup — closes the orphaned-PHI gap.
 --
--- ⚠️ NOT YET APPLIED. This file ships in PR for Eias to review and apply
---    manually (supabase db push / SQL editor). The client cloud-delete added
---    alongside it (src/storage/cloud.ts deleteBlob/deleteByUsername,
---    src/notes/cloudDelete.ts) degrades gracefully — best-effort, never
---    blocks the local delete — if this migration is not yet deployed.
+-- ✅ APPLIED 2026-06-16 to the live Supabase project (krmlzwwelqvlfslwltol,
+--    the shared "Toranot" project) with Eias's sign-off, recorded in the
+--    Supabase migration history. The client cloud-delete added alongside it
+--    (src/storage/cloud.ts deleteBlob/deleteByUsername, src/notes/cloudDelete.ts)
+--    degrades gracefully — best-effort, never blocks the local delete — and is
+--    now backed by the live RPC + DELETE policy below. Idempotent — safe to re-run.
 --
 -- The gap
 -- -------
