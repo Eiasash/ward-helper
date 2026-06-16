@@ -54,7 +54,7 @@ export const NOTE_TYPE_COLORS: Record<NoteType, NoteTypeColor> = {
     badge: 'מק',
   },
   soap: {
-    color: '#14919B', // 4.59:1 on white
+    color: '#0f766e', // teal-700 · 5.47:1 on white (was #14919B = 3.78:1, sub-AA)
     soft: 'rgba(20, 145, 155, 0.16)',
     fg: '#5eead4',
     badge: 'SOAP',
