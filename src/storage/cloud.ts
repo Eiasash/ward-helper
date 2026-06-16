@@ -185,6 +185,99 @@ export async function pullByUsername(username: string): Promise<CloudBlobRow[]> 
 }
 
 /**
+ * Status of a best-effort cloud-delete. The local IndexedDB delete is the
+ * source of truth and must NEVER be blocked by a cloud-delete failure, so
+ * these primitives report a status instead of throwing — mirroring the
+ * save path's "don't throw, report" posture (see pushBlob callers in
+ * src/notes/save.ts).
+ *
+ *  - 'deleted' : the delete call/RPC succeeded (may have removed 0 rows if
+ *                nothing was ever pushed — that is still a success).
+ *  - 'skipped' : nothing to do (e.g. blank username for the RPC path).
+ *  - 'error'   : the network/RPC/RLS call errored; the row may still be
+ *                in the cloud. Caller logs but does not surface fatally.
+ */
+export type CloudDeleteStatus = 'deleted' | 'skipped' | 'error';
+
+/**
+ * Best-effort delete of a single backup row scoped to the CURRENT anon
+ * user_id. RLS (`user_id = auth.uid()`) restricts the match to the caller's
+ * own rows, so no explicit user_id filter is needed in the `.match()`.
+ *
+ * This is the same-device delete path: a row pushed from THIS device under
+ * THIS anon identity. For the cross-device case (a row pushed under an
+ * app_users username from another device, keyed to a different auth.uid),
+ * use `deleteByUsername` — an auth.uid-scoped delete can never reach
+ * another device's row.
+ *
+ * IMPORTANT — RLS DELETE policy dependency: migrations 0001/0002 deliberately
+ * shipped NO DELETE policy on ward_helper_backup (append-only from the
+ * client's view), so under that schema a client `.delete()` silently removes
+ * zero rows. The accompanying migration 0009 adds a narrow
+ * `user_id = auth.uid()` DELETE policy so this same-device path actually
+ * removes the row. If 0009 is not yet applied, this call returns 'deleted'
+ * with zero rows affected and the orphan stays until the migration lands —
+ * which is why this is best-effort and the local delete never waits on it.
+ *
+ * Never throws — returns a status so the caller (NoteViewer.performDelete)
+ * can proceed with navigation regardless.
+ */
+export async function deleteBlob(
+  type: 'patient' | 'note' | 'api-key' | 'canary' | 'day-snapshot',
+  id: string,
+): Promise<CloudDeleteStatus> {
+  try {
+    await ensureAnonymousAuth();
+    const sb = await getSupabase();
+    const { error } = await sb
+      .from('ward_helper_backup')
+      .delete()
+      .match({ blob_type: type, blob_id: id });
+    if (error) return 'error';
+    return 'deleted';
+  } catch {
+    return 'error';
+  }
+}
+
+/**
+ * Cross-device best-effort delete: remove the row attributed to a given
+ * app_users `username`, regardless of which anon user_id pushed it. Calls
+ * the SECURITY DEFINER RPC `ward_helper_delete_by_username` (migration
+ * 0009), which mirrors `ward_helper_pull_by_username` (migration 0003):
+ * it bypasses the auth.uid() RLS boundary because cross-device deletes
+ * cross that boundary, exactly as cross-device pulls do.
+ *
+ * Blank/whitespace usernames are a no-op ('skipped') and never hit the
+ * network — the username column is never written empty (see pushBlob's
+ * cleanUsername coercion), so an empty match could only ever group
+ * unrelated null-username rows.
+ *
+ * Never throws — returns a status. If the RPC is not yet deployed the
+ * Supabase client returns an error (function not found), surfaced as
+ * 'error'; the local delete already succeeded and navigation proceeds.
+ */
+export async function deleteByUsername(
+  type: 'patient' | 'note' | 'api-key' | 'canary' | 'day-snapshot',
+  id: string,
+  username: string,
+): Promise<CloudDeleteStatus> {
+  if (!username || !username.trim()) return 'skipped';
+  try {
+    const sb = await getSupabase();
+    const { error } = await sb.rpc('ward_helper_delete_by_username', {
+      p_username: username.trim(),
+      p_blob_type: type,
+      p_blob_id: id,
+    });
+    if (error) return 'error';
+    return 'deleted';
+  } catch {
+    return 'error';
+  }
+}
+
+/**
  * Convert a base64 string (as returned by Supabase for bytea columns) back
  * into a Uint8Array for crypto operations.
  */

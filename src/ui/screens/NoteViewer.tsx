@@ -9,6 +9,7 @@ import {
   type Patient,
 } from '@/storage/indexed';
 import { NOTE_LABEL } from '@/notes/templates';
+import { deleteNoteFromCloud } from '@/notes/cloudDelete';
 import { wrapForChameleon, auditChameleonRules } from '@/i18n/bidi';
 import { useBidiAudit } from '../hooks/useSettings';
 import { InlineConfirm } from '../components/InlineConfirm';
@@ -106,7 +107,19 @@ export function NoteViewer() {
   async function performDelete() {
     if (!note) return;
     setConfirmDeleteOpen(false);
+    // Local IndexedDB delete is authoritative and must succeed first.
     await deleteNote(note.id);
+    // Then best-effort remove the note's encrypted backup row so the
+    // "deleted" note does NOT resurrect on a fresh-device restore. This is
+    // non-fatal by contract (deleteNoteFromCloud returns a status, never
+    // throws) — and we still wrap it so navigation is guaranteed even if a
+    // future change makes the cloud path throw. A cloud-delete failure must
+    // not block navigation or the already-completed local delete.
+    try {
+      await deleteNoteFromCloud(note.id);
+    } catch {
+      // swallow — local delete already done; orphan cleanup is best-effort.
+    }
     nav('/history');
   }
 
