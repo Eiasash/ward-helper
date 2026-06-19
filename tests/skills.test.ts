@@ -33,8 +33,10 @@ describe('loadSkill', () => {
       callCount++;
       return { ok: true, text: async () => 'cached content' } as Response;
     });
-    await loadSkill('szmc-clinical-notes');
-    await loadSkill('szmc-clinical-notes');
+    // Use a single-file skill so callCount maps 1:1 to loads (szmc-clinical-notes
+    // is now multi-file: SKILL.md + REHAB_NOTES.md).
+    await loadSkill('hebrew-medical-glossary');
+    await loadSkill('hebrew-medical-glossary');
     expect(callCount).toBe(1);
   });
 
@@ -71,9 +73,10 @@ describe('clearSkillCache', () => {
       callCount++;
       return { ok: true, text: async () => 'content' } as Response;
     });
-    await loadSkill('szmc-clinical-notes');
+    // Single-file skill: one fetch per (uncached) load.
+    await loadSkill('hebrew-medical-glossary');
     clearSkillCache();
-    await loadSkill('szmc-clinical-notes');
+    await loadSkill('hebrew-medical-glossary');
     expect(callCount).toBe(2);
   });
 });

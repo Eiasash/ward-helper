@@ -25,7 +25,7 @@ User copies each section into Chameleon EMR fields. Hospital system generates th
 - תוכנית is a bare verb list — no bullets, no numbers
 - Lab values: pull exact numbers, never round
 - המלצות בשחרור and המשך טיפול תרופתי = **DASH list (-)** (Eias 28/04/26 — easier to delete items without renumbering; EMR auto-numbers drug list anyway)
-- L/H suffixes from lab printouts: **NEVER carry over** — write `(מעל הנורמה)` / `(מתחת לנורמה)` in parens instead
+- L/H suffixes from lab printouts: **NEVER carry over** — and do NOT replace them with any interpretation. **Report the raw value only**, no `(מעל הנורמה)`/`(מתחת לנורמה)`, no high/low words. The reader interprets; the note reports. (Eias 04/06/26)
 
 ---
 
@@ -74,6 +74,22 @@ Plain Hebrew word + colon. No asterisks, no decoration:
 תרופות להפסיק היום:
 Clonazepam 0.5 מ"ג - לא מומלצת בקשישים
 ```
+
+### Word choice — clinical terminology, not literal Hebrew calques (Eias 16/06/26)
+
+Use the term a real ward doctor writes — the established medical term, frequently an **inline English clinical term**, NOT a literal Hebrew translation of an English concept. Literal calques read AI-generated and undermine the note's credibility. Israeli clinical notes naturally mix English medical terms into Hebrew prose.
+
+| ❌ AI-vibe Hebrew calque | ✅ What a doctor writes |
+|---|---|
+| שבר שבריריות / שבר שבירות | **שבר פתולוגי** (or `fragility fracture` inline) |
+| רפלוקס ושטי | **GERD** |
+| קיפופלסטיה | **kyphoplasty** |
+| צליעה ספינלית | **neurogenic claudication** |
+| היצרות תעלת השדרה (as a calque) | **lumbar spinal stenosis** (English inline) |
+| אנמיה בתר-ניתוחית | אנמיה לאחר ניתוח / **post-operative** anemia; **normocytic** |
+| כשל בטיפול (vague) | **treatment failure** |
+
+This is **complementary to — not in conflict with — the JARGON RULES** below. The jargon rule bans *specialist abbreviations* (Beers, STOPP, CFS, BPSD) toward non-geriatric/lay readers; the word-choice rule bans *awkward literal Hebrew* in favour of the standard medical term. Unifying test: write exactly what an Israeli ward physician writes — standard terminology (often English inline), neither obscure specialist jargon nor a translated-sounding calque.
 
 ---
 
@@ -215,44 +231,64 @@ Never append a "מילון מונחים" / glossary to discharge notes. If a ter
 3. Search project knowledge for drug dosing, DAG antibiotics, guidelines
 4. Draft note in plain text, section by section in **printed-output order** (see below)
 5. Run geriatric analysis (ward notes only, show in chat AFTER note, NOT in HTML)
-6. Generate HTML export — RTL, David font, section divs with copy buttons
-7. **PRE-DELIVERY: skeleton-section self-check.** Scan every copy block for (a) lines that are bare section/topic headers (`מצב כללי`, `לב`, `ריאות`, `בטן`, `שינה`, `תאבון`, `כאב`, `מצב רוח`) without clinical data, and (b) `[...]` bracket placeholders. If any are found, the note is not finished — draft real prose before exporting.
+6. **PRE-DELIVERY: skeleton-section self-check.** Scan every copy block for (a) lines that are bare section/topic headers (`מצב כללי`, `לב`, `ריאות`, `בטן`, `שינה`, `תאבון`, `כאב`, `מצב רוח`) without clinical data, and (b) `[...]` bracket placeholders. If any are found, the note is not finished — draft real prose before exporting.
+7. Generate HTML export — RTL, David font, section divs with copy buttons
 8. If empiric ABX needed: always search SZMC DAG first
-
----
-
-## PRE-DELIVERY SELF-CHECK — SKELETON SECTIONS ARE NOT DELIVERY
-
-**No skeleton sections.** Every copy block must ship as real prose. A block whose lines are bare topic-words or contain a `[...]` bracket placeholder is **not done** — it is an empty section, regardless of character count. Char-count is not verification.
-
-### Lines that count as "empty"
-
-- Bare section headers stacked vertically: `מצב כללי` / `לב` / `ריאות` / `בטן` (a list of headings a section *would have* is a scaffold, not the section itself)
-- `*תפקודית` / `*תרופתית` followed by nothing
-- `[fill from nursing chart]` / `[bedside]` / any `[…]` bracket placeholder
-- A whole block like `שינה / תאבון / כאב` with no values
-
-### Acceptable
-
-Conventional exam defaults (`לב - קצב סדיר, ללא איוושות`, `ריאות - אוורור תקין דו"צ`) for the physician to confirm at bedside are legitimate note-drafting. Inventing specific *measured* numbers (a BP, a pulse, an O₂ sat) is not — when a measured value is genuinely missing, the honest line (`סימנים חיוניים - להשלים מגיליון הסיעוד של היום`) plus a flag in the team-flags box beats both fabrication and bare scaffold.
-
-### Self-check checklist (run before HTML export)
-
-1. Read every copy block line-by-line, not by scrolling speed.
-2. For each line: does it carry actual clinical data (a value, an observation, a finding, a decision)?
-3. If a line is a bare header or placeholder: rewrite as real prose from the available docs (admission letter, AZMA orders, prior SOAPs, PT/OT notes) or replace with the explicit "complete from <source>" line.
-4. SOAP S/O/A in particular: if there's nothing real to say, write the honest "complete from bedside / nursing chart" line — never ship the bare scaffold.
-
-### Why this gate exists
-
-A four-line repeat complaint of "this section is empty" means the previous fix is wrong, not under-applied. When the user names section A but the empties are in S and O (or vice versa), the symptom is "something is empty" — widen the scan to *every* block before responding. Char-count silently passes every skeleton; line-by-line scan does not.
 
 ---
 
 ## SECTIONS — PRINTED-OUTPUT ORDER (gold standard)
 
 ### Admission (קבלה)
-כותרת → הצגת החולה → אבחנות פעילות → אבחנות ברקע → ניתוחים בעבר → תלונה עיקרית → רקע רפואי → מחלה נוכחית → רגישויות → תרופות בבית → הרגלים → תפקוד → בדיקה גופנית → בדיקות עזר → בדיקות מעבדה → דיון ותוכנית → חתימה
+כותרת > הצגת החולה > אבחנות פעילות > אבחנות ברקע > ניתוחים בעבר > תלונה עיקרית > רקע רפואי > מחלה נוכחית > רגישויות > תרופות בבית > הרגלים > תפקוד > בדיקה גופנית > בדיקות עזר > בדיקות מעבדה > דיון ותוכנית > חתימה
+
+### Admission מחלה נוכחית — risk scores close the HPI (house pattern, verified 04/06/26 admissions)
+
+The HPI **ends** with the relevant risk scores, inline, as the final lines — NOT in a separate scores field. Whichever apply to the case:
+```
+padua score: 8
+CHADS2: 3
+```
+Padua on essentially every geriatric admission (VTE-prophylaxis decision); CHADS2 / CHA2DS2-VASc when AF is in the picture. Compute from the chart, place last, no commentary.
+
+### Admission דיון ותוכנית — the discussion block (verified 04/06/26 admissions)
+
+Acute admissions open the discussion with a fixed scaffold, THEN a `#`-prefixed problem list (NOT `*` — see below), each problem carrying its own reasoned differential:
+
+```
+רקע כמתואר לעיל.
+[restate the precipitating event]
+סימנים חיוניים: ל"ד X, דופק X, חום X PO, סטורציה X% באוויר חדר, נלקח HH:MM DD/MM
+[ED course / consults / key labs + imaging]
+
+המטופל מציג את הבעיות הבאות להתייחסות:
+
+# זיהומי
+[reasoning]
+באבחנה המבדלת:
+1. ...
+2. ...
+
+# כלייתי
+...
+
+# סטטוס
+...
+
+תוכנית:
+[bare verb list — no bullets, no numbers]
+```
+
+**Mandatory `# סטטוס` problem.** Every acute geriatric admission resolves code status — and resolves it against the **named legal authority**, never the patient directly. Two patterns:
+- Decision deferred: `בשיחה עם [בת/בן] המשפחה שהוא/היא היפוי כוח לגבי סטטוס, תעדכן בבוקר.`
+- Decision made: `בשיחה עם [the proxy] שהוא/היא האפוטרופוס, הוסבר המצב, המטופל DNR/DNI.`
+Name the proxy role (היפוי כוח / אפוטרופוס), state the conversation happened, give the decision or the defer-to-morning. **Do NOT write proxy/family proper names** — `בת המשפחה`, `האפוטרופוס`, per the no-names rule.
+
+**Provenance line when history is unreliable.** Non-communicative dementia / poor-historian patients get an explicit source line in מחלה נוכחית: `מטופל לא משתף פעולה, אנמנזה נלקחה מתיעוד באזמה ומדיווח מד"א.`
+
+**`# alarm` notation.** A dangerous interval trend is flagged inline with `(!)`: `המוגלובין 10.6 בירידה מ-13.2 יום קודם (!)`.
+
+**Problem-list marker — `#` not `*`.** Real night-team admissions are split: some dictate `*זיהומית / *תפקודית / *סטטוס`, others `#`. House standard for our output is `#`. When inheriting/cleaning a source dictation, **convert every `*` problem header to `#`** — do not preserve the source's asterisks.
 
 ### Admission תפקוד subsection format — **VERIFIED PATIENT 29/04/26 print**
 
@@ -304,7 +340,7 @@ This is the **printed output order** as it appears on the SZMC letterhead. Each 
     - **Max 2-3 numbers** per parameter — do not list 5 timepoints of the same lab
     - **Drop redundant**: if Cr listed, **omit eGFR and BUN** (covered)
     - **Total Ca → correct for albumin** if same-day specimen has both. Formula: `Corrected Ca = measured + 0.8 × (4.0 − albumin)`. Cite the corrected value when albumin <4.0. Ionized Ca needs no correction.
-    - **NO L/H suffix** — use `(מעל הנורמה)` / `(מתחת לנורמה)` in parens
+    - **RAW VALUES ONLY — no interpretation** (Eias 04/06/26): no L/H suffix, no `(מעל הנורמה)`/`(מתחת לנורמה)`, no high/low words. Just the number, e.g. `אשלגן 5.6`.
     - Full lab table auto-appends from EMR after this section anyway — keep curated section focused on clinically relevant moves
 15. **מהלך ודיון** — **MUST OPEN with the patient summary template** (Eias 28/04/26):
     ```
@@ -343,374 +379,13 @@ Don't fight Chameleon's auto-format on the drug-list sections. Only force ALL-CA
 - ❌ `# חסך ויטמין D קשה` as standalone — fold into the relevant problem (e.g., # היפרקלצמיה)
 
 ### Consult (ייעוץ)
-כותרת (ייעוץ גריאטרי + תאריך + מטופל + מחלקה מפנה + יועץ) → סיבת הייעוץ → דיווח → הערכה → המלצות תרופתיות (להפסיק/להוסיף/לשנות מינונים) → טיפול לא-תרופתי → בדיקות להשלמה → הפניות → ביקור חוזר → חתימה
+כותרת (ייעוץ גריאטרי + תאריך + מטופל + מחלקה מפנה + יועץ) > סיבת הייעוץ > דיווח > הערכה > המלצות תרופתיות (להפסיק/להוסיף/לשנות מינונים) > טיפול לא-תרופתי > בדיקות להשלמה > הפניות > ביקור חוזר > חתימה
 
 ---
 
 ## REHAB NOTES — admission and daily rounds
 
-**The geri-rehab ward (גריאטריה -שיקום) runs on a different note rhythm than acute medicine.** Two settings are supported:
-
-- **rehab-admission** (קבלת שיקום) — invoked by "כתוב לי קבלת שיקום", "rehab admission", or transfer-from-acute patient data
-- **rehab-rounds** (ביקור רופא) — invoked by "ביקור רופא", "daily round", "rehab round". Daily M–F per patient regardless of complexity.
-
-### Rehab admission — inheritance pattern
-
-The rehab admission is structurally a **transfer note**, not a fresh admission. The patient's history was taken by the source department; recreating it is wasted effort and introduces inconsistencies. Inherit the source-department narrative wholesale and add only the on-arrival snapshot.
-
-**Source departments seen at SZMC geri-rehab:**
-- Neurology (post-CVA, post-ICH)
-- Orthopedics (post-fracture, post-spine surgery)
-- Cardiology / cardiothoracic (pre/post valve, pre/post CABG)
-- Geri-mugbar / acute geriatrics (deconditioning, post-medical-illness)
-- Internal medicine (post-pneumonia, post-sepsis recovery)
-
-**Section structure (printed-output order):**
-
-1. **כותרת** (auto)
-2. **הצגת החולה** — single line: `בן/בת X, [marital], [living situation], [transferred from]`. Example: `בן 77, אב ל-4 ילדים, מתגורר עם אישתו בקומה 2 עם מעלית. הגיע מגריאטריה מוגבר לשיקום טרום-ניתוחי.`
-3. **אבחנות פעילות** — `ADMISSION FOR REHABILITATION` first, then the active diagnosis(es) driving the rehab admit. Example: `ADMISSION FOR REHABILITATION` + `ISCHEMIC CEREBROVASCULAR ACCIDENT (CVA) / STROKE` + `LEFT HEMIPLEGIA AND HEMIPARESIS`.
-4. **אבחנה משוערת** — only if relevant (e.g., `ENDOCARDITIS (IE / BE / SBE)` in PATIENT case)
-5. **אבחנות ברקע** — chronic + recent acute that resolved. English UPPERCASE.
-6. **ניתוחים בעבר** — surgical history, especially recent admission's procedure
-7. **תלונה עיקרית** — the rehab-specific transfer reason. Examples:
-   - `העברה ממחלקה נירולוגיה לצורך שיקום` (post-stroke)
-   - `חיזוק ושיפור מצב לפני ניתוח לב פתוח` (pre-cardiac-surgery)
-   - `העברה מאורתופדיה לצורך שיקום לאחר ניתוח דהקומפרסיה וקיבוע T7-L2`
-8. **רקע רפואי** — מחלות + previous admissions
-9. **מחלה נוכחית** — **INHERIT from source-dept discharge dictation**. Do not retake history. Audit the source narrative for typos / voice-rec errors and paste cleaned version. If source dept used `#`-prefixed problem-list (אונקולוגי / זיהומית / תפקודית etc.), preserve that structure.
-10. **רגישויות** — inherit
-11. **תרופות בבית** — inherit (auto sidebar populates from Chameleon DB)
-12. **בדיקה גופנית** — **on-arrival snapshot** (this is the only fresh content beyond the title block):
-    ```
-    הופעה כללית: ל"ד X/Y, דופק Z, חום W, סטורציה N% [נלקח HH:MM DD/MM]
-    ריאות: כניסת אוויר טובה ושווה / ללא ממצא חריג / [findings]
-    לב: סדיר / לא סדיר עם אוושה X/6
-    בטן: רכה ללא רגישות / [findings]
-    גפיים: בצקות / ללא בצקת / [findings]
-    עצבים: [neuro exam — especially relevant if post-CVA or post-spine]
-    ```
-13. **דיון ותוכנית** — short. For simple cases, 1-2 lines plus `תוכנית: שיקום, המשך טיפול ומעקב`. For complex cases (≥2 active acute issues continuing into rehab — e.g., active ABX, post-op wound, pending procedure), use a brief `#`-prefixed problem list before the תוכנית line.
-
-**Critical rule:** The rehab admission body is short by design. Most of the substantive content lives in the inherited מחלה נוכחית paragraph. The doctor's value-add is the on-arrival exam + the framing of what rehab is for.
-
-### Rehab daily rounds (ביקור רופא) — three patterns
-
-Headers (always underlined, this exact order, every note):
-```
-S דיווח המטופל:
-O בדיקה גופנית וממצאי עזר:
-A מסקנה והערכה:
-P לביצוע:
-תוכנית טיפול (יעדי טיפול):
-```
-
-The format inside `A` and `P` depends on **where in the admission you are**:
-
-- **Pattern FIRST-DAY** — the SOAP written on day 0 or day 1 of the rehab admission. Detailed regardless of patient complexity. Establishes the chart for everyone who'll round over the next month.
-- **Pattern STABLE** — subsequent rounds when the patient has no active acute issues. Minimal.
-- **Pattern COMPLEX** — subsequent rounds when ≥2 complexity triggers fire. Problem-list `*` bullets in `A`.
-
-Triage rule (60-second decision):
-1. Is this the day-1 round (first SOAP after admission)? → **FIRST-DAY**, regardless of complexity.
-2. Otherwise: count active complexity triggers. ≥2 → **COMPLEX**. <2 → **STABLE**.
-
----
-
-**Pattern FIRST-DAY — detailed SOAP with patient capsule** (use on day 0 or day 1 of the rehab admission, always):
-
-This is the framing handoff. Written once per admission. Contains content you won't repeat in subsequent rounds.
-
-```
-S דיווח המטופל:
-[Patient's voice on the TRANSFER — not just "feels good"]
-[How they slept the first night in the new ward]
-[Pain control adequacy with current regimen — ask explicitly, by indication site]
-[Recent events worth surfacing — fall pre-admission, near-syncope in PT, etc.]
-[Concerns about upcoming surgery / discharge / family situation]
-[Mood and motivation for rehab — explicit ask]
-
-O בדיקה גופנית וממצאי עזר:
-[Vitals — incl. orthostatic if any falls/dizziness in story]
-[General appearance, cooperation, cognition implicit via conversation]
-[Indication-matched focused exam — see "Focused exam by indication" below]
-[Surgical wound if post-op — describe specifically: length, sutures, drainage, healing]
-[Per-limb motor + sensation + DP if mobility-relevant]
-[Admission labs cited inline — flag what's missing and being added today]
-[ECG findings if abnormal at admission]
-
-A מסקנה והערכה:
-[3-4 line PATIENT CAPSULE — see formula below. This is the framing handoff.]
-
-בעיות:
-*[domain] - [status + decision]
-*[domain] - [status + decision]
-[...as many as active]
-
-P לביצוע:
-[Actions with explicit timing — היום / מחר בבוקר / יומיומית]
-[Labs being added today]
-[Consultations being requested]
-[Specialty referrals — psych, nephro+endo for CKD-MBD, social work, etc.]
-
-תוכנית טיפול (יעדי טיפול):
-[Concrete goal by indication — see goal-by-indication table below]
-```
-
-**The patient capsule — formula:**
-
-```
-[age] [marital status] [parent count if relevant]. [living situation — alone / with whom / which floor / elevator yes-no].
-רקע רפואי כולל [3-5 chronic conditions, prioritized by relevance to rehab].
-בבסיס [pre-admission ADL/IADL one-liner: עצמאי / עם הליכון / עם קלנועית / סיעודי].
-כעת לאחר [acute event] בתאריך [DD/MM]. התקבל/ה לשיקום ביום [N] לאחר [הניתוח/האירוע].
-```
-
-Worked example (PATIENT, post-ORIF day 10, ESKD):
-```
-בן 62, גרוש, אב ל-2, מתגורר לבד בקומה 5 עם מעלית. אחות בקשר.
-רקע רפואי כולל ESKD על המודיאליזה 3X בשבוע דרך פיסטולה משמאל, סוכרת לא מאוזנת על אינסולין,
-יל"ד, רטינופתיה סוכרתית עם עיוורון בעין שמאל, אנמיה כרונית, היסטוריה של דיכאון.
-בבסיס תפקודי - עצמאי בכל ה-ADL, מתנייד עם קלנועית מחוץ לבית, הליכון בבית.
-נפל מהקלנועית 22.4.26, סבל שבר סאבטרוכנטרי בירך שמאל, עבר ORIF עם מסמר GAMMA ב-23.4.
-כעת הועבר אלינו לשיקום ביום 10 לאחר הניתוח.
-```
-
-Capsule rules:
-- **Cross-check demographics against admission הצגת החולה.** Marital status, parent count, living situation are propagated from your day-1 capsule into every subsequent note by every physician for the next month — getting them wrong on day 1 corrupts the chart. The PATIENT 13/04 note had `אלמנה ואם ל-2` while admission said `רווקה / אם ל-5` — that's the failure mode.
-- **Days post-event** (e.g., "ביום 10 לאחר הניתוח") is critical context for analgesia, anticoag duration, suture removal — calculate it explicitly.
-- **Mention contact person and relationship** (sister, son, daughter, niece) — discharge planning starts here.
-- **Pre-admission baseline** is one line. Don't restate the OT intake; reference it.
-
-**Focused exam by indication (the FIRST-DAY O section):**
-
-| Indication | Add to standard 4-system exam |
-|---|---|
-| Post-CVA | Cranial nerves, motor per limb segment, sensory, language/dysarthria, gait if attempted |
-| Post-hip / knee replacement | Surgical wound (length, sutures, drainage), per-limb motor (IP/QUAD/knee flexion/ankle), DP pulse, pain on ROM |
-| Post-spine surgery | Surgical wound, motor IP/QUAD/dorsi-plantar flexion bilaterally, sensation, sphincter function |
-| Pre-cardiac surgery | Heart auscultation (murmur grade, location), JVP, lung bases, peripheral edema, peripheral pulses |
-| Post-medical illness / deconditioning | Volume status, sit-stand attempt with documented difficulty, grip if relevant |
-| ESKD on HD | Fistula/graft thrill+bruit, signs of infection at access site |
-
-**Pattern STABLE — minimal SOAP** (subsequent rounds, no active acute issues):
-
-```
-S דיווח המטופל:
-מרגישה טוב
-ישנה בלילה
-פעמ"ם שלשום
-
-O בדיקה גופנית וממצאי עזר:
-חום 36.7, ד 78, ל"ד 110/60, סטורציה 97% על אוויר חדר
-קולות הלב סדירים
-כ"א טובה לריאות
-בטן רכה
-גפיים ללא בצקת
-
-A מסקנה והערכה:
-בשיקום לאחר CVA - מתקדם היטב
-ל"ד במעקב - מורידים תרופות לל"ד
-
-P לביצוע:
-המשך שיקום
-
-תוכנית טיפול (יעדי טיפול):
-[case header — see below]
-```
-
-**Pattern COMPLEX — problem-list SOAP** (subsequent rounds, ≥2 of these triggers active):
-
-Complexity triggers:
-- IV antibiotics with drug-level monitoring (Vanco, gentamicin, etc.)
-- Post-op with active wound, drain, or VAC dressing
-- Active diuresis with changing volume status
-- BP / glucose actively being titrated (≥2 dose changes/week)
-- AKI in evolution
-- Pending procedure (echo, ortho consult, surgery decision)
-- New abnormal labs requiring follow-up (neutropenia, electrolyte derangement, etc.)
-- ≥2 active acute clinical problems running in parallel
-
-```
-S דיווח המטופל:
-מרגיש טוב, ללא כאב
-
-O בדיקה גופנית וממצאי עזר:
-חום 36.4, ד 73, ל"ד 161/65, סטורציה 97% על אוויר חדר
-קולות הלב סדירים + אושה סיסטולית
-כניסת אוויר טובה לריאות ללא חרחורים
-בצקת +++ ברגליים - שיפור משמעותי עדיין בצקת משמעותית
-במעבדה קראטינין 1.3, BUN 37
-
-A מסקנה והערכה:
-מצבו יציב, מעבר לבעייה תפקודית, בעיות פעילות
-*אורתופדית - עדיין חבישת ואקום, צוות אורתופדי יבוא היום לבדוק ולהוריד / להחליף
-*זיהומית - ממשיך VANCO + RIFAMPICIN. החמרה קלה בתפקוד כלייתי היום - כנראה משני לטיפול במשתנים, נעקוב אחר רמת VANCO מחר בבוקר
-*בצקת פריפרית משמעותית. מקבל SPIRONOLACTONE + FUROSEMIDE - נעביר FUROSEMIDE לפומי עם מעקב משקל
-
-P לביצוע:
-החלטה לגבי חידוש או החלפה של VAC היום
-FUROSEMIDE פומי במקום IV
-רמת VANCO לפני המנה הבאה מחר בבוקר
-מעבדה היום - תפקודי כליות וביוכימיה
-שקילה יומיומית
-הפסקת טיפול ב-TAMSULOSIN
-
-תוכנית טיפול (יעדי טיפול):
-[case header — see below]
-```
-
-**Pattern COMPLEX rules:**
-- Each `A` bullet starts with `*[domain] - ` followed by status + decision in one sentence
-- Domain prefixes (pick what's active, not a fixed template):
-  - `*אורתופדית` (post-op spine/joint, wound, fixation, drain, VAC)
-  - `*זיהומית` (active ABX, levels, source control, cultures)
-  - `*תפקודית` (functional progression, transfers, mobility, ADL improvement/regression)
-  - `*כלייתי` (AKI/CKD trajectory, drug-related toxicity, hydration)
-  - `*לבבי` (HF, arrhythmia, surgical timing)
-  - `*לחץ דם` (HTN management, drug changes)
-  - `*בצקת` (volume status, diuretic titration)
-  - `*נשימתי` (O2, pneumonia, OSA, secretions)
-  - `*נוירולוגית` (post-stroke deficits, cognition, seizure, spasticity)
-  - `*כאב` (pain control, opiates, paracetamol scheduled)
-  - `*שתן` (retention, catheter, UTI, catheter trial)
-  - `*מטבולית` (electrolytes, glucose, nutrition labs)
-  - `*פצע` (wound, VAC, dressing, healing)
-  - `*עצירות` (constipation, BM tracking, laxative regimen)
-  - `*שינה` (sleep, delirium, agitation, melatonin)
-  - `*תזונתי` (intake, weight trend, supplements, dietitian)
-  - `*פסיכולוגית` (mood, motivation, family dynamics)
-- `P לביצוע` mirrors the active problems with explicit timing (`היום` / `לפני המנה הבאה מחר בבוקר` / `יומיומית` / `בערב`)
-- Lab values inline in `O` (`קראטינין 1.3, BUN 37`), not in `A`
-
-### תוכנית טיפול (יעדי טיפול) — goal by indication, not template inertia
-
-This field is the institutional rehab discharge-planning text. It has TWO logical components:
-
-1. **Case header** — short narrative summarizing primary rehab indication. Carries forward.
-2. **Functional target** — the actual SMART goal. Set on day 1 if indication permits; updated post team-meeting.
-
-**Anti-pattern observed across SZMC rehab notes (don't copy):** the same frozen string ("שיקום לאחר CVA פרונטוטמפורלי מימין. מוקדם מדי לקבוע מטרה") gets pasted into every round from day 0 through day 18+, even after the team has clearly moved past the "too early to set a goal" phase. This is template inertia, not a goal.
-
-**Goal by indication — concrete from day 1 except for CVA:**
-
-| Indication | Day-1 goal | Notes |
-|---|---|---|
-| Post-hip / knee replacement | `בן/בת X לאחר [procedure]. מטרה לעצמאות בניידות ובשרותים.` | Often add: `חזרה הביתה עם הליכון` |
-| Post-spine surgery (decompression / fusion) | `בן/בת X לאחר [procedure]. מטרה לעצמאות במעברים והליכה עם עזרים.` | Specify weight-bearing restrictions |
-| Pre-cardiac surgery (CABG / valve) | `בן/בת X לקראת ניתוח [procedure] בעוד [N] שבועות. מטרה לחיזוק תפקודי טרום-ניתוחי.` | Date the planned procedure |
-| Post-acute deconditioning (post-pneumonia, post-sepsis) | `בן/בת X לאחר אשפוז ב[ward] עם [event]. מטרה לחזרה לתפקוד בסיסי לפני האשפוז.` | Anchor to pre-admission ADL |
-| Post-fracture without surgery | `בן/בת X לאחר [fracture site]. מטרה לעצמאות בניידות בהתאם להוראות אורתופדיה.` | Include weight-bearing status |
-| Post-CVA | `שיקום לאחר CVA [territory]. מוקדם מדי לקבוע מטרה.` | **Legitimately deferred** for first 3-5 days. Update after team meeting (~day 5-7) with destination + functional milestones + timeline. |
-
-**Day-7 goal update template (post team meeting, all indications):**
-
-```
-[case header]. יעד: שחרור [destination] עד תאריך [DD/MM].
-אבני דרך: [milestone 1], [milestone 2], [milestone 3].
-```
-
-Example:
-```
-בן 77 לאחר ORIF של שבר בירך שמאל. יעד: שחרור הביתה עם תמיכה משפחתית עד תאריך 25/05.
-אבני דרך: עצמאי במעבר מיטה→כסא, הליכה 30 מטר עם הליכון, עצמאי בשרותים.
-```
-
-**The rule:** if a patient is on day 7+ and the goal still says "מוקדם מדי לקבוע מטרה" with no team-meeting update, that's a chart-quality problem worth fixing in the geriatric analysis (chat-only) — even if the institutional culture tolerates it.
-
-### Rehab admission cadence and team workflow
-
-- **Day 0:** rehab admission note (this skill, rehab-admission mode) + on-arrival exam
-- **Day 0–1:** PT, OT, dietitian, SLT (if relevant) write their **intake** notes (richer than follow-ups; carry pre-admission baseline + scoring instruments). Doctor does NOT recreate this content — references it.
-- **Day 1–4:** baseline assessment phase. תוכנית טיפול goal stays as `מוקדם מדי לקבוע מטרה`.
-- **Day 5–7 (typical):** ישיבת צוות (team meeting) — multidisciplinary; sets discharge plan + goals. Round note that day or the next should reflect updated target.
-- **Daily M–F:** doctor writes ביקור רופא (this skill, rehab-rounds mode). Format = Pattern A or B based on complexity.
-- **Discharge:** rehab-specific סיכום אשפוז (separate format — TBD, send Eias an example to extend the skill).
-
-### Allied health intake → doctor's note (read-only)
-
-The **PT, OT, dietitian, and SLT intake notes** are the source of truth for:
-
-| Data | Lives in |
-|---|---|
-| Pre-admission ADL/IADL baseline | OT intake (`ייעוץ ריפוי בעיסוק`) |
-| Cognitive screen (MOCA, MMSE) | OT intake or psych intake |
-| Caloric/protein targets | Dietitian intake (`ייעוץ תזונה`) |
-| Functional grade per limb (e.g., 4/5 IP left, 5/5 right) | PT intake (`ייעוץ פיזיותרפיה`) |
-| Swallowing assessment / IDDSI level | SLT intake (`ייעוץ שמיעה ודיבור`) |
-| Pre-admission falls history | OT intake |
-| Family/caregiver context | OT or psych intake |
-
-**Doctor's notes reference but do not recreate.** If a one-line functional summary is needed in the rehab admission's `# תפקוד` or in the daily round's `A` section, paraphrase or pull a single key number — don't restate the full intake.
-
-### Rehab notes — what NOT to write
-
-- ❌ Do NOT take a fresh history in the rehab admission. The source department already did.
-- ❌ Do NOT recreate PT/OT/dietitian intake content in the doctor's narrative.
-- ❌ Do NOT use a fresh `# headers` problem-list discussion in the rehab admission (that's discharge format). The rehab admission's `דיון ותוכנית` is short by design.
-- ❌ Do NOT auto-add Beers/STOPP/START blocks to daily rounds. Med deprescribing decisions go inline in `*` bullets when actually changing a med, not as a standalone section.
-- ❌ Do NOT update the תוכנית טיפול goal silently — if the team meeting hasn't happened yet, leave it as `מוקדם מדי לקבוע מטרה`.
-
-### Rehab clinical pearls — high-impact gotchas
-
-These are clinical decisions that come up repeatedly on geri-rehab and where the institutional default is wrong or risky. Catch them on day 1 — that's when corrections are cheap.
-
-**1. Audit the source department's clinical claims before propagating.**
-
-The acute team's discharge dictation will contain medication interpretations, lab interpretations, and recommendations that you'll be tempted to copy into your rehab admission's מחלה נוכחית. Don't propagate without reading. Two real failure modes seen:
-
-- *Vitamin D 20 ng/ml labeled as "maintenance therapy"* (PATIENT 13/04) — D 20 is **insufficiency** (sufficiency starts ~30 ng/ml), not maintenance. Calling it maintenance and proceeding to bisphosphonate creates a pharmacological hazard.
-- *"Continue Aclasta in discharge" in an ESKD patient* (PATIENT 03/05) — bisphosphonates in HD are not a default; need CKD-MBD workup and nephro+endo consultation first.
-
-**2. CKD-MBD vs osteoporosis — bisphosphonate trap in ESKD/HD patients.**
-
-A low-trauma fracture in an ESKD/HD patient is **not** classic osteoporosis. It's a mixed picture of renal osteodystrophy + secondary hyperparathyroidism + Vit D / Ca / P derangement. KDIGO guidelines treat CKD-MBD distinctly from osteoporosis. Bisphosphonate (especially zoledronate) in HD risks symptomatic hypocalcemia post-infusion, atypical femur fractures, and accumulation. The right sequence on day 1:
-
-1. Order full CKD-MBD workup: 25(OH)D, PTH, Ca (corrected), P, ALP, albumin
-2. Replete Vit D first if <30 ng/ml — loading dose then maintenance
-3. Verify Ca, P, PTH targets per KDIGO before any bisphosphonate
-4. **Consult nephrology AND endocrinology** before initiating
-5. Document the workup plan in P, do not write "Aclasta in discharge" on day 1
-
-If the source team recommended bisphosphonate, push back as a question in your A bullet (`*עצמות - מהלך מורכב יותר ב-ESKD מקלאסי OP, נשלים CKD-MBD לפני`) rather than direct contradiction.
-
-**3. Demographics cross-check on day 1 capsule.**
-
-Marital status, parent count, living situation get propagated from your day-1 capsule into every subsequent note for the next month. The PATIENT 13/04 note had `אלמנה ואם ל-2` while admission said `רווקה / אם ל-5` — chart corruption that propagated. Cross-check the admission הצגת החולה verbatim before writing the capsule. If the admission field is blank or ambiguous, write it as you confirmed at bedside, not as you assumed.
-
-**4. Dizziness or pre-syncope during PT is a clinical event, not an anecdote.**
-
-When a PT note describes a "near-fall" or "dizziness" or "needed extra support to stabilize" during ambulation, that's a clinical event that goes in `A` as its own bullet, not buried in `*תפקודית`. In a geri-rehab patient on multiple antihypertensives + neuropathic agents + insulin, the differential is: orthostatic hypotension (HD-related, drug-related), arrhythmia, hypoglycemia, anemia, vasovagal. Workup before more aggressive PT:
-
-- Orthostatic vitals (lying → standing, 1 min and 3 min)
-- ECG with rhythm strip; consider 24h telemetry if frequent APBs/PVCs
-- Glucose monitoring
-- Hb if not recent
-- Medication review for orthostatic offenders (alpha-blockers, ACE-i, diuretics, gabapentinoids)
-
-**5. Pre-admission falls + in-rehab near-falls → connect them.**
-
-Geri-rehab admissions for fracture often have a fall as the precipitating event. If the PRE-admission fall and an IN-rehab near-fall both happen, treat them as a syndrome to investigate, not two unrelated events. The PATIENT case: scooter fall on 22/04 with weakness, near-fall in PT on 03/05 — both should be in the same bullet with the same workup.
-
-**6. Iatrogenically deprescribed antidepressants in HD patients.**
-
-A common pattern: SSRIs stopped on admission for renal disease, never restarted. The patient is now starting a month of rehab where motivation and participation determine outcome. Day 1 is the right time to re-raise. Sertraline at low dose or mirtazapine at night are both reasonable in HD. Don't wait until day 14 when the patient isn't engaging with PT.
-
-**7. Pre-syncope during PT requires PT communication, not just chart documentation.**
-
-If you write `*אירוע פרה-סינקופלי` and order workup, also tell the PT in person to scale back intensity until cleared. The chart bullet doesn't reach them in real time.
-
-**8. Aspirin without documented CAD indication in a fall-risk patient.**
-
-Common finding on admission med review: aspirin 100mg with no CAD/CVA documented in chart, in a patient with Hb<10, recent fracture, fall history, ± fistula. Don't hold day 1 unless bleeding, but flag for review and document the absent indication. Same logic as STOPP-START but framed as a question, not a directive.
-
-**9. Polypharmacy flag on day 1 — but as questions, not directives.**
-
-The admission med list often has 10+ meds with unclear current indication. Day-1 review is the right time, but frame as `*תרופות - לבדוק אינדיקציה ל-ASPIRIN, רוויה ל-PREGABALIN לכאב ניורופתי, רלוונטיות של AMLODIPINE לאחר שינויי ל"ד מאז הניתוח` — not "stop X." The treating team has context the chart doesn't show.
-
-**10. Discharge planning starts day 1, not week 4.**
-
-For any patient living alone in a high-floor apartment (PATIENT: floor 5; PATIENT: floor 1 no elevator), day-1 social work referral is appropriate. Discharge to "home alone" for a fresh post-op patient with falls history is rarely viable; surfacing the constraint on day 1 lets the family/social work plan in parallel with the rehab clinical course.
+Full rehab logic — rehab admission inheritance pattern, the three-pattern daily round (FIRST-DAY / STABLE / COMPLEX), rehab discharge (סיכום אשפוז שיקומי), the complex-medical rehab-discharge checklist, and the rehab clinical pearls — lives in **`REHAB_NOTES.md`** (sibling of this file). **When the task is a rehab admission (קבלת שיקום), a rehab daily round (ביקור רופא), or a rehab discharge (סיכום אשפוז שיקומי), read `REHAB_NOTES.md` in full before writing.** For bedside speed during rounds, the `rehab-quickref` skill remains the companion quickref.
 
 ---
 
@@ -869,16 +544,16 @@ Corrected Ca = measured Ca + 0.8 × (4.0 − albumin)
 - Worked example: Ca 11.2, Albumin 3.0 → Corrected = 11.2 + 0.8×(4.0−3.0) = **12.0**
 - Always show the math impact when the corrected value crosses a clinically meaningful threshold (e.g., raw appears stable but corrected is rising)
 
-### NO L/H suffixes
+### Labs — RAW VALUES ONLY, no interpretation (Eias 04/06/26)
 
-Lab printouts use `H` and `L` suffixes (`11.3 H`, `3.0 L`). **Strip these.** Use Hebrew parens instead:
+Report lab values exactly as the number. **Do NOT interpret anywhere** — no `H`/`L` suffix from the printout, no `(מעל הנורמה)`/`(מתחת לנורמה)` parens, no "high"/"low"/"above"/"below" words. The clinician reading the note interprets; the note reports the figure. This applies in every note type and in chat.
 
 | ❌ NEVER | ✅ Always |
 |---|---|
-| `Ca 11.3 H` | `Ca 11.3 (מעל הנורמה)` |
-| `Albumin 3.0 L` | `אלבומין 3.0 (מתחת לנורמה)` |
+| `Ca 11.3 H` | `Ca 11.3` |
+| `אשלגן 5.6 (מעל הנורמה)` | `אשלגן 5.6` |
+| `Albumin 3.0 (מתחת לנורמה)` | `אלבומין 3.0` |
 | `eGFR 68 L` | (omit eGFR — covered by Cr) |
-| `↑` `↓` arrows | spell out `מעל / מתחת לנורמה` |
 
 ### בדיקות עזר section — what to strip
 
@@ -1022,6 +697,34 @@ DD/MM/YY
 
 ---
 
+## PRE-DELIVERY SELF-CHECK — SKELETON SECTIONS ARE NOT DELIVERY
+
+**No skeleton sections.** Every copy block must ship as real prose. A block whose lines are bare topic-words or contain a `[...]` bracket placeholder is **not done** — it is an empty section, regardless of character count. Char-count is not verification.
+
+### Lines that count as "empty"
+
+- Bare section headers stacked vertically: `מצב כללי` / `לב` / `ריאות` / `בטן` (a list of headings a section *would have* is a scaffold, not the section itself)
+- `*תפקודית` / `*תרופתית` followed by nothing
+- `[fill from nursing chart]` / `[bedside]` / any `[…]` bracket placeholder
+- A whole block like `שינה / תאבון / כאב` with no values
+
+### Acceptable
+
+Conventional exam defaults (`לב - קצב סדיר, ללא איוושות`, `ריאות - אוורור תקין דו"צ`) for the physician to confirm at bedside are legitimate note-drafting. Inventing specific *measured* numbers (a BP, a pulse, an O₂ sat) is not — when a measured value is genuinely missing, the honest line (`סימנים חיוניים - להשלים מגיליון הסיעוד של היום`) plus a flag in the team-flags box beats both fabrication and bare scaffold.
+
+### Self-check checklist (run before HTML export)
+
+1. Read every copy block line-by-line, not by scrolling speed.
+2. For each line: does it carry actual clinical data (a value, an observation, a finding, a decision)?
+3. If a line is a bare header or placeholder: rewrite as real prose from the available docs (admission letter, AZMA orders, prior SOAPs, PT/OT notes) or replace with the explicit "complete from <source>" line.
+4. SOAP S/O/A in particular: if there's nothing real to say, write the honest "complete from bedside / nursing chart" line — never ship the bare scaffold.
+
+### Why this gate exists
+
+A four-line repeat complaint of "this section is empty" means the previous fix is wrong, not under-applied. When the user names section A but the empties are in S and O (or vice versa), the symptom is "something is empty" — widen the scan to *every* block before responding. Char-count silently passes every skeleton; line-by-line scan does not.
+
+---
+
 ## HTML EXPORT
 
 - `dir="rtl"`, `David, Calibri, sans-serif`, `white-space: pre-wrap`
@@ -1040,7 +743,7 @@ DD/MM/YY
 - [ ] Single `>` for med tapers in narrative (NOT in lab section)
 - [ ] No `>200`/`<50` — spelled out as `מעל`/`מתחת`
 - [ ] No `q8h`/`q6h` — spelled out `כל N שעות`
-- [ ] No `H`/`L` lab suffixes — use `(מעל הנורמה)` / `(מתחת לנורמה)` parens
+- [ ] **Labs RAW VALUES ONLY — no interpretation**: no `H`/`L` suffix, no `(מעל/מתחת לנורמה)`, no high/low words
 - [ ] No trailing `?` in prose — only `(?)` as plan uncertainty marker
 - [ ] Drug recommendations as drug card (2-3 lines), no mixed English-Hebrew-English
 - [ ] Dates as `DD/MM/YY`
@@ -1055,7 +758,7 @@ DD/MM/YY
 - [ ] הצגת החולה is a **single line**, not a paragraph
 - [ ] תרופות בבית sits AFTER בדיקה גופנית (auto sidebar) — Title Case, don't force ALL-CAPS
 - [ ] **בדיקות עזר** holds cultures FIRST, then imaging, then procedures — **NEVER labs**. **NO doctor names, NO accession numbers, NO vial IDs/מספר בדיקה**. Date OK.
-- [ ] **בדיקות מעבדה** = categorized (ביוכימיה / מדדי דלקת / ספירת דם / גזים), prose trends ('בקבלה X, במהלך Y, בשחרור Z'), MAX 3 numbers/test, drop eGFR+BUN if Cr listed, **correct total Ca for albumin same-day**, NO L/H suffixes
+- [ ] **בדיקות מעבדה** = categorized (ביוכימיה / מדדי דלקת / ספירת דם / גזים), prose trends ('בקבלה X, במהלך Y, בשחרור Z'), MAX 3 numbers/test, drop eGFR+BUN if Cr listed, **correct total Ca for albumin same-day**, RAW VALUES ONLY (no L/H, no normal-range parens, no interpretation)
 - [ ] **מהלך ודיון opens with patient summary template** before any `#` header
 - [ ] # headers are **short and disease-focused**
 - [ ] **# טיפול יעדי only if documented decision** (not speculative)
@@ -1100,14 +803,22 @@ DD/MM/YY
 - [ ] Trend data (multi-admission Hb, Plt, BP) flagged when diagnostic — not just point-in-time numbers
 
 ### Rehab admission (קבלת שיקום)
-- [ ] **Inherits source-dept narrative** in מחלה נוכחית — does not retake history
-- [ ] On-arrival snapshot: vitals + 4-system exam (heart/lungs/abdomen/limbs) + neuro if post-CVA/post-spine
-- [ ] תלונה עיקרית = transfer reason, one line (`העברה ממחלקה X לצורך שיקום` or rehab-specific framing)
-- [ ] אבחנות פעילות = `ADMISSION FOR REHABILITATION` first, then primary rehab driver
-- [ ] תוכנית = `שיקום, המשך טיפול ומעקב` (short by design)
-- [ ] If complex (active ABX / post-op wound / pending procedure): brief `#` problem list before תוכנית
+- [ ] Header uses the **NEW rehab אשפוז number**, not the acute-stay number
+- [ ] **Inherits source-dept narrative** in מחלה נוכחית — does not retake history; when asked "as if admitted to [surgical dept]", HPI = the ortho course (fall→fracture→fixation→post-op→transfer), NOT the at-home story
+- [ ] **Did NOT propagate the source's "no PMH"** when the coded background contradicts it (coded list is often richer); discrepancy flagged
+- [ ] On-arrival snapshot uses the **admission-encounter bedside vitals, NOT the AZMA header**; + 4-system exam + neuro if post-CVA/post-spine
+- [ ] **בדיקות עזר** = dedicated section (ECG/CXR/CT/CTA/Doppler/ECHO, one line each, no specimen refs)
+- [ ] **Cross-checked the בדיקות עזר free-text panel for wrong-patient/template contamination** — foreign values flagged + cleared, never pasted
+- [ ] **בדיקות מעבדה** = dedicated section, raw values, prose trend, no specimen/accession IDs — filled, not blank
+- [ ] תלונה עיקרית = transfer reason, one line
+- [ ] אבחנות פעילות = `ADMISSION FOR REHABILITATION` + active acute only; surgery → ניתוחים בעבר; resolved/chronic → ברקע; **dx pulled from the CODED list, not the prose**
+- [ ] **תפקוד grid FILLED in full** from PT/OT (9 ADL 3-tier + מגורים/עזרה/ניידות-aid/התמצאות/הזנה); **floor/elevator reconciled across admission vs social-work** (discharge-critical); room/bed resolved; no "confirm" placeholders in body
+- [ ] **דיון OPENS with the synthesis capsule** (age + baseline + `רקע כמפורט מעלה` + ortho-for-surgery→transferred-for-rehab + pertinent on-arrival exam + pertinent latest imaging/labs) then `כעת מציגה את הבעיות הבאות לדיון:` + `#` list — NOT a bare `#` list; each `#` expands the reasoning (loading doses given, agent choice + why); no plan inside
+- [ ] **תוכנית** = separate final paragraph, ONE line per item; includes **drug-start/stop decisions with timing** and an **estimated suture/staple removal date by POD** (hip = POD 10–14, computed from surgery date)
+- [ ] **Medication orders to give/enter output in the SAME turn** — grouped קבוע/PRN/held; default = sending-dept AZMA active orders unless letter overrides; documented med recs implemented (add/reduce/stop/titrate)
+- [ ] **Terminology = real medical terms / inline English, not literal Hebrew calques** (שבר פתולוגי not שבר שבריריות; GERD; kyphoplasty; normocytic; neurogenic claudication)
+- [ ] Genuine unknowns / source contradictions live ONLY in the non-copy team-flags box
 - [ ] Does NOT recreate PT/OT/dietitian intake content (those are separate authored notes)
-- [ ] Active diagnoses include carryovers requiring follow-up (lung mass, adrenal adenoma, etc.) — surface them, don't bury in ברקע
 
 ### Rehab daily rounds (ביקור רופא)
 - [ ] All 5 SOAP headers underlined and present: S / O / A / P / תוכנית טיפול
@@ -1120,7 +831,7 @@ DD/MM/YY
 - [ ] **STABLE**: minimal A as 1-2 line synthesis; P often `המשך שיקום`
 - [ ] **COMPLEX**: each `A` bullet starts with `*[domain] - ` (אורתופדית / זיהומית / תפקודית / כלייתי / לבבי / לחץ דם / בצקת / נשימתי / נוירולוגית / כאב / שתן / מטבולית / פצע / עצירות / שינה / תזונתי / פסיכולוגית / עצמות)
 - [ ] **COMPLEX**: `P` has explicit timing per action (`היום` / `מחר בבוקר` / `יומיומית` / `לפני המנה הבאה`)
-- [ ] Lab values inline in `O`, not in `A`
+- [ ] Labs in their own `מעבדה:` section after O (date-stamped), **NOT in `O`**; a decision-driving value may also be cited inline in the relevant `A` bullet
 - [ ] Drug levels (Vanco, etc.) tracked when on those drugs — flag if missing
 - [ ] Daily weight noted in `P` if on diuretics
 - [ ] Dizziness / pre-syncope events get their own bullet, not buried in `*תפקודית`
@@ -1162,10 +873,4 @@ DD/MM/YY
 
 ## CHANGELOG
 
-- **2026-05-18**: Integration with the `azma-ui` skill (drift control). The AZMA EMR INTERPRETATION section hands off screenshot *decoding* (med-grid icons, `ניהול מחלקה` census columns, status icons, cell colours) to `azma-ui` — the single source of truth — and scopes itself to *interpretation* for note-writing. This skill must not restate AZMA icon/column/colour legends. No change to note output.
-- **2026-05-04 (rehab v2)**: Iterative refinement after PATIENT / PATIENT / PATIENT / PATIENT case calibration on the same day. **Major changes**: (1) **Three-pattern model** replaces two-pattern: FIRST-DAY (detailed regardless of complexity, capsule mandatory) / STABLE (subsequent, no acute issues) / COMPLEX (subsequent, ≥2 triggers). The day-1 SOAP is its own thing — it establishes the chart for the next month. Subsequent rounds drop the capsule and shrink. (2) **Patient capsule formula** added explicitly: `[age] [marital] [parents]. [living]. רקע רפואי כולל [chronic dx]. בבסיס [pre-admission ADL]. כעת לאחר [event] [date]. ביום N לאחר.` Cross-check demographics against admission (PATIENT 13/04 had wrong marital status + parent count — chart corruption). (3) **Goal-by-indication table** replaces the lazy `מוקדם מדי` default: post-hip/knee → `עצמאות בניידות ובשרותים`, post-spine → `עצמאות במעברים והליכה עם עזרים`, pre-cardiac → `חיזוק תפקודי לקראת ניתוח [date]`, post-deconditioning → `חזרה לתפקוד בסיסי`. `מוקדם מדי` legitimate only for CVA days 0-3. (4) **Focused exam by indication** added to FIRST-DAY: CVA→neuro+gait, hip/knee→wound+per-limb, spine→wound+motor+sensation+sphincter, pre-cardiac→murmur+JVP+edema, ESKD→fistula. (5) **Rehab clinical pearls** section added with 10 high-impact gotchas: source-dept claim audit (PATIENT's "Vit D 20 maintenance" was wrong), CKD-MBD vs osteoporosis bisphosphonate trap (PATIENT's "Aclasta in discharge" was unsafe in HD), demographics cross-check, dizziness during PT as clinical event not anecdote, pre-admission falls + in-rehab near-falls as connected syndrome, iatrogenically deprescribed SSRIs in HD, PT communication after pre-syncope, aspirin without CAD indication in fall-risk patient, polypharmacy as questions not directives, day-1 social work for high-floor-alone patients. (6) Quality checklist for rehab rounds expanded with three-pattern triage + 10 new items.
-- **2026-05-04 (rehab v1)**: **Rehab notes extension** added (PATIENT + PATIENT cases, 2026-04 transfer-to-rehab pattern). New section **REHAB NOTES — admission and daily rounds** covering: (1) **rehab-admission** mode — inheritance pattern from source dept (neurology/orthopedics/CTS/geri-mugbar), explicit do-not-retake-history rule, on-arrival snapshot as the only fresh content. (2) **rehab-rounds** mode — Pattern A (synthesis) vs Pattern B (problem-list `*` bullets with domain prefixes: אורתופדית/זיהומית/תפקודית/כלייתי/לבבי/לחץ דם/בצקת/נשימתי/נוירולוגית/כאב/שתן/מטבולית/פצע/עצירות/שינה/תזונתי/פסיכולוגית) selected by complexity triggers (IV ABX with levels, post-op wound, active diuresis, BP/glucose titration, AKI, pending procedure). (3) **תוכנית טיפול goal anti-pattern** flagged — institutional norm of leaving the field as `[case header]. מוקדם מדי לקבוע מטרה.` from day 0 to day 18+ is template inertia, not a goal. Should update post team meeting (~day 5–7) to a SMART target with destination + functional milestones + timeline. Flag in geriatric analysis if frozen past day 7. (4) **Allied health intake → doctor's note (read-only)** — PT/OT/dietitian/SLT intakes are the source of truth for pre-admission ADL/IADL, MOCA/MMSE, caloric targets, per-limb functional grading; doctor references but does not recreate. (5) Quality checklist updated with rehab-admission + rehab-rounds subsections. Cadence: daily M–F per patient regardless of complexity (Eias rehab rotation 2026-05). Frontmatter triggers expanded: "כתוב לי קבלת שיקום", "ביקור רופא", "rehab round", "daily round". *Note: superseded by v2 same-day — three-pattern model with FIRST-DAY pattern explicit.*
-- **2026-04-29**: PATIENT case calibration. **Major changes**: (1) **Admission תפקוד subsection format** specified explicitly — structured key:value lines with **3-tier ADL grading** (עצמאי / עזרה חלקית / עזרה מלאה) for each of הלבשה, רחצה, אכילה, הכנת אוכל, ניידות, ניידות בכ"ג, מעברים, שליטה על שתן, שליטה על יציאה. Plus: מגורים, עזרה, התמצאות, הזנה. (2) **NO MRS (Modified Rankin Scale) in admission templates** — it's not part of the standard SZMC admission ADL section. Use plain Hebrew (`סיעודי`, `מרותק למיטה`) for narrative severity. (3) New **AZMA EMR INTERPRETATION** section: med grid shows ACTIVE orders only; struck-through = held/discontinued; absent meds may be intentional clinical choices, not omissions. Frame critique as questions, not directives. (4) **Frailty-adjusted dosing** is a defensible decision frame — sub-therapeutic anticoag in bedbound demented patient with PUD/UGI bleed history is not automatically wrong. Apply guideline lens only after asking if frailty changes the risk/benefit. (5) Geriatric analysis section now flags trend-data importance — multi-admission Hb/Plt/BP trajectories are diagnostic in their own right (today's case: Hb 8→11 in 2018-2019 → 15.6 in 2022 → 19.4 in Jan 2026 → 18.7 Apr 2026 = unmasked PV after PUD bleeding resolved). (6) Quality checklist for ward admission notes adds: 3-tier ADL items, NO MRS, trend flagging.
-- **2026-04-28**: Print-verified discharge calibration on PATIENT case. **Major changes**: (1) Recommendations + drug list switched from numbered 1-N to **DASH list (-)** — easier to delete items without renumbering, EMR auto-numbers drug list anyway. (2) Active dx narrowed to **acute admit reason ONLY** (chronic conditions all go to ברקע); add `BLOOD TRANSFUSION X N units` if any units given. (3) ניתוחים באשפוז = NGT/urinary cath/PEG events only (skip peripheral IV). (4) מחלה נוכחית: field APPENDS to admission text — provide AUDITED admission paragraph for retro paste-over. (5) **Lab section overhaul**: categorized (ביוכימיה / מדדי דלקת / ספירת דם / גזים), prose trends with NO arrows ('בקבלה X, במהלך Y, בשחרור Z'), MAX 3 numbers/test, drop eGFR+BUN if Cr listed, correct total Ca for albumin same-day (`Cor = Ca + 0.8×(4-Alb)`), strip H/L suffixes use `(מעל/מתחת לנורמה)` parens. (6) בדיקות עזר: keep curated section, strip doctor names/accession numbers/vial IDs. (7) **מהלך ודיון opens with patient summary template** before any `#` ('בת X+הרקע→התקבלה בשל→במיון→מעבדה→ייעוצים→אושפזה→בקבלתה→הציגה הבעיות:'). (8) `# טיפול יעדי` only if documented decision, not speculative. (9) המלצות drop boilerplate ("פנייה למיון/הבא סיכום"). (10) Tx: always add `Water 400ml X3/d לפי צורך` for PEG; borderline home meds → PRN with `לפי החלטת רופא מטפל`, never deprescribe in print. (11) Eias signature: lic 000147224 baked in.
-- **2026-04-27**: Section order corrected based on PATIENT + PATIENT finalized discharges. Order is אבחנות פעילות → ניתוחים באשפוז → ברקע → הצגה → תלונה → מחלה נוכחית → רקע (with פרוט+אבחנות בעבר+ניתוחים) → רגישויות → הרגלים → בדיקה → תרופות בבית (auto sidebar) → בדיקות עזר (cultures→imaging, NEVER labs) → מעבדה (typed trends) → דיון → המלצות → תרופתי → auto → חתימה. Drug name casing rule clarified: ALL-CAPS in narrative only, Title Case in auto drug-list sections (don't fight Chameleon DB). Added RECOMMENDATION LENGTH GUARD (≤180 chars per bullet to avoid Chameleon mid-word truncation — verified failure in both finalized notes). Added SGLT2i-pending-cardiology pattern + active-diagnosis completeness check (Type 2 MI in septic shock, new HF phenotype, IDA workup, incidental CT findings).
-- **2026-04-20**: Major restructure based on PATIENT 20/04/26 final discharge. New printed-order section sequence (18 steps); רגישויות + תרופות בבית moved before narrative; בדיקות עזר promoted to discrete pre-narrative section; בדיקות מעבדה reduced to prose trends; PT/OT/dietician removed from main body (handled by separate Chameleon sub-tabs and PT auto-attach); המלצות + טיפול תרופתי standardized as numbered lists; glossary section removed; signature ordering corrected; added discharge-specific geriatric red-flag checklist (benzos after delirium, Apixaban dosing, Vit D restart, Mirtazapine reassessment, prophylactic ABX restart logic, ABX-culture narrowing).
+See **`CHANGELOG.md`** (sibling of this file) for full dev history. Not loaded at runtime.

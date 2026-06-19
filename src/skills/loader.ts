@@ -35,7 +35,11 @@ export type SkillName =
 //     available here so we patch the trigger instruction at sync time).
 const SKILL_FILES: Record<SkillName, string[]> = {
   'azma-ui': ['SKILL.md', 'AZMA_REFERENCE.md', 'azma_reference.json'],
-  'szmc-clinical-notes': ['SKILL.md'],
+  // REHAB_NOTES.md is pre-injected so the SKILL.md rehab stub resolves at
+  // runtime. CHANGELOG.md is intentionally NOT loaded — it's dev history,
+  // mirrored to disk by sync-skills.mjs but kept out of the model prompt
+  // (~21 KB / ~6k tokens it would otherwise add to every clinical-note turn).
+  'szmc-clinical-notes': ['SKILL.md', 'REHAB_NOTES.md'],
   'szmc-interesting-cases': ['SKILL.md'],
   'hebrew-medical-glossary': ['SKILL.md'],
   'geriatrics-knowledge': ['SKILL.md'],

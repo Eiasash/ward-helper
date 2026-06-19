@@ -27,7 +27,7 @@ import { join, resolve } from 'node:path';
  */
 const SKILL_FILES = {
   'azma-ui': ['SKILL.md', 'AZMA_REFERENCE.md', 'azma_reference.json'],
-  'szmc-clinical-notes': ['SKILL.md'],
+  'szmc-clinical-notes': ['SKILL.md', 'REHAB_NOTES.md', 'CHANGELOG.md'],
   'szmc-interesting-cases': ['SKILL.md'],
   'hebrew-medical-glossary': ['SKILL.md'],
   'geriatrics-knowledge': ['SKILL.md'],
