@@ -40,6 +40,7 @@
  */
 
 import type { ContinuityContext } from './continuity';
+import type { NoteType } from '@/storage/indexed';
 
 export type SoapMode =
   | 'general'
@@ -78,6 +79,27 @@ export function isRehabRoom(room: string | null | undefined): boolean {
  */
 export function isRehabMode(mode: SoapMode): boolean {
   return mode !== 'general';
+}
+
+/**
+ * Single source of truth for the loader gate's `isRehab` signal, per note type.
+ *
+ * Room-derived rehab (isRehabRoom) is flag-independent and applies to EVERY
+ * note type — a genuine rehab-ward admission/discharge/consult/round loads
+ * REHAB_NOTES.md. The MANUAL rehab-* override (isRehabMode) is honored ONLY for
+ * soap, because that is the only note type whose prompt prefix actually emits
+ * the matching rehab augmentation (buildPromptPrefix ignores soapMode for
+ * admission/discharge/consult). Honoring the override for non-soap notes would
+ * load REHAB_NOTES.md with no matching prefix — the exact rehab-bleed this gate
+ * exists to prevent — whenever a stale rehab choice persists for the patient
+ * (loadModeChoice is keyed on hashed tz and survives across note types).
+ */
+export function deriveIsRehab(
+  noteType: NoteType,
+  room: string | null | undefined,
+  soapMode: SoapMode,
+): boolean {
+  return isRehabRoom(room) || (noteType === 'soap' && isRehabMode(soapMode));
 }
 
 /**

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { loadSkill, loadSkills, clearSkillCache } from '@/skills/loader';
-import { isRehabRoom, isRehabMode } from '@/notes/soapMode';
+import { isRehabRoom, isRehabMode, deriveIsRehab } from '@/notes/soapMode';
 
 /**
  * Runtime conditional-load gate (loader.ts). REHAB_NOTES.md must load only
@@ -131,5 +131,34 @@ describe('loader conditional-load gate — REHAB_NOTES.md', () => {
     expect(isRehabMode('rehab-FIRST')).toBe(true);
     expect(isRehabMode('rehab-HD-COMPLEX')).toBe(true);
     expect(isRehabMode('general')).toBe(false);
+  });
+});
+
+
+describe('deriveIsRehab — override scoped to soap (no rehab-bleed into general notes)', () => {
+  it('rehab room loads for every note type (room signal is flag-independent)', () => {
+    for (const nt of ['admission', 'discharge', 'consult', 'soap'] as const) {
+      expect(deriveIsRehab(nt, 'שיקום ב', 'general'), nt).toBe(true);
+    }
+  });
+
+  it('rehab daily round (soap) honors a manual rehab override even with a blank/numeric room', () => {
+    expect(deriveIsRehab('soap', '12A', 'rehab-STABLE')).toBe(true);
+    expect(deriveIsRehab('soap', null, 'rehab-FIRST')).toBe(true);
+  });
+
+  it('REGRESSION: a persisted rehab override must NOT load REHAB on a general admission/discharge/consult', () => {
+    // Non-rehab room + stale rehab-* choice (loadModeChoice is keyed on hashed
+    // tz and survives across note types). Pre-fix this returned true and bled
+    // REHAB_NOTES.md into general notes — the bug the gate exists to kill.
+    for (const nt of ['admission', 'discharge', 'consult'] as const) {
+      expect(deriveIsRehab(nt, '12A', 'rehab-STABLE'), nt).toBe(false);
+      expect(deriveIsRehab(nt, null, 'rehab-HD-COMPLEX'), nt).toBe(false);
+    }
+  });
+
+  it('general mode never opens the gate on its own', () => {
+    expect(deriveIsRehab('soap', '12A', 'general')).toBe(false);
+    expect(deriveIsRehab('admission', null, 'general')).toBe(false);
   });
 });

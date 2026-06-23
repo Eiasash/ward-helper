@@ -56,9 +56,11 @@ export interface LoadContext {
 interface SkillFile {
   name: string;
   /**
-   * Load predicate. Absent → always load. When a LoadContext is provided,
-   * `when(ctx)` decides; when no ctx is provided at all, predicates are
-   * skipped and every file loads (back-compat for ungated callers).
+   * Load predicate. Absent → always load. When `when` is present it is
+   * evaluated against the LoadContext; a missing context is treated as the
+   * EMPTY context ({}), so a gated unit (e.g. REHAB_NOTES.md, which requires
+   * isRehab===true) does NOT load for a contextless caller — only units with
+   * no `when` load unconditionally. See resolveFiles.
    */
   when?: (ctx: LoadContext) => boolean;
 }

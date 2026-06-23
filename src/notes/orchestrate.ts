@@ -4,7 +4,7 @@ import type { LoadContext } from '@/skills/loader';
 import { wrapForChameleon } from '@/i18n/bidi';
 import { NOTE_SKILL_MAP } from './templates';
 import { rehabAugmentation } from './rehabPrompts';
-import { isRehabRoom, isRehabMode } from './soapMode';
+import { deriveIsRehab } from './soapMode';
 import type { SoapMode } from './soapMode';
 import type { ParseResult } from '@/agent/tools';
 import type { NoteType } from '@/storage/indexed';
@@ -666,18 +666,17 @@ export async function generateNote(
   assertExtractIsSafe(noteType, validated);
 
   const skills = NOTE_SKILL_MAP[noteType];
-  // Conditional-load gate context. isRehab is room-derived (single source:
-  // soapMode.isRehabRoom → REHAB_ROOM_RE), so REHAB_NOTES.md loads only for a
-  // rehab note and is suppressed on general admission/discharge/consult — and
-  // is now reachable on a rehab daily round (SOAP) without dragging in the
-  // admission/discharge/consult templates. Flag-independent by design.
+  // Conditional-load gate context. isRehab is computed by deriveIsRehab
+  // (single source, shared with the loader's gate): room-derived rehab applies
+  // to every note type, while a MANUAL rehab-* SOAP override is honored only
+  // for soap — the one note type whose prompt prefix emits matching rehab
+  // content. This stops a stale persisted rehab choice (keyed on hashed tz,
+  // surviving across note types) from bleeding REHAB_NOTES.md into a general
+  // admission/discharge/consult; a genuine rehab-ward admission still loads it
+  // via the room signal. Flag-independent by design.
   const loadCtx: LoadContext = {
     noteType,
-    // Room-derived (flag-independent) OR a manual rehab-* SOAP override — so a
-    // blank/numeric-room patient with a manual rehab pick still loads
-    // REHAB_NOTES.md, matching the rehab SOAP augmentation buildPromptPrefix
-    // emits (no split-brain between prompt and loaded files).
-    isRehab: isRehabRoom(validated.fields.room) || isRehabMode(soapMode),
+    isRehab: deriveIsRehab(noteType, validated.fields.room, soapMode),
   };
   const skillContent = await loadSkills([...skills], loadCtx);
 
