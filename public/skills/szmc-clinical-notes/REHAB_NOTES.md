@@ -303,7 +303,7 @@ Example:
 - **Day 0–1:** PT, OT, dietitian, SLT (if relevant) write their **intake** notes (richer than follow-ups; carry pre-admission baseline + scoring instruments). Doctor does NOT recreate this content — references it.
 - **Day 1–4:** baseline assessment phase. תוכנית טיפול goal stays as `מוקדם מדי לקבוע מטרה`.
 - **Day 5–7 (typical):** ישיבת צוות (team meeting) — multidisciplinary; sets discharge plan + goals. Round note that day or the next should reflect updated target.
-- **Daily M–F:** doctor writes ביקור רופא (this skill, rehab-rounds mode). Format = Pattern A or B based on complexity.
+- **Daily M–F:** doctor writes ביקור רופא (this skill, rehab-rounds mode). Format = the **FIRST-DAY / STABLE / COMPLEX** triage (the first round SOAP of the admission is FIRST-DAY, written once; every subsequent round is STABLE vs COMPLEX by active-complexity triggers — see the daily-round patterns below).
 - **Discharge:** rehab-specific סיכום אשפוז — see **"Rehab discharge (סיכום אשפוז שיקומי)"** below. Its מהלך ודיון uses a `#`-prefixed problem list (parity with the admission), placed after the מצב תפקודי template; the blocks unique to the discharge are kept too — functional-baseline + the מצב תפקודי template + the `*` בעיות אחרות incidental list + לסיכום.
 
 ### Rehab discharge (סיכום אשפוז שיקומי) — **per the index case 08/06/26 print**
@@ -314,9 +314,11 @@ The rehab discharge uses the **same printed-section skeleton** as the general di
 The acute diagnosis is already closed (it lives in the source-dept discharge). Active dx here is:
 ```
 ADMISSION FOR REHABILITATION
-DECONDITIONING
+[DECONDITIONING — medical-decline / immobility admissions ONLY; suppressed for ortho post-op — see gate below]
 [+ any still-active carrier/isolation status, e.g. CARBAPENEM RESISTANT KLEBSIELLA PNEUMONIAE (CRKP) CARRIER, NON CPE]
 ```
+
+**`DECONDITIONING` gate:** list `DECONDITIONING` only for true deconditioning / medical-decline admissions (the long-ICU "the deconditioning exemplar" pattern). **Ortho post-op is NEVER deconditioning — all cases, no exceptions** (post-surgical non-weight-bearing weakness is a distinct mechanism from immobility-driven deconditioning). For any ortho post-op rehab, suppress the deconditioning frame and lead with `STATUS POST [procedure] (date)` instead — append an indication only when there is one (`- [fracture]` for a fragility-fracture case; elective THA/TKA or decompression/fusion carry no fracture, so omit it) (see Ortho-rehab specifics below).
 Isolation/carrier status that is still in effect at discharge **must** appear as an active dx and be repeated in the body (with the until-date) — it governs the next facility/home arrangement. (the index case: CRKP non-CPE, last positive 27/04, isolation until 10/2026 = 6 months.)
 
 **Delta 2 — מחלה נוכחית is the inherited acute story, audited.**
@@ -343,6 +345,7 @@ The rehab admission appended the source-dept course; at discharge you output the
 FUNCTIONAL INDEPENDENCE MEASURE מוטורי בבית (לפני האשפוז) __/91, בקבלתו לשיקום __/91, ובשחרור __/91.
 FUNCTIONAL INDEPENDENCE MEASURE קוגניטיבי __/35.
 ```
+   - **Cognitive line — MMSE *or* MoCA, never both; the copy block above shows the MMSE form.** For a MoCA-only patient, replace that first line with the clean Hebrew `מצב תפקודי: במבחן "מוקה" המטופל קיבל __ מתוך 30 נקודות.` and drop the ציור שעון clause (MoCA has no separate clock companion). Use whichever screen was actually administered (see the אומדנים note below). Keep English selector/instruction text out of the copied Hebrew sentence.
    - **Grade words = the FIM score rendered as Hebrew (Eias 08/06/26) — do NOT free-hand them.** Conversion:
 
      | FIM | grade | | FIM | grade |
@@ -389,7 +392,7 @@ FUNCTIONAL INDEPENDENCE MEASURE קוגניטיבי __/35.
 - **בדיקות מעבדה: essentials only.** Biochem (Na trend, Ca, Cr, Vit D) + CBC (Hb trend, WBC trend). **Drop normal coags/INR** unless anticoagulation-relevant. Max 3 values/line, raw numbers, no interpretation.
 
 **Ortho-rehab specifics (the femur exemplar femur case, 08/06/26 — the cleaner ortho exemplar vs the deconditioning exemplar's deconditioning case):**
-- **Active dx** = `ADMISSION FOR REHABILITATION` + `STATUS POST [procedure] - [fracture] (date)` + any other fractures. **NOT `DECONDITIONING`** — that's for the long-ICU/medical-decline case (the deconditioning exemplar), not a clean post-op ortho.
+- **Active dx** = `ADMISSION FOR REHABILITATION` + `STATUS POST [procedure] (date)` (append `- [fracture]` only for a fracture case — the the femur exemplar femur exemplar; elective THA/TKA or spine decompression/fusion carry no fracture, so omit it) + any other fractures if present. **NEVER `DECONDITIONING` — all ortho post-op, no exceptions** (post-surgical non-weight-bearing weakness ≠ immobility-driven deconditioning); `DECONDITIONING` is reserved for the long-ICU / medical-decline case (the deconditioning exemplar).
 - **ניתוחים באשפוז = procedures during the REHAB stay only** (usually none). The index surgery (CRIF/ORIF/hemi) belongs in מחלה נוכחית and the operative-dx line — not in ניתוחים באשפוז, which would wrongly imply it happened this admission.
 - **בעיות אחרות for ortho-rehab** typically: vertebral/other fractures on conservative management; **DVT prophylaxis with its stop date** (LMWH ~1 month post-op — e.g. ENOXAPARIN/CRUSIA); post-op anemia trend (no transfusion); low Vit D; incidental imaging findings needing community follow-up.
 - **Geri-analysis pearls for the chat (not the note):**
