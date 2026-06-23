@@ -4,9 +4,10 @@ description: >
   Generate professional SZMC ward clinical notes in exact institutional format.
   PRIMARY: geriatric/internal medicine admission (קבלה רפואית), discharge
   (סיכום שחרור / סיכום אשפוז), consultation letters (ייעוץ), rehab admission
-  (קבלת שיקום), and rehab daily rounds (ביקור רופא בשיקום). Secondary: ED
-  discharge. Trigger on: "כתוב לי קבלה", "כתוב סיכום שחרור", "ייעוץ", "קבלת
-  שיקום", "ביקור רופא", "rehab round", "daily round", "draft a note", or
+  (קבלת שיקום), rehab daily rounds (ביקור רופא בשיקום), and rehab discharge
+  (סיכום אשפוז שיקומי). Secondary: ED discharge. Trigger on: "כתוב לי קבלה",
+  "כתוב סיכום שחרור", "ייעוץ", "קבלת שיקום", "ביקור רופא", "rehab round",
+  "daily round", "סיכום אשפוז שיקומי", "rehab discharge", "draft a note", or
   patient data upload. Auto-runs geriatric pharm analysis for ward notes.
   Generates HTML export for Chameleon EMR paste.
 ---
@@ -227,7 +228,10 @@ Never append a "מילון מונחים" / glossary to discharge notes. If a ter
 ## WORKFLOW
 
 1. Collect patient data
-2. Determine note type (ward admission / discharge / consult / ED)
+2. **Determine note type — then apply the REHAB_NOTES.md load gate.**
+   - Note types: ward admission (קבלה) / discharge (סיכום אשפוז) / consult (ייעוץ) / ED discharge / **rehab admission (קבלת שיקום)** / **rehab daily round (ביקור רופא)** / **rehab discharge (סיכום אשפוז שיקומי)**.
+   - **LOAD GATE — read `REHAB_NOTES.md` (the ~48KB sibling) if and ONLY if the note being written is one of the three rehab *types*: rehab admission (קבלת שיקום), rehab daily round (ביקור רופא / daily round for a patient already on the rehab ward), or rehab discharge (סיכום אשפוז שיקומי — including a generic `סיכום אשפוז` when the patient's current ward is rehab).** Any one of the three OPENS the gate on its own — including a bare `ביקור רופא` / `daily round`, or a generic `סיכום אשפוז`, for a patient **currently on the rehab ward**, even when the word שיקום/rehab does not appear. When open, read it **in full before drafting**.
+   - **Gate CLOSED for every non-rehab note (plain admission, discharge, consult, ED): do NOT read `REHAB_NOTES.md`** — this includes a plain acute discharge whose *disposition* is rehab (a transfer-*to*-rehab plan from an acute ward is not a rehab note; contrast a discharge **of** a patient already on the rehab ward, which IS a rehab discharge — gate open per above). The gate keys on the note **type** and the patient's **current ward**, not on whether the word שיקום/rehab appears; loading it into a non-rehab note only adds latency plus bleed-in risk (rehab functional templates leaking in).
 3. Search project knowledge for drug dosing, DAG antibiotics, guidelines
 4. Draft note in plain text, section by section in **printed-output order** (see below)
 5. Run geriatric analysis (ward notes only, show in chat AFTER note, NOT in HTML)
@@ -385,7 +389,7 @@ Don't fight Chameleon's auto-format on the drug-list sections. Only force ALL-CA
 
 ## REHAB NOTES — admission and daily rounds
 
-Full rehab logic — rehab admission inheritance pattern, the three-pattern daily round (FIRST-DAY / STABLE / COMPLEX), rehab discharge (סיכום אשפוז שיקומי), the complex-medical rehab-discharge checklist, and the rehab clinical pearls — lives in **`REHAB_NOTES.md`** (sibling of this file). **When the task is a rehab admission (קבלת שיקום), a rehab daily round (ביקור רופא), or a rehab discharge (סיכום אשפוז שיקומי), read `REHAB_NOTES.md` in full before writing.** For bedside speed during rounds, the `rehab-quickref` skill remains the companion quickref.
+Full rehab logic — rehab admission inheritance pattern, the three-pattern daily round (FIRST-DAY / STABLE / COMPLEX), rehab discharge (סיכום אשפוז שיקומי), the complex-medical rehab-discharge checklist, and the rehab clinical pearls — lives in **`REHAB_NOTES.md`** (sibling of this file). **Load it per the WORKFLOW LOAD GATE (step 2): read `REHAB_NOTES.md` in full before writing for a rehab admission (קבלת שיקום), rehab daily round (ביקור רופא), or rehab discharge (סיכום אשפוז שיקומי) — and not at all for any non-rehab note.** For bedside speed during rounds, the `rehab-quickref` skill remains the companion quickref.
 
 ---
 
@@ -544,9 +548,11 @@ Corrected Ca = measured Ca + 0.8 × (4.0 − albumin)
 - Worked example: Ca 11.2, Albumin 3.0 → Corrected = 11.2 + 0.8×(4.0−3.0) = **12.0**
 - Always show the math impact when the corrected value crosses a clinically meaningful threshold (e.g., raw appears stable but corrected is rising)
 
-### Labs — RAW VALUES ONLY, no interpretation (Eias 04/06/26)
+### Labs — RAW VALUES ONLY in the note; strip H/L & range-parens everywhere (Eias 04/06/26, scoped 06/23/26)
 
-Report lab values exactly as the number. **Do NOT interpret anywhere** — no `H`/`L` suffix from the printout, no `(מעל הנורמה)`/`(מתחת לנורמה)` parens, no "high"/"low"/"above"/"below" words. The clinician reading the note interprets; the note reports the figure. This applies in every note type and in chat.
+Report lab values exactly as the number. **In the note's lab reporting, do NOT interpret** — no `H`/`L` suffix from the printout, no `(מעל הנורמה)`/`(מתחת לנורמה)` parens, no "high"/"low"/"above"/"below" words on the figure. The clinician reading the note interprets; the note reports the figure.
+
+**Scope (Eias 06/23/26):** this is a *lab-value-rendering* rule, not a gag on clinical reasoning. The chat / geriatric-pharm-analysis path MAY still interpret and flag clinically dangerous labs in prose (hyperkalemia, AKI, rising CRP, etc.) — that safety function is intended. But **even in chat, never echo the printout's literal `H`/`L` suffix or normal-range parens**: state the raw number, then the reasoning in words (`K 5.6 — hyperkalemia, hold ACE-i`, not `K 5.6 H`).
 
 | ❌ NEVER | ✅ Always |
 |---|---|

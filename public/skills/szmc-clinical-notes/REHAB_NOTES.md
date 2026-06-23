@@ -4,10 +4,11 @@ _Extracted from SKILL.md to keep the always-loaded skill body lean. Load this fi
 
 ## REHAB NOTES — admission and daily rounds
 
-**The geri-rehab ward (גריאטריה -שיקום) runs on a different note rhythm than acute medicine.** Two settings are supported:
+**The geri-rehab ward (גריאטריה -שיקום) runs on a different note rhythm than acute medicine.** Three settings are supported:
 
 - **rehab-admission** (קבלת שיקום) — invoked by "כתוב לי קבלת שיקום", "rehab admission", or transfer-from-acute patient data
 - **rehab-rounds** (ביקור רופא) — invoked by "ביקור רופא", "daily round", "rehab round". Daily M–F per patient regardless of complexity.
+- **rehab-discharge** (סיכום אשפוז שיקומי) — invoked by "סיכום אשפוז שיקומי", "rehab discharge", or discharge of a patient off the rehab ward. See the rehab-discharge section below.
 
 ### Rehab admission — inheritance pattern
 
@@ -303,7 +304,7 @@ Example:
 - **Day 1–4:** baseline assessment phase. תוכנית טיפול goal stays as `מוקדם מדי לקבוע מטרה`.
 - **Day 5–7 (typical):** ישיבת צוות (team meeting) — multidisciplinary; sets discharge plan + goals. Round note that day or the next should reflect updated target.
 - **Daily M–F:** doctor writes ביקור רופא (this skill, rehab-rounds mode). Format = Pattern A or B based on complexity.
-- **Discharge:** rehab-specific סיכום אשפוז — see **"Rehab discharge (סיכום אשפוז שיקומי)"** below. Diverges from the general/internal discharge format in the מהלך ודיון structure (no `#` headers — uses functional-baseline + the מצב תפקודי template + `*` בעיות אחרות + לסיכום).
+- **Discharge:** rehab-specific סיכום אשפוז — see **"Rehab discharge (סיכום אשפוז שיקומי)"** below. Its מהלך ודיון uses a `#`-prefixed problem list (parity with the admission), placed after the מצב תפקודי template; the blocks unique to the discharge are kept too — functional-baseline + the מצב תפקודי template + the `*` בעיות אחרות incidental list + לסיכום.
 
 ### Rehab discharge (סיכום אשפוז שיקומי) — **per the index case 08/06/26 print**
 
@@ -321,7 +322,7 @@ Isolation/carrier status that is still in effect at discharge **must** appear as
 **Delta 2 — מחלה נוכחית is the inherited acute story, audited.**
 The rehab admission appended the source-dept course; at discharge you output the cleaned full narrative for paste-over (same APPEND-field rule as general discharge). The *rehab* story does NOT go here — it goes in מהלך ודיון.
 
-**Delta 3 — מהלך ודיון structure (this is the whole point). NO `#` headers.** Order:
+**Delta 3 — מהלך ודיון structure (this is the whole point). USES `#`-prefixed problem headers (parity with the admission דיון), placed after the מצב תפקודי template — which is kept verbatim, not replaced.** Order:
 
 1. **Rehab capsule opener** — one line: `כעת התקבל לשיקום לאחר אשפוז ממושך` + a **2–3 sentence recap** of the acute course (cholangitis → PTC → VATS → ventilation → weaned/decannulated). This is a *recap*, not a re-do of מחלה נוכחית.
 2. **Functional baseline paragraph** (`ברקע התפקודי -`): pre-admission BADL grade + who supervises + indoor/outdoor mobility + aid + caregiver hours (`X ש"ש של מט"ב`) + IADL (banking / meds / phone / who does shopping & house) + how transported outside. Close with `בשל ירידה תפקודית, התקבל במחלקת שיקום גריאטרי.`
@@ -358,7 +359,8 @@ FUNCTIONAL INDEPENDENCE MEASURE קוגניטיבי __/35.
    - **Gendered M/F templates both exist — match the patient.** Male: `המטופל קיבל ... בקבלתו ... עצמאי`. Female: `המטופלת קיבלה ... בקבלתה ... עצמאית`. The capsule, transfer lines, and all prose inflect too. (the deconditioning exemplar = male template; the femur exemplar = female.)
    - The two FIM lines are the **outcome headline**: motor `home / admission / discharge`. The admission value is usually *below* home (deconditioning during the acute stay); the discharge value climbing back toward/above home is the rehab "win." (the index case: 61 → 35 → 63 = recovered to baseline.) Cognitive FIM is a single `/35`.
    - These numbers come from the Chameleon **אומדנים** assessment grids (FIM/BADL, MMSE, Clock-CDT, MoCA), entered as dropdowns and auto-totaled. The prose block is the doctor's distillation of those totals — **MMSE or MoCA, whichever was administered** (one patient gets MMSE 25/30, another MoCA 20/30 — don't write both).
-4. **בעיות אחרות:** — `*`-bullet list of incidental issues *during the rehab stay* (single `*`, not `#`, not `**`). Each ties an event to its action, drug changes inline:
+4. **`#`-prefixed problem list** — in parity with the admission דיון: `כעת מציג/ה את הבעיות הבאות לדיון:` then one `#` per active rehab problem, each expanded with the clinical reasoning (the rehab course, what changed, the decision). This is the discussion proper, and it comes *after* the מצב תפקודי block above.
+5. **בעיות אחרות:** — `*`-bullet list of incidental issues *during the rehab stay* (single `*` per incidental item — the `#`-prefixed headers are the problem-list discussion in step 4, these bullets stay `*`, not `**`). Each ties an event to its action, drug changes inline:
 ```
 בעיות אחרות:
 *ירידה של ל"ד לאחר מאמץ - הופחת מינון של חוסמי ביתא ושל ACE INHIBITOR. חל שיפור במהלך השיקום
@@ -366,7 +368,7 @@ FUNCTIONAL INDEPENDENCE MEASURE קוגניטיבי __/35.
 *פצע לחץ דרגה 1 בעכוז - טיפול בעזרת דיאטה, שינוי תנוחה
 *קושי באיזון סוכר - משתחרר על LANTUS 10 יחידות
 ```
-5. **לסיכום,** — closing: `התאשפז במחלקת שיקום גריאטרי בשל ירידה תפקודית לאחר אשפוז ... במהלך השיקום חל שיפור ... [discharge reason]`. State the reason for the discharge timing honestly, and if it was a **shared decision** say so (`הוחלט יחד עם המטופל על שחרור לביתו`). Early/situational discharges (family, logistics, war footing) are named plainly, not hidden.
+6. **לסיכום,** — closing: `התאשפז במחלקת שיקום גריאטרי בשל ירידה תפקודית לאחר אשפוז ... במהלך השיקום חל שיפור ... [discharge reason]`. State the reason for the discharge timing honestly, and if it was a **shared decision** say so (`הוחלט יחד עם המטופל על שחרור לביתו`). Early/situational discharges (family, logistics, war footing) are named plainly, not hidden.
 
 **Delta 4 — המלצות בשחרור are short and rehab-specific** (dash on input, EMR renders numbered):
 ```
@@ -429,7 +431,7 @@ The **PT, OT, dietitian, and SLT intake notes** are the source of truth for:
 
 - ❌ Do NOT take a fresh history in the rehab admission. The source department already did.
 - ❌ Do NOT recreate PT/OT/dietitian intake content in the doctor's narrative.
-- ❌ Do NOT use a fresh `# headers` problem-list discussion in the rehab admission (that's discharge format). The rehab admission's `דיון ותוכנית` is short by design.
+- ❌ Do NOT drop the `#`-prefixed problem list from a rehab note. **Both** the admission דיון and the discharge מהלך ודיון carry a `#`-prefixed problem list (expand each `#` with reasoning). In the discharge the `#` list sits **after** the מצב תפקודי template, and the blocks unique to the discharge are kept alongside it — functional-baseline paragraph + the מצב תפקודי template + the `*` בעיות אחרות incidental list — not in place of the `#` list.
 - ❌ Do NOT auto-add Beers/STOPP/START blocks to daily rounds. Med deprescribing decisions go inline in `*` bullets when actually changing a med, not as a standalone section.
 - ❌ Do NOT update the תוכנית טיפול goal silently — if the team meeting hasn't happened yet, leave it as `מוקדם מדי לקבוע מטרה`.
 
