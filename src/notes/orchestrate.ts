@@ -1,8 +1,10 @@
 import { runEmitTurn } from '@/agent/loop';
 import { loadSkills } from '@/skills/loader';
+import type { LoadContext } from '@/skills/loader';
 import { wrapForChameleon } from '@/i18n/bidi';
 import { NOTE_SKILL_MAP } from './templates';
 import { rehabAugmentation } from './rehabPrompts';
+import { deriveIsRehab } from './soapMode';
 import type { SoapMode } from './soapMode';
 import type { ParseResult } from '@/agent/tools';
 import type { NoteType } from '@/storage/indexed';
@@ -664,7 +666,19 @@ export async function generateNote(
   assertExtractIsSafe(noteType, validated);
 
   const skills = NOTE_SKILL_MAP[noteType];
-  const skillContent = await loadSkills([...skills]);
+  // Conditional-load gate context. isRehab is computed by deriveIsRehab
+  // (single source, shared with the loader's gate): room-derived rehab applies
+  // to every note type, while a MANUAL rehab-* SOAP override is honored only
+  // for soap — the one note type whose prompt prefix emits matching rehab
+  // content. This stops a stale persisted rehab choice (keyed on hashed tz,
+  // surviving across note types) from bleeding REHAB_NOTES.md into a general
+  // admission/discharge/consult; a genuine rehab-ward admission still loads it
+  // via the room signal. Flag-independent by design.
+  const loadCtx: LoadContext = {
+    noteType,
+    isRehab: deriveIsRehab(noteType, validated.fields.room, soapMode),
+  };
+  const skillContent = await loadSkills([...skills], loadCtx);
 
   // soapMode is consulted only for noteType === 'soap'. Other note types
   // pass through buildPromptPrefix's default and the mode is silently

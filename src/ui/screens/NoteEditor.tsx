@@ -25,6 +25,7 @@ import { NOTE_SKILL_MAP } from '@/notes/templates';
 import { colorForNoteType } from '@/notes/noteTypeColors';
 import {
   decideSoapMode,
+  isRehabRoom,
   isSoapModeUiEnabled,
   loadModeChoice,
   saveModeChoice,
@@ -321,7 +322,16 @@ export function NoteEditor() {
     setRegenError('');
     try {
       const skills = NOTE_SKILL_MAP[noteType];
-      const skillContent = await loadSkills([...skills]);
+      // Thread the conditional-load context (same room source as the full
+      // generate) so a section regen doesn't over-load REHAB_NOTES.md / the
+      // SKILL.md templates for a general SOAP.
+      const regenValidated: { room?: string | null } = JSON.parse(
+        sessionStorage.getItem('validated') ?? '{}',
+      );
+      const skillContent = await loadSkills([...skills], {
+        noteType,
+        isRehab: isRehabRoom(regenValidated.room),
+      });
       const newSectionRaw = await regenerateSection({
         noteType,
         body,

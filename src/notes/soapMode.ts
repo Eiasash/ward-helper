@@ -40,6 +40,7 @@
  */
 
 import type { ContinuityContext } from './continuity';
+import type { NoteType } from '@/storage/indexed';
 
 export type SoapMode =
   | 'general'
@@ -56,6 +57,50 @@ export type SoapMode =
 export type SoapModeChoice = 'auto' | 'general' | SoapMode;
 
 const REHAB_ROOM_RE = /שיקום|rehab/i;
+
+/**
+ * Single source of truth for the "is this a rehab-ward context?" decision,
+ * keyed on the room/ward string (the same `REHAB_ROOM_RE` the SOAP-mode
+ * resolver uses). Used by BOTH the SOAP-mode resolver and the skill loader's
+ * conditional-load gate (src/skills/loader.ts) so the rehab condition is
+ * never forked. Deliberately room-based and flag-independent: it does not
+ * consult the SOAP-mode UI feature flag, so REHAB_NOTES.md still gates
+ * correctly for rehab admission/discharge even when the SOAP dropdown is off.
+ */
+export function isRehabRoom(room: string | null | undefined): boolean {
+  return !!room && REHAB_ROOM_RE.test(room);
+}
+
+/**
+ * True for any rehab-* SOAP mode (i.e. not 'general'). Lets the skill loader's
+ * conditional-load gate honor a MANUAL rehab override even when the room
+ * string carries no rehab marker (blank / numeric ward room), so the gate
+ * stays consistent with the rehab SOAP augmentation buildPromptPrefix emits.
+ */
+export function isRehabMode(mode: SoapMode): boolean {
+  return mode !== 'general';
+}
+
+/**
+ * Single source of truth for the loader gate's `isRehab` signal, per note type.
+ *
+ * Room-derived rehab (isRehabRoom) is flag-independent and applies to EVERY
+ * note type — a genuine rehab-ward admission/discharge/consult/round loads
+ * REHAB_NOTES.md. The MANUAL rehab-* override (isRehabMode) is honored ONLY for
+ * soap, because that is the only note type whose prompt prefix actually emits
+ * the matching rehab augmentation (buildPromptPrefix ignores soapMode for
+ * admission/discharge/consult). Honoring the override for non-soap notes would
+ * load REHAB_NOTES.md with no matching prefix — the exact rehab-bleed this gate
+ * exists to prevent — whenever a stale rehab choice persists for the patient
+ * (loadModeChoice is keyed on hashed tz and survives across note types).
+ */
+export function deriveIsRehab(
+  noteType: NoteType,
+  room: string | null | undefined,
+  soapMode: SoapMode,
+): boolean {
+  return isRehabRoom(room) || (noteType === 'soap' && isRehabMode(soapMode));
+}
 
 /**
  * HD detection patterns. Pinned as an array (not a single alternation

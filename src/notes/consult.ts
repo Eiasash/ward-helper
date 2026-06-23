@@ -157,7 +157,10 @@ export async function runConsultEmit(
   }
 
   const skills = NOTE_SKILL_MAP[noteType];
-  const skillContent = await loadSkills([...skills]);
+  // Pass note-type context so the loader gate applies. No room signal in the
+  // chat path → isRehab defaults false: full-template types still get SKILL.md,
+  // REHAB_NOTES.md stays gated off (no general-SOAP / non-rehab over-load).
+  const skillContent = await loadSkills([...skills], { noteType });
 
   const transcript = history
     .map((m) => {

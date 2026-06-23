@@ -26,12 +26,18 @@ describe('NOTE_SKILL_MAP', () => {
     }
   });
 
-  // SOAP is driven by orchestrate.ts SOAP_STYLE prefix; it doesn't need
-  // the 23 KB clinical-notes skill. Keep this test around so a future
-  // well-meaning "add clinical-notes back to SOAP" bloat regression
-  // is caught — that would cost ~\$0.018 more per SOAP.
-  it('SOAP does NOT load szmc-clinical-notes (token cost saver)', () => {
-    expect(NOTE_SKILL_MAP.soap).not.toContain('szmc-clinical-notes');
+  // SOAP is driven by orchestrate.ts SOAP_STYLE prefix; it lists
+  // szmc-clinical-notes ONLY so the loader's conditional-load gate can reach
+  // its REHAB_NOTES.md unit on a rehab daily round. The token-cost-saver is
+  // preserved by the GATE, not by absence from the map: general SOAP loads
+  // nothing from szmc-clinical-notes (SKILL.md gated to admission/discharge/
+  // consult, REHAB_NOTES.md gated to isRehab). The gate behavior itself is
+  // pinned in tests/skillLoaderGate.test.ts; here we just lock the map shape.
+  it('SOAP lists szmc-clinical-notes solely for the gated REHAB_NOTES.md path', () => {
+    expect(NOTE_SKILL_MAP.soap).toContain('szmc-clinical-notes');
+    // The full clinical-notes templates must NOT carry geriatrics-knowledge on
+    // SOAP — that has no gate and would erode the continuity budget.
+    expect(NOTE_SKILL_MAP.soap).not.toContain('geriatrics-knowledge');
   });
 
   it('non-case, non-soap types use szmc-clinical-notes', () => {
