@@ -120,6 +120,11 @@ When you update a skill in your claude.ai project and want ward-helper to pick i
 
 Adding a NEW skill: add an entry to `SKILL_FILES` in BOTH `scripts/sync-skills.mjs` and `src/skills/loader.ts`, plus extend the `SkillName` type. If the skill needs runtime adjustments (instructions for non-runtime tools), add an entry to `SKILL_PATCHES` in sync-skills.mjs.
 
+**Claude.ai handoff rules (hard):**
+
+1. **The `.skill` bundle is build output, never an edit surface.** The Claude.ai live skill is generated FROM the canonical skill source folder (`~/.claude/skills/<name>/`, synced from the dotfiles `.claude/skills/<name>/` canonical — NOT a generated mirror like ward-helper's `public/skills/`, which `sync-skills.mjs` rewrites at build). Edit path: edit that source folder → regenerate the flat `.skill` bundle → upload. NEVER hand-edit the `.skill` bundle directly — that makes the bundle canonical and the repo stale, reintroducing drift in the one direction this setup can't detect. Same discipline as never editing `dist/`.
+2. **Flat `.skill` (files at the zip root) is the required Claude.ai handoff format.** Folder-wrapped bundles and loose `.md` files are both REJECTED by the uploader. Confirmed empirically June 2026. Locked standard for all future Claude.ai handoffs.
+
 ## Bidi (mixed Hebrew / English)
 
 Hebrew clinical prose embeds English drug names, acronyms, lab abbreviations. Never transliterate. At the clipboard boundary only, `src/i18n/bidi.ts::wrapForChameleon` inserts RLM/LRM marks. In storage and UI, strings are stored as-is UTF-8 with `dir="auto"` + `unicode-bidi: plaintext` on containers.
