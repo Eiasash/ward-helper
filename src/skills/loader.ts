@@ -121,9 +121,14 @@ const SKILL_FILES: Record<SkillName, SkillFile[]> = {
 /** Resolve the file units that load for this ctx (predicate evaluation). */
 function resolveFiles(name: SkillName, ctx: LoadContext | undefined): string[] {
   const units = SKILL_FILES[name];
-  // No ctx at all → ungated (back-compat): load every unit.
-  if (ctx === undefined) return units.map((u) => u.name);
-  return units.filter((u) => !u.when || u.when(ctx)).map((u) => u.name);
+  // Missing ctx → evaluate predicates against an EMPTY context, NOT "load
+  // all". A gated unit (e.g. REHAB_NOTES.md, which requires isRehab===true)
+  // must never load just because a caller omitted context — that would
+  // regress the cost/budget guarantee at contextless call sites (now that
+  // NOTE_SKILL_MAP.soap includes szmc-clinical-notes). Ungated units (no
+  // `when`) still always load.
+  const c = ctx ?? {};
+  return units.filter((u) => !u.when || u.when(c)).map((u) => u.name);
 }
 
 /** Set-based cache key: skill name + the sorted set of loaded file names. */

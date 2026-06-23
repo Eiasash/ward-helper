@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { loadSkill, loadSkills, clearSkillCache } from '@/skills/loader';
+import { isRehabRoom, isRehabMode } from '@/notes/soapMode';
 
 /**
  * Runtime conditional-load gate (loader.ts). REHAB_NOTES.md must load only
@@ -106,5 +107,29 @@ describe('loader conditional-load gate — REHAB_NOTES.md', () => {
     });
     expect(out).toBe(GLOSSARY);
     expect(out).not.toContain('===');
+  });
+
+  it('contextless loadSkill does NOT leak REHAB_NOTES.md (gated fallback, not load-all)', async () => {
+    const out = await loadSkill('szmc-clinical-notes'); // no ctx
+    expect(out).toContain(SKILL); // ungated SKILL.md still loads (no noteType to gate it)
+    expect(out).not.toContain(REHAB); // REHAB_NOTES requires explicit isRehab — never loads contextless
+  });
+
+  it('contextless loadSkills (SOAP map shape) does NOT leak REHAB_NOTES.md', async () => {
+    const out = await loadSkills(['hebrew-medical-glossary', 'szmc-clinical-notes']); // no ctx
+    expect(out).toContain(GLOSSARY);
+    expect(out).not.toContain(REHAB);
+  });
+
+  it('isRehab signal sources — room (flag-independent) and manual rehab mode', () => {
+    expect(isRehabRoom('שיקום ב')).toBe(true);
+    expect(isRehabRoom('rehab-3')).toBe(true);
+    expect(isRehabRoom('12A')).toBe(false);
+    expect(isRehabRoom(null)).toBe(false);
+    // Manual override path: a rehab-* SOAP mode opens the gate even when the
+    // room carries no rehab marker (orchestrate ORs the two signals).
+    expect(isRehabMode('rehab-FIRST')).toBe(true);
+    expect(isRehabMode('rehab-HD-COMPLEX')).toBe(true);
+    expect(isRehabMode('general')).toBe(false);
   });
 });

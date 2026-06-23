@@ -71,6 +71,16 @@ export function isRehabRoom(room: string | null | undefined): boolean {
 }
 
 /**
+ * True for any rehab-* SOAP mode (i.e. not 'general'). Lets the skill loader's
+ * conditional-load gate honor a MANUAL rehab override even when the room
+ * string carries no rehab marker (blank / numeric ward room), so the gate
+ * stays consistent with the rehab SOAP augmentation buildPromptPrefix emits.
+ */
+export function isRehabMode(mode: SoapMode): boolean {
+  return mode !== 'general';
+}
+
+/**
  * HD detection patterns. Pinned as an array (not a single alternation
  * regex) because JS `\b` is ASCII-only — applying `\b` around Hebrew
  * letters matches at non-word characters incorrectly (e.g. `\bהמוד\b`

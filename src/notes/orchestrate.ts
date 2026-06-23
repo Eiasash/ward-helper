@@ -4,7 +4,7 @@ import type { LoadContext } from '@/skills/loader';
 import { wrapForChameleon } from '@/i18n/bidi';
 import { NOTE_SKILL_MAP } from './templates';
 import { rehabAugmentation } from './rehabPrompts';
-import { isRehabRoom } from './soapMode';
+import { isRehabRoom, isRehabMode } from './soapMode';
 import type { SoapMode } from './soapMode';
 import type { ParseResult } from '@/agent/tools';
 import type { NoteType } from '@/storage/indexed';
@@ -673,7 +673,11 @@ export async function generateNote(
   // admission/discharge/consult templates. Flag-independent by design.
   const loadCtx: LoadContext = {
     noteType,
-    isRehab: isRehabRoom(validated.fields.room),
+    // Room-derived (flag-independent) OR a manual rehab-* SOAP override — so a
+    // blank/numeric-room patient with a manual rehab pick still loads
+    // REHAB_NOTES.md, matching the rehab SOAP augmentation buildPromptPrefix
+    // emits (no split-brain between prompt and loaded files).
+    isRehab: isRehabRoom(validated.fields.room) || isRehabMode(soapMode),
   };
   const skillContent = await loadSkills([...skills], loadCtx);
 
