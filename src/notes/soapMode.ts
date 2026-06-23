@@ -58,6 +58,19 @@ export type SoapModeChoice = 'auto' | 'general' | SoapMode;
 const REHAB_ROOM_RE = /שיקום|rehab/i;
 
 /**
+ * Single source of truth for the "is this a rehab-ward context?" decision,
+ * keyed on the room/ward string (the same `REHAB_ROOM_RE` the SOAP-mode
+ * resolver uses). Used by BOTH the SOAP-mode resolver and the skill loader's
+ * conditional-load gate (src/skills/loader.ts) so the rehab condition is
+ * never forked. Deliberately room-based and flag-independent: it does not
+ * consult the SOAP-mode UI feature flag, so REHAB_NOTES.md still gates
+ * correctly for rehab admission/discharge even when the SOAP dropdown is off.
+ */
+export function isRehabRoom(room: string | null | undefined): boolean {
+  return !!room && REHAB_ROOM_RE.test(room);
+}
+
+/**
  * HD detection patterns. Pinned as an array (not a single alternation
  * regex) because JS `\b` is ASCII-only — applying `\b` around Hebrew
  * letters matches at non-word characters incorrectly (e.g. `\bהמוד\b`

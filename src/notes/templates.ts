@@ -30,10 +30,17 @@ export const NOTE_SKILL_MAP: Record<NoteType, readonly SkillName[]> = {
   consult: ['szmc-clinical-notes', 'hebrew-medical-glossary', 'geriatrics-knowledge'],
   case: ['szmc-interesting-cases', 'hebrew-medical-glossary'],
   // SOAP is driven entirely by orchestrate.ts's SOAP_STYLE prefix —
-  // ship ONLY the glossary for Hebrew term consistency. Adding
-  // geriatrics-knowledge here would erode the context budget reserved
-  // for continuity (prior admission + recent SOAPs).
-  soap: ['hebrew-medical-glossary'],
+  // ship the glossary for Hebrew term consistency, plus szmc-clinical-notes
+  // SOLELY so its REHAB_NOTES.md unit is reachable on a rehab daily round.
+  // The loader's conditional-load gate (src/skills/loader.ts) means
+  // szmc-clinical-notes contributes:
+  //   - general SOAP → NOTHING (SKILL.md gated to admission/discharge/consult;
+  //     REHAB_NOTES.md gated to isRehab) — so the context budget reserved for
+  //     continuity is preserved exactly as before, and
+  //   - rehab SOAP (isRehab) → REHAB_NOTES.md ONLY (never the admission/
+  //     discharge/consult templates).
+  // Adding geriatrics-knowledge here would erode the continuity budget — don't.
+  soap: ['hebrew-medical-glossary', 'szmc-clinical-notes'],
   // Census is not a clinical note — it's grid extraction. AZMA-UI is the
   // primary reference (column semantics, color codes, icon meanings); the
   // glossary rides along to keep the every-note-type invariant in
