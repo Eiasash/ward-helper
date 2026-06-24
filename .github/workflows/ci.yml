@@ -8,6 +8,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - name: PHI gate (no patient/staff identifiers in shipped skill content)
+        # Fail-fast, required: zero patient/staff identifiers in public/skills + src/skills.
+        # Makes the de-identification scrub zero-miss by construction — a missed name can't ship.
+        run: bash scripts/phi-gate.sh
       - uses: actions/setup-node@v5
         with: { node-version: '20', cache: 'npm' }
       - run: npm ci

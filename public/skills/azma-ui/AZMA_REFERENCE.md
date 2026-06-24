@@ -8,7 +8,7 @@ Use this document (and `azma_reference.json` next to it for programmatic lookup)
 > 1. §7.3 icon legend **reconciled with real de-identified captures** and confirmed by Eias. Admin-status icon has two states only: **pencil = pending, red round stop = active**. Speech bubbles are three-colour: **green = doctor's note, red = nurse's note, grey = empty**. The earlier "blue circle = order finished" icon is **retired** — inactivity is shown by row strikethrough (§7.2).
 > 2. §7.0 added — the live AZMA order grid (layout, columns, section bands). The application window may be titled `Eitan 4`; that is the integrated build, not a separate EMR. **Eitan** proper is the cross-hospital shared record (the blue patient-name box) — see SKILL.md §0.3.
 > 3. `Rx` icon (antibiotic rows) decoded — antibiotic Infectious-Diseases approval status, colour-coded (blue = approved, yellow = renew, red/dark-orange = rejected). Row tints decoded — drug-class grouping under `מיון לפי נושא`, cosmetic. `screenshots/` folder added (PHI-cropped). §7.7 fully reconciled — no open items.
-> 4. **Census decoded** — §4.0 added (the `ניהול מחלקה` census is a **case-manager-filtered ward roster**; Eias's case managers — the rehab case manager for rehab, the side-B case manager for side B). §6 census status icons confirmed: red vial-on-yellow = bloods pending, yellow book = imaging/test awaited, red book = task/mission, blue book = consult awaited. De-identified census crop in `screenshots/`.
+> 4. **Census decoded** — §4.0 added (the `ניהול מחלקה` census is a **case-manager-filtered ward roster**; Eias's case managers — the rehab case manager and the side-B case manager). §6 census status icons confirmed: red vial-on-yellow = bloods pending, yellow book = imaging/test awaited, red book = task/mission, blue book = consult awaited. De-identified census crop in `screenshots/`.
 > 5. **Cross-skill contract added** (SKILL.md) — `azma-ui` is the single source of truth for AZMA decoding; consumer skills (`rehab-quickref`, `szmc-clinical-notes`, `szmc-interesting-cases`) point here and must not restate icon/column/colour facts. Drift-control measure.
 > *(Prior R4 expanded §7.3 to a 7-icon legend with a blue-circle icon; R6 superseded that. See full revision history at the end.)*
 
@@ -58,7 +58,7 @@ The `ניהול מחלקה` screen is used by ward physicians as a **filtered pa
 
 **How the ward is filtered to one clinician's list:**
 - `מחלקה` (top-right) selects the ward — e.g. `גריאטריה - שיקום` (geriatric rehab).
-- The `חיפוש לפי case` (search-by-`case`) box filters to one case-manager's patients — type the case-manager specialist's name. Eias's case managers: **the rehab case manager** ("the rehab case manager" / "the rehab case manager") for the **rehab** ward; **the side-B case manager** ("the side-B case manager") for **side B** (acute geriatrics, side B). A census screenshot from Eias is therefore almost always already filtered to one case manager's patients.
+- The `חיפוש לפי case` (search-by-`case`) box filters to one case-manager's patients — type the case-manager specialist's surname. A census screenshot from Eias is therefore almost always already filtered to one case manager's patients.
 - Footer counters: `מאושפזים N` (currently admitted), `מיטות פנויות` (free beds), `לשיבוץ` (awaiting bed assignment), `סה"כ` (total).
 
 **Reading a row for rounds.** The columns that matter per patient: `שם` (name), `חדר` + `מיטה` (room + bed — note `מיטה` is a separate column from `חדר`), `גיל` (age), `שהות במח'` (length of stay — the rehab-day count), `אבחנה` (diagnosis), `צד \ שיוך` (side), `case manager`. This is the AZMA-census-first roster the rounds workflow depends on.
@@ -323,7 +323,7 @@ Beneath the SOAP/`ביקור` panel the screen carries two **structured assessme
 - **R8 — 2026-05-18:**
   - §6 census status icons confirmed by Eias: red vial on yellow = blood test pending today; yellow book = awaiting imaging/diagnostic test; red book = pending task/mission (free-form inter-staff list); blue book = awaiting consultation. The per-row red pencil and the green-pages/`Rx` icons reclassified as row-action buttons (not status).
 - **R7 — 2026-05-18:**
-  - §4.0 added — the `ניהול מחלקה` census is in practice a case-manager-filtered ward roster (filter via the `חיפוש לפי case` box; Eias's case managers: the rehab case manager = rehab, the side-B case manager = side B). Department-administration functions are the department head's domain, out of scope.
+  - §4.0 added — the `ניהול מחלקה` census is in practice a case-manager-filtered ward roster (filter via the `חיפוש לפי case` box, by case-manager surname). Department-administration functions are the department head's domain, out of scope.
   - §6 gains real-capture colour notes (room cells purple; name-cell tint likely sex-coded; blood-type cell colour; per-row census icons). De-identified census crop added to `screenshots/` (`azma-census-reference.png`).
 - **R6 — 2026-05-18:**
   - §7.3 reconciled with real de-identified captures and confirmed by Eias: pencil = pending / red round stop = active (two states only); speech bubbles green = doctor / red = nurse / grey = empty; the "blue circle = order finished" icon retired (inactivity = strikethrough, §7.2).

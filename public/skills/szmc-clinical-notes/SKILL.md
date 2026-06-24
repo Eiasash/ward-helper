@@ -1,15 +1,15 @@
 ---
 name: szmc-clinical-notes
 description: >
-  Generate professional SZMC ward clinical notes in exact institutional format.
-  PRIMARY: geriatric/internal medicine admission (קבלה רפואית), discharge
-  (סיכום שחרור / סיכום אשפוז), consultation letters (ייעוץ), rehab admission
-  (קבלת שיקום), rehab daily rounds (ביקור רופא בשיקום), and rehab discharge
-  (סיכום אשפוז שיקומי). Secondary: ED discharge. Trigger on: "כתוב לי קבלה",
-  "כתוב סיכום שחרור", "ייעוץ", "קבלת שיקום", "ביקור רופא", "rehab round",
-  "daily round", "סיכום אשפוז שיקומי", "rehab discharge", "draft a note", or
-  patient data upload. Auto-runs geriatric pharm analysis for ward notes.
-  Generates HTML export for Chameleon EMR paste.
+ Generate professional SZMC ward clinical notes in exact institutional format.
+ PRIMARY: geriatric/internal medicine admission (קבלה רפואית), discharge
+ (סיכום שחרור / סיכום אשפוז), consultation letters (ייעוץ), rehab admission
+ (קבלת שיקום), rehab daily rounds (ביקור רופא בשיקום), and rehab discharge
+ (סיכום אשפוז שיקומי). Secondary: ED discharge. Trigger on: "כתוב לי קבלה",
+ "כתוב סיכום שחרור", "ייעוץ", "קבלת שיקום", "ביקור רופא", "rehab round",
+ "daily round", "סיכום אשפוז שיקומי", "rehab discharge", "draft a note", or
+ patient data upload. Auto-runs geriatric pharm analysis for ward notes.
+ Generates HTML export for Chameleon EMR paste.
 ---
 
 # SZMC Clinical Notes Skill
@@ -61,9 +61,9 @@ Haloperidol PRN 2.5 מ"ג > 0.5 מ"ג מקסימום
 ✅ סידן בקבלה 11.7, במהלך האשפוז 11.0-11.3, בשחרור 11.2.
 ✅ CRP בקבלה 7.72, חלף במהלך האשפוז ועמד על 1.35 בשחרור.
 
-❌ סידן: 12.3 > 11.6 > 9.8 (20/04)        ← arrows corrupt in lab paste field
-❌ קראטינין: 1.55 > 1.42 > 1.03            ← same
-❌ Hb 10.8 → 10.9                          ← Unicode arrows always forbidden
+❌ סידן: 12.3 > 11.6 > 9.8 (20/04)    ← arrows corrupt in lab paste field
+❌ קראטינין: 1.55 > 1.42 > 1.03      ← same
+❌ Hb 10.8 → 10.9             ← Unicode arrows always forbidden
 ```
 
 The lab paste field in Chameleon is more sensitive to non-Hebrew formatting than the narrative. Use prose only.
@@ -229,9 +229,9 @@ Never append a "מילון מונחים" / glossary to discharge notes. If a ter
 
 1. Collect patient data
 2. **Determine note type — then apply the REHAB_NOTES.md load gate.**
-   - Note types: ward admission (קבלה) / discharge (סיכום אשפוז) / consult (ייעוץ) / ED discharge / **rehab admission (קבלת שיקום)** / **rehab daily round (ביקור רופא)** / **rehab discharge (סיכום אשפוז שיקומי)**.
-   - **LOAD GATE — read `REHAB_NOTES.md` (the ~48KB sibling) if and ONLY if the note being written is one of the three rehab *types*: rehab admission (קבלת שיקום), rehab daily round (ביקור רופא / daily round for a patient already on the rehab ward), or rehab discharge (סיכום אשפוז שיקומי — including a generic `סיכום אשפוז` when the patient's current ward is rehab).** Any one of the three OPENS the gate on its own — including a bare `ביקור רופא` / `daily round`, or a generic `סיכום אשפוז`, for a patient **currently on the rehab ward**, even when the word שיקום/rehab does not appear. When open, read it **in full before drafting**.
-   - **Gate CLOSED for every non-rehab note (plain admission, discharge, consult, ED): do NOT read `REHAB_NOTES.md`** — this includes a plain acute discharge whose *disposition* is rehab (a transfer-*to*-rehab plan from an acute ward is not a rehab note; contrast a discharge **of** a patient already on the rehab ward, which IS a rehab discharge — gate open per above). The gate keys on the note **type** and the patient's **current ward**, not on whether the word שיקום/rehab appears; loading it into a non-rehab note only adds latency plus bleed-in risk (rehab functional templates leaking in).
+  - Note types: ward admission (קבלה) / discharge (סיכום אשפוז) / consult (ייעוץ) / ED discharge / **rehab admission (קבלת שיקום)** / **rehab daily round (ביקור רופא)** / **rehab discharge (סיכום אשפוז שיקומי)**.
+  - **LOAD GATE — read `REHAB_NOTES.md` (the ~48KB sibling) if and ONLY if the note being written is one of the three rehab *types*: rehab admission (קבלת שיקום), rehab daily round (ביקור רופא / daily round for a patient already on the rehab ward), or rehab discharge (סיכום אשפוז שיקומי — including a generic `סיכום אשפוז` when the patient's current ward is rehab).** Any one of the three OPENS the gate on its own — including a bare `ביקור רופא` / `daily round`, or a generic `סיכום אשפוז`, for a patient **currently on the rehab ward**, even when the word שיקום/rehab does not appear. When open, read it **in full before drafting**.
+  - **Gate CLOSED for every non-rehab note (plain admission, discharge, consult, ED): do NOT read `REHAB_NOTES.md`** — this includes a plain acute discharge whose *disposition* is rehab (a transfer-*to*-rehab plan from an acute ward is not a rehab note; contrast a discharge **of** a patient already on the rehab ward, which IS a rehab discharge — gate open per above). The gate keys on the note **type** and the patient's **current ward**, not on whether the word שיקום/rehab appears; loading it into a non-rehab note only adds latency plus bleed-in risk (rehab functional templates leaking in).
 3. Search project knowledge for drug dosing, DAG antibiotics, guidelines
 4. Draft note in plain text, section by section in **printed-output order** (see below)
 5. Run geriatric analysis (ward notes only, show in chat AFTER note, NOT in HTML)
@@ -294,7 +294,7 @@ Name the proxy role (היפוי כוח / אפוטרופוס), state the conversa
 
 **Problem-list marker — `#` not `*`.** Real night-team admissions are split: some dictate `*זיהומית / *תפקודית / *סטטוס`, others `#`. House standard for our output is `#`. When inheriting/cleaning a source dictation, **convert every `*` problem header to `#`** — do not preserve the source's asterisks.
 
-### Admission תפקוד subsection format — **VERIFIED PATIENT 29/04/26 print**
+### Admission תפקוד subsection format — **VERIFIED the functional-subsection print print**
 
 The admission תפקוד field is a **structured subsection**, not free prose. Use these labels in this order:
 
@@ -321,7 +321,7 @@ The admission תפקוד field is a **structured subsection**, not free prose. U
 - The ADL subsection IS the source of truth for all downstream `# תפקוד` summaries (in מהלך ודיון and in discharge notes). Don't restate; reference.
 - All items per ADL: include even if עצמאי for everything — completeness signals you actually assessed.
 
-### Discharge (סיכום אשפוז) — **REVISED per PATIENT 28/04/26 print**
+### Discharge (סיכום אשפוז) — **REVISED per the discharge-format print print**
 
 This is the **printed output order** as it appears on the SZMC letterhead. Each section below maps to a paste field; the system assembles it in this sequence:
 
@@ -339,29 +339,29 @@ This is the **printed output order** as it appears on the SZMC letterhead. Each 
 12. **תרופות בבית** (auto sidebar from Chameleon DB) — Title Case format. Inherits Chameleon's casing — do NOT force ALL-CAPS here.
 13. **בדיקות עזר (פירוט)** — discrete section, BEFORE labs: cultures FIRST (with full sensitivity panel), then imaging reports verbatim, then procedures. NEVER labs. **Date OK; STRIP all of: reporting doctor names (radiologist/pathologist), accession numbers, vial IDs, מספר בדיקה.**
 14. **בדיקות מעבדה** — **CATEGORIZED PROSE TRENDS, NO ARROWS** (Eias 28/04/26):
-    - **Categories**: ביוכימיה / מדדי דלקת / ספירת דם / גזים (separate paragraphs)
-    - **Format**: `<param> בקבלה X, במהלך Y, בשחרור Z`
-    - **Max 2-3 numbers** per parameter — do not list 5 timepoints of the same lab
-    - **Drop redundant**: if Cr listed, **omit eGFR and BUN** (covered)
-    - **Total Ca → correct for albumin** if same-day specimen has both. Formula: `Corrected Ca = measured + 0.8 × (4.0 − albumin)`. Cite the corrected value when albumin <4.0. Ionized Ca needs no correction.
-    - **RAW VALUES ONLY — no interpretation** (Eias 04/06/26): no L/H suffix, no `(מעל הנורמה)`/`(מתחת לנורמה)`, no high/low words. Just the number, e.g. `אשלגן 5.6`.
-    - Full lab table auto-appends from EMR after this section anyway — keep curated section focused on clinically relevant moves
+  - **Categories**: ביוכימיה / מדדי דלקת / ספירת דם / גזים (separate paragraphs)
+  - **Format**: `<param> בקבלה X, במהלך Y, בשחרור Z`
+  - **Max 2-3 numbers** per parameter — do not list 5 timepoints of the same lab
+  - **Drop redundant**: if Cr listed, **omit eGFR and BUN** (covered)
+  - **Total Ca → correct for albumin** if same-day specimen has both. Formula: `Corrected Ca = measured + 0.8 × (4.0 − albumin)`. Cite the corrected value when albumin <4.0. Ionized Ca needs no correction.
+  - **RAW VALUES ONLY — no interpretation** (Eias 04/06/26): no L/H suffix, no `(מעל הנורמה)`/`(מתחת לנורמה)`, no high/low words. Just the number, e.g. `אשלגן 5.6`.
+  - Full lab table auto-appends from EMR after this section anyway — keep curated section focused on clinically relevant moves
 15. **מהלך ודיון** — **MUST OPEN with the patient summary template** (Eias 28/04/26):
-    ```
-    בת X סיעודית עם דמנציה, מרותקת למיטה, מוזנת דרך PEG... [demographics + functional + key chronic conditions] עם הרקע הנ"ל -
+  ```
+  בת X סיעודית עם דמנציה, מרותקת למיטה, מוזנת דרך PEG... [demographics + functional + key chronic conditions] עם הרקע הנ"ל -
 
-    התקבלה בשל [acute presentation]
-    במיון בבדיקת [vitals + exam]
-    במעבדה (כולל בדיקות עזר) [labs + imaging summary]
-    [ייעוצים במיון אם היו]
-    אושפזה בשל [reason] במחלקתנו [purpose]
-    בקבלתה למחלקה [exam + labs comparison to ED]
+  התקבלה בשל [acute presentation]
+  במיון בבדיקת [vitals + exam]
+  במעבדה (כולל בדיקות עזר) [labs + imaging summary]
+  [ייעוצים במיון אם היו]
+  אושפזה בשל [reason] במחלקתנו [purpose]
+  בקבלתה למחלקה [exam + labs comparison to ED]
 
-    במהלך אשפוז הציגה את הבעיות הבאות להתייחסות:
-    ```
-    THEN `# headers` per problem (disease-focused & short). `# טיפול יעדי` **only if a documented decision was made** (don't auto-add for speculative GOC). `# תפקוד` always last.
+  במהלך אשפוז הציגה את הבעיות הבאות להתייחסות:
+  ```
+  THEN `# headers` per problem (disease-focused & short). `# טיפול יעדי` **only if a documented decision was made** (don't auto-add for speculative GOC). `# תפקוד` always last.
 16. **המלצות בשחרור** — **DASH list (-)** (Eias 28/04/26 — easier to delete items without renumbering). Brief references to PT/OT/dietician (`הפניה לפיזיותרפיה בבית`, `הפניה לריפוי בעיסוק בקהילה`). **WARNING: each bullet must be ≤ ~180 chars** or Chameleon truncates mid-word. **Drop generic boilerplate**: skip `במקרה של החמרה - פנייה למיון` and `להביא סיכום אשפוז זה לכל פנייה רפואית עתידית`. Skip generic dietician follow-up if dietician already saw inpatient. Keep clinically actionable items only.
-17. **המשך טיפול תרופתי** — **DASH list (-)** (EMR auto-numbers anyway — system overrides our format). Title Case auto-format from Chameleon DB. **For PEG patients, ALWAYS add `Water ( Water ) per gastrostomy 400 ml X 3 / d לפי צורך`**. **Borderline home meds (Furosemide etc.) → keep on PRN with `מינון לפי צורך, לפי החלטת רופא מטפל`** rather than deprescribing in the discharge print (defer that decision to outpatient clinic).
+17. **המשך טיפול תרופתי** — **DASH list (-)** (EMR auto-numbers anyway — system overrides our format). Title Case auto-format from Chameleon DB. **For PEG patients, ALWAYS add `Water (Water) per gastrostomy 400 ml X 3 / d לפי צורך`**. **Borderline home meds (Furosemide etc.) → keep on PRN with `מינון לפי צורך, לפי החלטת רופא מטפל`** rather than deprescribing in the discharge print (defer that decision to outpatient clinic).
 18. **(auto-appended)** — full lab table + cultures table + PT functional assessment block (signed by PT herself)
 19. **חתימה** — see signature section
 
@@ -369,9 +369,9 @@ This is the **printed output order** as it appears on the SZMC letterhead. Each 
 
 | Section type | Casing | Example |
 |---|---|---|
-| Narrative prose (מחלה נוכחית, מהלך ודיון, # headers) | **ALL-CAPS English** | `בטיפול ב-CEFTRIAXONE ( ROCEPHIN )`, `החל NORADRENALINE`, `הוחלף ל-PIPERACILLIN-TAZOBACTAM ( TAZOCIN )` |
-| תרופות בבית (auto sidebar) | Title Case (Chameleon DB) | `Bisoprolol fumarate ( Concor )` |
-| המשך טיפול תרופתי (auto from continued meds) | Title Case (Chameleon DB) | `Olanzapine ( Olanzapine -teva )` |
+| Narrative prose (מחלה נוכחית, מהלך ודיון, # headers) | **ALL-CAPS English** | `בטיפול ב-CEFTRIAXONE (ROCEPHIN)`, `החל NORADRENALINE`, `הוחלף ל-PIPERACILLIN-TAZOBACTAM (TAZOCIN)` |
+| תרופות בבית (auto sidebar) | Title Case (Chameleon DB) | `Bisoprolol fumarate (Concor)` |
+| המשך טיפול תרופתי (auto from continued meds) | Title Case (Chameleon DB) | `Olanzapine (Olanzapine -teva)` |
 
 Don't fight Chameleon's auto-format on the drug-list sections. Only force ALL-CAPS where you're typing free narrative.
 
@@ -411,20 +411,20 @@ If the user explicitly asks for a full PT/OT/dietician prose block (e.g., "give 
 
 ## MEDICATION FORMAT
 
-SZMC standard: `[Generic] ( [Brand Hebrew/English] ) [Route] [Dose] [Unit] X [Freq] / [Period]`
+SZMC standard: `[Generic] ([Brand Hebrew/English]) [Route] [Dose] [Unit] X [Freq] / [Period]`
 
 ```
-Furosemide ( פוסיד ) P.O. 40 mg X 1 / d
-Apixaban ( Eliquis ) P.O. 2.5 mg X 2 / d
-Hydroxyethylcellulose ( V-teers ) ocular 1 drop X 10 / d קבוע
+Furosemide (פוסיד) P.O. 40 mg X 1 / d
+Apixaban (Eliquis) P.O. 2.5 mg X 2 / d
+Hydroxyethylcellulose (V-teers) ocular 1 drop X 10 / d קבוע
 ```
 
 ### Discharge Rx rules
 - **DASH list (-)** as a list — EMR auto-numbers anyway in the print output
-- **PEG patients**: ALWAYS include `Water ( Water ) per gastrostomy 400 ml X 3 / d לפי צורך` (flush water)
+- **PEG patients**: ALWAYS include `Water (Water) per gastrostomy 400 ml X 3 / d לפי צורך` (flush water)
 - **NGT patients**: same flush pattern with `per NG tube`
-- **Free water for PZ**: `Water ( Water ) per NG tube 350 ml X 3 / d`
-- **PRN with indication + duration**: `Loratadine ( Loratadim ) P.O. 10 mg X 1 / d למשך 20 ימים — גירוד מפושט`
+- **Free water for PZ**: `Water (Water) per NG tube 350 ml X 3 / d`
+- **PRN with indication + duration**: `Loratadine (Loratadim) P.O. 10 mg X 1 / d למשך 20 ימים — גירוד מפושט`
 - **Time-limited** (e.g., eye drops post-procedure): include `למשך X ימים`
 - **Side-specific** (eye drops): `עין שמאל` or `עין ימין` or `דו"צ`
 - **Formula**: `NUTREN 2 per PZ 660 ml / d (30 ml/hr X 22h)`
@@ -567,7 +567,7 @@ When pulling imaging/cultures into the discharge בדיקות עזר section:
 
 | Strip | Keep |
 |---|---|
-| Reporting radiologist name (`ד"ר the reporting radiologist`) | Date (`21/04/26`) |
+| Reporting radiologist name (`the reporting radiologist`) | Date (`21/04/26`) |
 | Pathologist signature | Modality (`צילום חזה`, `CT בטן`) |
 | Accession numbers (`C089381`) | Findings prose |
 | Specimen IDs (`K04211221`) | Sensitivity panel for cultures |
@@ -579,7 +579,7 @@ The receiving GP doesn't need provenance metadata — they need the finding.
 
 ## RECOMMENDATION LENGTH GUARD — CRITICAL
 
-**Verified failure (PATIENT + PATIENT finalized 27/04/26):** Chameleon's המלצות בשחרור field truncates long bullets mid-word in the printed output. Both finalized notes lost text. This means the patient/family copy did NOT contain the full recommendation.
+**Verified failure (two finalized discharge prints):** Chameleon's המלצות בשחרור field truncates long bullets mid-word in the printed output. Both finalized notes lost text. This means the patient/family copy did NOT contain the full recommendation.
 
 ### Hard rule
 - **Each המלצה bullet must be ≤ 180 characters** (Hebrew chars count, including spaces and punctuation).
@@ -589,8 +589,8 @@ The receiving GP doesn't need provenance metadata — they need the finding.
 For each bullet:
 ```
 if len(bullet) > 180:
-   split at the most logical boundary (period, "ו-", ":", or change of subject)
-   add a new dash line — no renumbering needed (it's a dash list)
+  split at the most logical boundary (period, "ו-", ":", or change of subject)
+  add a new dash line — no renumbering needed (it's a dash list)
 ```
 
 ### Example — too long, will truncate
@@ -655,13 +655,13 @@ The AZMA הוראות תרופתיות grid shows **active orders only**. This h
 
 ```
 📋 ניתוח גריאטרי — [Patient]
-🔴 Critical  🟠 Warning  🔵 Gap  💡 Pearl
+🔴 Critical 🟠 Warning 🔵 Gap 💡 Pearl
 ```
 Max 10-12 flags. Domains: Beers 2023, STOPP/START, renal dose, interactions, falls, delirium, missing workup (cognitive assessment, bone protection, VTE, code status, TSH, HbA1c).
 
 **This section uses geriatric jargon — it's for the geriatrician, not for the consulting team or the discharge document.**
 
-**Framing discipline (PATIENT 29/04/26):**
+**Framing discipline (the functional-subsection print):**
 - When the active med grid is in front of you (AZMA הוראות תרופתיות), absent meds may be intentional. Frame "missing" items as **questions** not directives.
 - Frailty-adjusted dosing (sub-therapeutic anticoag in a bedbound demented patient with bleed history) is defensible — push back on it only if the frailty reasoning is genuinely absent, not just because the dose is below the guideline number.
 - Trend data deserves its own flag category. A persistently abnormal Hb across multiple admissions (e.g., 2018→2022→2026 trajectory) is more diagnostic than the current admission's point value.

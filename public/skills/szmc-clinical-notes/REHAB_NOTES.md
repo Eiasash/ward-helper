@@ -26,42 +26,42 @@ The rehab admission is structurally a **transfer note**, not a fresh admission. 
 1. **כותרת** (auto)
 2. **הצגת החולה** — single line: `בן/בת X, [marital], [living situation], [transferred from]`. Example: `בן 77, אב ל-4 ילדים, מתגורר עם אישתו בקומה 2 עם מעלית. הגיע מגריאטריה מוגבר לשיקום טרום-ניתוחי.`
 3. **אבחנות פעילות** — keep MINIMAL: `ADMISSION FOR REHABILITATION` first, then **only** the genuinely-active acute issue(s) continuing into rehab (e.g. an active `UTI`). The recent **surgery goes to ניתוחים בעבר**, and the **resolved/chronic problem (ischemic leg, arterial occlusion, the stroke once stable) goes to אבחנות ברקע** — NOT under active. **Pull every diagnosis from the EMR's CODED diagnosis list, never paraphrase from the narrative prose** (the coded list is authoritative; e.g. filed dx `ADENOCARCINOMA OF RECTUM` even when the HPI prose says "SCC of anus" — flag the mismatch but use the coded term). **The rehab stay gets a NEW אשפוז number** — use it in the header, never carry the acute-stay number.
-4. **אבחנה משוערת** — only if relevant (e.g., `ENDOCARDITIS (IE / BE / SBE)` in PATIENT case)
+4. **אבחנה משוערת** — only if relevant (e.g., `ENDOCARDITIS (IE / BE / SBE)` in the post-AVR case)
 5. **אבחנות ברקע** — chronic + recent acute that resolved. English UPPERCASE.
 6. **ניתוחים בעבר** — surgical history, especially recent admission's procedure
 7. **תלונה עיקרית** — the rehab-specific transfer reason. Examples:
-   - `העברה ממחלקה נירולוגיה לצורך שיקום` (post-stroke)
-   - `חיזוק ושיפור מצב לפני ניתוח לב פתוח` (pre-cardiac-surgery)
-   - `העברה מאורתופדיה לצורך שיקום לאחר ניתוח דהקומפרסיה וקיבוע T7-L2`
+  - `העברה ממחלקה נירולוגיה לצורך שיקום` (post-stroke)
+  - `חיזוק ושיפור מצב לפני ניתוח לב פתוח` (pre-cardiac-surgery)
+  - `העברה מאורתופדיה לצורך שיקום לאחר ניתוח דהקומפרסיה וקיבוע T7-L2`
 8. **רקע רפואי** — מחלות + previous admissions
 9. **מחלה נוכחית** — **INHERIT from source-dept discharge dictation**. Do not retake history. Audit the source narrative for typos / voice-rec errors and paste cleaned version. If source dept used `#`-prefixed problem-list (אונקולוגי / זיהומית / תפקודית etc.), preserve that structure.
-   - **When the source was a surgical dept (e.g. ortho) and the request is to write it "as if admitted to that dept", write מחלה נוכחית as that dept's admission HPI** — narrate the *in-hospital course*, not the at-home story: baseline + fall/mechanism → fracture/diagnosis → operative fixation (date, implant) → post-op course (transfusion, control film, Vit-D repletion, PT mobilization) → transfer to rehab. The home/social story belongs in הצגת החולה and תפקוד, not here.
-   - **Do NOT propagate a source's "ללא רקע רפואי" / "no PMH" when the EMR's CODED background contradicts it.** The coded background list is frequently RICHER than the acute discharge (which often under-captures comorbidity — e.g. ortho discharge says "no PMH" while the coded list carries GERD, lumbar spinal stenosis, a prior vertebral fracture s/p kyphoplasty, prior surgeries, prior osteoporosis therapy). Trust the coded list, omit the false "no background" clause, and flag the discrepancy in the team box.
+  - **When the source was a surgical dept (e.g. ortho) and the request is to write it "as if admitted to that dept", write מחלה נוכחית as that dept's admission HPI** — narrate the *in-hospital course*, not the at-home story: baseline + fall/mechanism → fracture/diagnosis → operative fixation (date, implant) → post-op course (transfusion, control film, Vit-D repletion, PT mobilization) → transfer to rehab. The home/social story belongs in הצגת החולה and תפקוד, not here.
+  - **Do NOT propagate a source's "ללא רקע רפואי" / "no PMH" when the EMR's CODED background contradicts it.** The coded background list is frequently RICHER than the acute discharge (which often under-captures comorbidity — e.g. ortho discharge says "no PMH" while the coded list carries GERD, lumbar spinal stenosis, a prior vertebral fracture s/p kyphoplasty, prior surgeries, prior osteoporosis therapy). Trust the coded list, omit the false "no background" clause, and flag the discrepancy in the team box.
 10. **רגישויות** — inherit
 11. **תרופות בבית** — inherit (auto sidebar populates from Chameleon DB)
 12. **בדיקה גופנית** — **on-arrival snapshot**. Use the **admission-encounter bedside vitals** (the set taken at the actual admission contact), **NOT the AZMA header snapshot** — they differ and the header is often a stale morning reading. Record the time/date taken.
-    ```
-    הופעה כללית: ל"ד X/Y, דופק Z, חום W, סטורציה N% [נלקח HH:MM DD/MM]
-    ריאות: כניסת אוויר טובה ושווה / ללא ממצא חריג / [findings]
-    לב: סדיר / לא סדיר עם אוושה X/6
-    בטן: רכה ללא רגישות / [findings]
-    גפיים: בצקות / ללא בצקת / [findings]
-    עצבים: [neuro exam — especially relevant if post-CVA or post-spine]
-    ```
+  ```
+  הופעה כללית: ל"ד X/Y, דופק Z, חום W, סטורציה N% [נלקח HH:MM DD/MM]
+  ריאות: כניסת אוויר טובה ושווה / ללא ממצא חריג / [findings]
+  לב: סדיר / לא סדיר עם אוושה X/6
+  בטן: רכה ללא רגישות / [findings]
+  גפיים: בצקות / ללא בצקת / [findings]
+  עצבים: [neuro exam — especially relevant if post-CVA or post-spine]
+  ```
 13. **בדיקות עזר** — **dedicated section** (do NOT fold imaging into the discussion the way some filed notes do — Eias's preference is a standalone section). One line each: ECG (rhythm + QTc), CXR, CT/CTA, Doppler, ECHO — raw findings only, **no specimen/accession reference numbers**, no arrows, no interpretation words.
 14. **בדיקות מעבדה** — **dedicated section**, raw values only (no H/L, no normal-range parens, no specimen/accession IDs). Prose trend format: `נתרן בקבלה X, במהלך האשפוז Y עד Z`. Pull the recent bloods + any recent workup; fill it, do not leave blank.
 15. **דיון** — **OPENS with a one-paragraph synthesis CAPSULE before any `#`** (Eias 16/06/26), then the `#`-prefixed problem list. The capsule, in order: age + independent/previously-walking baseline + `רקע כמפורט מעלה` + admitted to [surgical dept] for surgery and transferred to our ward for rehab + on-arrival exam (**pertinent findings ONLY** — wound status, neurovascular, no-edema, no acute cardiopulmonary finding) + **pertinent latest imaging/labs** (post-transfusion Hb, renal, Vit-D, control film) — then the line `כעת מציגה את הבעיות הבאות לדיון:` followed by the `#` list. It is **NOT** a bare `#` list. One `#` per active problem, labs woven into the relevant `#`. **NO plan inside this block.**
-   - **EXPAND each `#` with the clinically meaningful context and reasoning** — don't reduce it to a label. e.g. for osteoporosis: name the loading dose already given (Vit-D 50,000u), the agent decision and *why* (TERIPARATIDE/FORTEO as anabolic for bisphosphonate **treatment failure** — a fracture under/after a bisphosphonate), and the renal constraint (CrCl). The discussion is where the thinking is shown; the plan carries the one-line actions.
+  - **EXPAND each `#` with the clinically meaningful context and reasoning** — don't reduce it to a label. e.g. for osteoporosis: name the loading dose already given (Vit-D 50,000u), the agent decision and *why* (TERIPARATIDE/FORTEO as anabolic for bisphosphonate **treatment failure** — a fracture under/after a bisphosphonate), and the renal constraint (CrCl). The discussion is where the thinking is shown; the plan carries the one-line actions.
 16. **תוכנית** — a **SEPARATE final paragraph**, **one line per plan item** (e.g. `שיקום מעברים`, `המשך אנטיביוטיקה ומעקב מדדי דלקת`, `איזון סוכר`, `מעקב פצע`, `תיאום סוציאלי לקראת שחרור`). Carry the concrete actions the discussion implies — **drug-initiation/stop decisions with timing** (e.g. start TERIPARATIDE after Ca/Vit-D correction; continue prophylactic anticoagulation until 1 month post-op *with the stop date*), follow-up labs, and discharge-planning steps.
-   - **Post-op rehab admissions: include an estimated suture/staple removal date based on POD** (see `ortho-reference` §6 — hip / proximal extremity = POD 10–14; compute from the surgery date, e.g. surgery 07/06 → ~POD 14 ≈ 21/06), with the caveat "after confirming the wound is well-healed." Avoid the Friday-punt-to-weekend trap.
+  - **Post-op rehab admissions: include an estimated suture/staple removal date based on POD** (see `ortho-reference` §6 — hip / proximal extremity = POD 10–14; compute from the surgery date, e.g. surgery 07/06 → ~POD 14 ≈ 21/06), with the caveat "after confirming the wound is well-healed." Avoid the Friday-punt-to-weekend trap.
 
 **Critical rules:**
 
 - **The rehab admission body is short by design.** Most substantive content lives in the inherited מחלה נוכחית paragraph. The doctor's value-add is the on-arrival exam, the בדיקות עזר/מעבדה, and the framing of what rehab is for.
 - **FILL ALL GAPS — no "to confirm" placeholders in the note body.** The תפקוד section gets the FULL functional grid from the PT/OT intake: the 9 ADL items graded 3-tier (הלבשה / רחצה / אכילה / הכנת אוכל / ניידות / ניידות בכיסא גלגלים / מעברים / שליטה על שתן / שליטה על יציאה) plus מגורים / עזרה / ניידות-aid / התמצאות / הזנה. Resolve floor + elevator and the rehab room + bed. Genuine unknowns (a real source contradiction, or a current grade the PT hasn't recorded) stay flagged in the non-copy team box — that is the ONLY place a "confirm" item belongs.
 - **ALWAYS output the medication orders to give/enter in the SAME turn as the note** — not only when separately asked. Group `קבוע` / `לפי צורך (PRN)` / `מוחזק-לברר (held/clarify)`. **Default to give = the CURRENT ACTIVE orders on the sending department's AZMA medication grid** (continue them), UNLESS the transfer letter (סיכום) specifies otherwise. **IMPLEMENT documented medication recommendations** from the transfer letter / consult — add, reduce, stop, or titrate — do not merely copy the active list. Verify Israeli brand names against the drug database before writing orders.
-- **WATCH the בדיקות עזר free-text panel for wrong-patient / template contamination.** That free-text box sometimes holds values that are NOT this patient's (a leftover template or another patient's labs). Real case (PATIENT 16/06): the panel showed Na 133 / BUN 73 / Cr 2.76 / Troponin 264 / CRP 21.44 while the patient's actual labs were Cr ≤1.01, Troponin <10, CRP 0.12. **Cross-check every value in that panel against the patient's real lab results; if foreign, flag it and clear it — never paste it into the note.**
-- **Verify home floor + elevator across sources — it is discharge-critical.** The admission `הצגת החולה` and the social-work note can conflict (PATIENT: admission `קומה 3 ללא מעלית` vs social work "building has an elevator"). For a return-home rehab goal this changes the whole plan (stair training, home access). Reconcile before signing; if unresolved, flag in the team box.
+- **WATCH the בדיקות עזר free-text panel for wrong-patient / template contamination.** That free-text box sometimes holds values that are NOT this patient's (a leftover template or another patient's labs). Real case (the intertrochanteric-admission case): the panel showed Na 133 / BUN 73 / Cr 2.76 / Troponin 264 / CRP 21.44 while the patient's actual labs were Cr ≤1.01, Troponin <10, CRP 0.12. **Cross-check every value in that panel against the patient's real lab results; if foreign, flag it and clear it — never paste it into the note.**
+- **Verify home floor + elevator across sources — it is discharge-critical.** The admission `הצגת החולה` and the social-work note can conflict (the intertrochanteric-admission case: admission `קומה 3 ללא מעלית` vs social work "building has an elevator"). For a return-home rehab goal this changes the whole plan (stair training, home access). Reconcile before signing; if unresolved, flag in the team box.
 
 ### Rehab daily rounds (ביקור רופא) — three patterns
 
@@ -139,7 +139,7 @@ P לביצוע:
 כעת לאחר [acute event] בתאריך [DD/MM]. התקבל/ה לשיקום ביום [N] לאחר [הניתוח/האירוע].
 ```
 
-Worked example (PATIENT, post-ORIF day 10, ESKD):
+Worked example (the bisphosphonate-in-HD case, post-ORIF day 10, ESKD):
 ```
 בן 62, גרוש, אב ל-2, מתגורר לבד בקומה 5 עם מעלית. אחות בקשר.
 רקע רפואי כולל ESKD על המודיאליזה 3X בשבוע דרך פיסטולה משמאל, סוכרת לא מאוזנת על אינסולין,
@@ -150,7 +150,7 @@ Worked example (PATIENT, post-ORIF day 10, ESKD):
 ```
 
 Capsule rules:
-- **Cross-check demographics against admission הצגת החולה.** Marital status, parent count, living situation are propagated from your day-1 capsule into every subsequent note by every physician for the next month — getting them wrong on day 1 corrupts the chart. The PATIENT 13/04 note had `אלמנה ואם ל-2` while admission said `רווקה / אם ל-5` — that's the failure mode.
+- **Cross-check demographics against admission הצגת החולה.** Marital status, parent count, living situation are propagated from your day-1 capsule into every subsequent note by every physician for the next month — getting them wrong on day 1 corrupts the chart. The the vitamin-D case note had `אלמנה ואם ל-2` while admission said `רווקה / אם ל-5` — that's the failure mode.
 - **Days post-event** (e.g., "ביום 10 לאחר הניתוח") is critical context for analgesia, anticoag duration, suture removal — calculate it explicitly.
 - **Mention contact person and relationship** (sister, son, daughter, niece) — discharge planning starts here.
 - **Pre-admission baseline** is one line. Don't restate the OT intake; reference it.
@@ -242,23 +242,23 @@ FUROSEMIDE פומי במקום IV
 - Each `A` bullet starts with `*[domain] - ` followed by status + decision in one sentence
 - Each `A` bullet is a **trajectory vs the prior round**, not a fresh status: unchanged → `ללא שינוי משמעותי`; changed → state the delta in prose (`קראטינין ירד מ-2.1 ל-1.8`, `APIXABAN הופסק`, `חום 39.2 ירד ל-afebrile`); resolved → `נפתר`; new problem → add it under the right `*domain`. The prior round's note is already in the chart — don't re-describe what hasn't moved.
 - Domain prefixes (pick what's active, not a fixed template):
-  - `*אורתופדית` (post-op spine/joint, wound, fixation, drain, VAC)
-  - `*זיהומית` (active ABX, levels, source control, cultures)
-  - `*תפקודית` (functional progression, transfers, mobility, ADL improvement/regression)
-  - `*כלייתי` (AKI/CKD trajectory, drug-related toxicity, hydration)
-  - `*לבבי` (HF, arrhythmia, surgical timing)
-  - `*לחץ דם` (HTN management, drug changes)
-  - `*בצקת` (volume status, diuretic titration)
-  - `*נשימתי` (O2, pneumonia, OSA, secretions)
-  - `*נוירולוגית` (post-stroke deficits, cognition, seizure, spasticity)
-  - `*כאב` (pain control, opiates, paracetamol scheduled)
-  - `*שתן` (retention, catheter, UTI, catheter trial)
-  - `*מטבולית` (electrolytes, glucose, nutrition labs)
-  - `*פצע` (wound, VAC, dressing, healing)
-  - `*עצירות` (constipation, BM tracking, laxative regimen)
-  - `*שינה` (sleep, delirium, agitation, melatonin)
-  - `*תזונתי` (intake, weight trend, supplements, dietitian)
-  - `*פסיכולוגית` (mood, motivation, family dynamics)
+ - `*אורתופדית` (post-op spine/joint, wound, fixation, drain, VAC)
+ - `*זיהומית` (active ABX, levels, source control, cultures)
+ - `*תפקודית` (functional progression, transfers, mobility, ADL improvement/regression)
+ - `*כלייתי` (AKI/CKD trajectory, drug-related toxicity, hydration)
+ - `*לבבי` (HF, arrhythmia, surgical timing)
+ - `*לחץ דם` (HTN management, drug changes)
+ - `*בצקת` (volume status, diuretic titration)
+ - `*נשימתי` (O2, pneumonia, OSA, secretions)
+ - `*נוירולוגית` (post-stroke deficits, cognition, seizure, spasticity)
+ - `*כאב` (pain control, opiates, paracetamol scheduled)
+ - `*שתן` (retention, catheter, UTI, catheter trial)
+ - `*מטבולית` (electrolytes, glucose, nutrition labs)
+ - `*פצע` (wound, VAC, dressing, healing)
+ - `*עצירות` (constipation, BM tracking, laxative regimen)
+ - `*שינה` (sleep, delirium, agitation, melatonin)
+ - `*תזונתי` (intake, weight trend, supplements, dietitian)
+ - `*פסיכולוגית` (mood, motivation, family dynamics)
 - `P לביצוע` on a subsequent round is a **delta, not a reprint** — yesterday's `לביצוע` is already in the chart (in AZMA's SOAP entry the P field persists verbatim across sessions, so a full reprint double-enters it). Lead with what changed since the last round — מה נוסף, מה הופסק או שונה — with explicit timing (`היום` / `לפני המנה הבאה מחר בבוקר` / `יומיומית` / `בערב`). Collapse unchanged continuations into one line (`ממשיך טיפול כפי שתואם`); do not re-enumerate them item by item. Carve-out: a genuinely active/complex problem still gets its own specific action line — the delta framing governs only the standing, unchanged actions.
 - Labs go in their **own `מעבדה:` section after O** (date-stamped) — **never in `O`**. `O` holds the bedside exam + ECG/imaging findings (`ממצאי עזר`). A **decision-driving** lab may *also* be cited inline in the relevant `A` bullet as reasoning (`*כלייתי - החמרה קלה, קראטינין 1.3`) — that citation is interpretation, not the data section. Today's labs as a group live in `מעבדה`; routine normals not driving a decision can be summarized in one line or omitted.
 
@@ -291,7 +291,7 @@ This field is the institutional rehab discharge-planning text. It has TWO logica
 
 Example:
 ```
-בן 77 לאחר ORIF של שבר בירך שמאל. יעד: שחרור הביתה עם תמיכה משפחתית עד תאריך 25/05.
+בן 77 לאחר ORIF של שבר בירך שמאל. יעד: שחרור הביתה עם תמיכה משפחתית עד מועד היעד.
 אבני דרך: עצמאי במעבר מיטה→כסא, הליכה 30 מטר עם הליכון, עצמאי בשרותים.
 ```
 
@@ -306,7 +306,7 @@ Example:
 - **Daily M–F:** doctor writes ביקור רופא (this skill, rehab-rounds mode). Format = the **FIRST-DAY / STABLE / COMPLEX** triage (the first round SOAP of the admission is FIRST-DAY, written once; every subsequent round is STABLE vs COMPLEX by active-complexity triggers — see the daily-round patterns below).
 - **Discharge:** rehab-specific סיכום אשפוז — see **"Rehab discharge (סיכום אשפוז שיקומי)"** below. Its מהלך ודיון uses a `#`-prefixed problem list (parity with the admission), placed after the מצב תפקודי template; the blocks unique to the discharge are kept too — functional-baseline + the מצב תפקודי template + the `*` בעיות אחרות incidental list + לסיכום.
 
-### Rehab discharge (סיכום אשפוז שיקומי) — **per the index case 08/06/26 print**
+### Rehab discharge (סיכום אשפוז שיקומי) — **per the index rehab-discharge print**
 
 The rehab discharge uses the **same printed-section skeleton** as the general discharge (אבחנות פעילות → ניתוחים באשפוז → ברקע → הצגה → תלונה → מחלה נוכחית → רקע → רגישויות → הרגלים → בדיקה בקבלה → תרופות בבית → בדיקות עזר → מעבדה → **מהלך ודיון** → המלצות בשחרור → המשך תרופתי → auto → חתימה). **The divergence is entirely inside מהלך ודיון, plus a few framing rules.** Don't reinvent the skeleton — apply the deltas.
 
@@ -319,7 +319,7 @@ ADMISSION FOR REHABILITATION
 ```
 
 **`DECONDITIONING` gate:** list `DECONDITIONING` only for true deconditioning / medical-decline admissions (the long-ICU "the deconditioning exemplar" pattern). **Ortho post-op is NEVER deconditioning — all cases, no exceptions** (post-surgical non-weight-bearing weakness is a distinct mechanism from immobility-driven deconditioning). For any ortho post-op rehab, suppress the deconditioning frame and lead with `STATUS POST [procedure] (date)` instead — append an indication only when there is one (`- [fracture]` for a fragility-fracture case; elective THA/TKA or decompression/fusion carry no fracture, so omit it) (see Ortho-rehab specifics below).
-Isolation/carrier status that is still in effect at discharge **must** appear as an active dx and be repeated in the body (with the until-date) — it governs the next facility/home arrangement. (the index case: CRKP non-CPE, last positive 27/04, isolation until 10/2026 = 6 months.)
+Isolation/carrier status that is still in effect at discharge **must** appear as an active dx and be repeated in the body (with the until-date) — it governs the next facility/home arrangement. (the index case: CRKP non-CPE, last positive [recent], isolation ongoing = 6 months.)
 
 **Delta 2 — מחלה נוכחית is the inherited acute story, audited.**
 The rehab admission appended the source-dept course; at discharge you output the cleaned full narrative for paste-over (same APPEND-field rule as general discharge). The *rehab* story does NOT go here — it goes in מהלך ודיון.
@@ -337,7 +337,7 @@ The rehab admission appended the source-dept course; at discharge you output the
 במעבר מישיבה לעמידה [grade]
 שיווי משקל דינמי בעמידה [תקין/לקוי]
 הליכה עם [aid] [grade + distance/סיבולת]
-מדרגות עם [grade]   ← optional line; drop if not assessed
+מדרגות עם [grade]  ← optional line; drop if not assessed
 באכילה [grade]
 ברחצה [grade]
 בלבוש [grade]
@@ -345,23 +345,23 @@ The rehab admission appended the source-dept course; at discharge you output the
 FUNCTIONAL INDEPENDENCE MEASURE מוטורי בבית (לפני האשפוז) __/91, בקבלתו לשיקום __/91, ובשחרור __/91.
 FUNCTIONAL INDEPENDENCE MEASURE קוגניטיבי __/35.
 ```
-   - **Cognitive line — MMSE *or* MoCA, never both; the copy block above shows the MMSE form.** For a MoCA-only patient, replace that first line with the clean Hebrew `מצב תפקודי: במבחן "מוקה" המטופל קיבל __ מתוך 30 נקודות.` and drop the ציור שעון clause (MoCA has no separate clock companion). Use whichever screen was actually administered (see the אומדנים note below). Keep English selector/instruction text out of the copied Hebrew sentence.
-   - **Grade words = the FIM score rendered as Hebrew (Eias 08/06/26) — do NOT free-hand them.** Conversion:
+  - **Cognitive line — MMSE *or* MoCA, never both; the copy block above shows the MMSE form.** For a MoCA-only patient, replace that first line with the clean Hebrew `מצב תפקודי: במבחן "מוקה" המטופל קיבל __ מתוך 30 נקודות.` and drop the ציור שעון clause (MoCA has no separate clock companion). Use whichever screen was actually administered (see the אומדנים note below). Keep English selector/instruction text out of the copied Hebrew sentence.
+  - **Grade words = the FIM score rendered as Hebrew (Eias 08/06/26) — do NOT free-hand them.** Conversion:
 
-     | FIM | grade | | FIM | grade |
-     |---|---|---|---|---|
-     | 7/7 | עצמאי | | 3/7 | עזרה בינונית |
-     | 6/7 | השגחה | | 2/7 | עזרה בינונית למלאה |
-     | 5/7 | עזרה קלה | | 1/7 | עזרה מלאה |
-     | 4/7 | עזרה קלה לבינונית | | | |
+   | FIM | grade | | FIM | grade |
+   |---|---|---|---|---|
+   | 7/7 | עצמאי | | 3/7 | עזרה בינונית |
+   | 6/7 | השגחה | | 2/7 | עזרה בינונית למלאה |
+   | 5/7 | עזרה קלה | | 1/7 | עזרה מלאה |
+   | 4/7 | עזרה קלה לבינונית | | | |
 
-     Balance line uses `תקין / לקוי`; gait line appends the aid + distance or `סיבולת נמוכה`.
-   - **Which lines come from FIM vs PT:**
-     - **FIM-backed** (convert the *discharge-column* score via the table): `באכילה`←אכילה, `ברחצה`←רחצה, `בלבוש`←לבוש עליון+תחתון, `בשירותים`←שירותים, `שליטה`←שליטה שלפוחית+מעי, `מדרגות עם`←עליה וירידה במדרגות, `הליכה עם`←ניידות-הליכה/כ"ג (then append aid + distance/סיבולת from the PT note).
-     - **NOT FIM items — pull from the PT discharge note** (same vocabulary): `בניידות בתוך מיטה`, `במעבר משכיבה לישיבה`, `במעבר מישיבה לשכיבה`, `במעבר מישיבה לעמידה`, `שיווי משקל דינמי בעמידה`.
-   - **Gendered M/F templates both exist — match the patient.** Male: `המטופל קיבל ... בקבלתו ... עצמאי`. Female: `המטופלת קיבלה ... בקבלתה ... עצמאית`. The capsule, transfer lines, and all prose inflect too. (the deconditioning exemplar = male template; the femur exemplar = female.)
-   - The two FIM lines are the **outcome headline**: motor `home / admission / discharge`. The admission value is usually *below* home (deconditioning during the acute stay); the discharge value climbing back toward/above home is the rehab "win." (the index case: 61 → 35 → 63 = recovered to baseline.) Cognitive FIM is a single `/35`.
-   - These numbers come from the Chameleon **אומדנים** assessment grids (FIM/BADL, MMSE, Clock-CDT, MoCA), entered as dropdowns and auto-totaled. The prose block is the doctor's distillation of those totals — **MMSE or MoCA, whichever was administered** (one patient gets MMSE 25/30, another MoCA 20/30 — don't write both).
+   Balance line uses `תקין / לקוי`; gait line appends the aid + distance or `סיבולת נמוכה`.
+  - **Which lines come from FIM vs PT:**
+   - **FIM-backed** (convert the *discharge-column* score via the table): `באכילה`←אכילה, `ברחצה`←רחצה, `בלבוש`←לבוש עליון+תחתון, `בשירותים`←שירותים, `שליטה`←שליטה שלפוחית+מעי, `מדרגות עם`←עליה וירידה במדרגות, `הליכה עם`←ניידות-הליכה/כ"ג (then append aid + distance/סיבולת from the PT note).
+   - **NOT FIM items — pull from the PT discharge note** (same vocabulary): `בניידות בתוך מיטה`, `במעבר משכיבה לישיבה`, `במעבר מישיבה לשכיבה`, `במעבר מישיבה לעמידה`, `שיווי משקל דינמי בעמידה`.
+  - **Gendered M/F templates both exist — match the patient.** Male: `המטופל קיבל ... בקבלתו ... עצמאי`. Female: `המטופלת קיבלה ... בקבלתה ... עצמאית`. The capsule, transfer lines, and all prose inflect too. (the deconditioning exemplar = male template; the femur exemplar = female.)
+  - The two FIM lines are the **outcome headline**: motor `home / admission / discharge`. The admission value is usually *below* home (deconditioning during the acute stay); the discharge value climbing back toward/above home is the rehab "win." (the index case: 61 → 35 → 63 = recovered to baseline.) Cognitive FIM is a single `/35`.
+  - These numbers come from the Chameleon **אומדנים** assessment grids (FIM/BADL, MMSE, Clock-CDT, MoCA), entered as dropdowns and auto-totaled. The prose block is the doctor's distillation of those totals — **MMSE or MoCA, whichever was administered** (one patient gets MMSE 25/30, another MoCA 20/30 — don't write both).
 4. **`#`-prefixed problem list** — in parity with the admission דיון: `כעת מציג/ה את הבעיות הבאות לדיון:` then one `#` per active rehab problem, each expanded with the clinical reasoning (the rehab course, what changed, the decision). This is the discussion proper, and it comes *after* the מצב תפקודי block above.
 5. **בעיות אחרות:** — `*`-bullet list of incidental issues *during the rehab stay* (single `*` per incidental item — the `#`-prefixed headers are the problem-list discussion in step 4, these bullets stay `*`, not `**`). Each ties an event to its action, drug changes inline:
 ```
@@ -381,9 +381,9 @@ FUNCTIONAL INDEPENDENCE MEASURE קוגניטיבי __/35.
 
 **Delta 5 — המשך טיפול תרופתי carries `(למשך N חודשים)` durations**, and **reflects the rehab titrations** (the dose changes you wrote as `*` bullets must match the drug list): BB reduced, ACE-i reduced, Lantus down, steroids tapered, anticoag switched back from in-hospital enoxaparin to home apixaban, etc. Reconcile the בעיות אחרות bullets against this list before finalizing — a dose-reduction claimed in prose but not reflected in the drug list is a defect.
 
-**Delta 6 — signature is the senior / case manager, not the fellow.** This print was signed `ד"ר the rehab case manager, מ.ר ***REDACTED-LICENSE***` (rehab case manager), with the PT block signed separately by the physiotherapist. **Do NOT auto-stamp Eias's 000147224 on a rehab discharge** the way the general-discharge template does — leave the signing physician per case (confirm who finalizes). The auto-appended PT block (`מצב תפקודי לפי הערכת הפיזיותרפיה`) is the PT's, signed by her.
+**Delta 6 — signature is the senior / case manager, not the fellow.** This print was signed `ד"ר the rehab case manager` (rehab case manager), with the PT block signed separately by the physiotherapist. **Do NOT auto-stamp Eias's 000147224 on a rehab discharge** the way the general-discharge template does — leave the signing physician per case (confirm who finalizes). The auto-appended PT block (`מצב תפקודי לפי הערכת הפיזיותרפיה`) is the PT's, signed by her.
 
-**Two-patient upload caveat (process, not format):** a teaching/EMR bundle may mix patients (the 08/06 set had the index case ***REDACTED-ID*** *and* the femur exemplar ***REDACTED-ID***). Map every screenshot to its patient by the header ID/DOB **before** pulling any number into a note — FIM/MMSE/motor grids look identical across patients. (Memory: ".eml may span multiple patients — map by header first.")
+**Two-patient upload caveat (process, not format):** a teaching/EMR bundle may mix patients (one observed set contained two different patients — distinct header ID/DOB each). Map every screenshot to its patient by the header ID/DOB **before** pulling any number into a note — FIM/MMSE/motor grids look identical across patients. (Memory: ".eml may span multiple patients — map by header first.")
 
 **Delta 7 — condensation defaults (Eias 08/06/26, "condense relevant sections").** The rehab discharge runs long because the acute story gets told twice. Default to terse:
 - **מחלה נוכחית: 2 short paragraphs max** — para 1 = baseline + fall/mechanism + diagnoses; para 2 = surgery (date, implant, uneventful, no transfusion) + the imaging finding that changed management + transfer-to-rehab reason. Don't narrate every consult and X-ray.
@@ -391,19 +391,19 @@ FUNCTIONAL INDEPENDENCE MEASURE קוגניטיבי __/35.
 - **בדיקות עזר (imaging): keep only what changes management.** For a spine CT in an ortho-rehab patient: the fractured levels + worse/new + the conservative-management decision + any incidental finding needing follow-up. **Drop the level-by-level degenerative disc readout** (D11-D12 bulge, L3-L4 / L4-L5 stenosis, etc.) — irrelevant to a rehab discharge. One summary line `שינויים ניווניים רב מפלסיים עם היצרויות ספינליות ופורמינליות` covers it.
 - **בדיקות מעבדה: essentials only.** Biochem (Na trend, Ca, Cr, Vit D) + CBC (Hb trend, WBC trend). **Drop normal coags/INR** unless anticoagulation-relevant. Max 3 values/line, raw numbers, no interpretation.
 
-**Ortho-rehab specifics (the femur exemplar femur case, 08/06/26 — the cleaner ortho exemplar vs the deconditioning exemplar's deconditioning case):**
-- **Active dx** = `ADMISSION FOR REHABILITATION` + `STATUS POST [procedure] (date)` (append `- [fracture]` only for a fracture case — the the femur exemplar femur exemplar; elective THA/TKA or spine decompression/fusion carry no fracture, so omit it) + any other fractures if present. **NEVER `DECONDITIONING` — all ortho post-op, no exceptions** (post-surgical non-weight-bearing weakness ≠ immobility-driven deconditioning); `DECONDITIONING` is reserved for the long-ICU / medical-decline case (the deconditioning exemplar).
+**Ortho-rehab specifics (the femur exemplar — the cleaner ortho exemplar vs the deconditioning exemplar):**
+- **Active dx** = `ADMISSION FOR REHABILITATION` + `STATUS POST [procedure] (date)` (append `- [fracture]` only for a fracture case — the femur exemplar femur exemplar; elective THA/TKA or spine decompression/fusion carry no fracture, so omit it) + any other fractures if present. **NEVER `DECONDITIONING` — all ortho post-op, no exceptions** (post-surgical non-weight-bearing weakness ≠ immobility-driven deconditioning); `DECONDITIONING` is reserved for the long-ICU / medical-decline case (the deconditioning exemplar).
 - **ניתוחים באשפוז = procedures during the REHAB stay only** (usually none). The index surgery (CRIF/ORIF/hemi) belongs in מחלה נוכחית and the operative-dx line — not in ניתוחים באשפוז, which would wrongly imply it happened this admission.
 - **בעיות אחרות for ortho-rehab** typically: vertebral/other fractures on conservative management; **DVT prophylaxis with its stop date** (LMWH ~1 month post-op — e.g. ENOXAPARIN/CRUSIA); post-op anemia trend (no transfusion); low Vit D; incidental imaging findings needing community follow-up.
 - **Geri-analysis pearls for the chat (not the note):**
-  - **Osteoporosis is treatment-defining after a fragility fracture — push it, don't boilerplate it.** A hip fracture (± vertebral fractures) defines osteoporosis without DXA; a *new* vertebral fracture during the admission = very high imminent refracture risk. The discharge rec should drive actual treatment (replete Vit D → check Ca/renal → anti-resorptive/anabolic via ortho/endo/GP), not just "bone-health follow-up in the community." Vit D + Ca alone is repletion, not treatment.
-  - **Opioid taper.** Ortho discharges on standing oxycodone (Targin/Percocet) + PRN. A pain-free, mobilizing rehab patient (refusing doses, VAS 0) should leave on paracetamol + a PRN, standing opioids dropped — falls/constipation/delirium in the elderly. Confirm with the team.
-  - **CCB / home-med reconciliation.** The rehab order set can diverge from the acute discharge (e.g. home/ortho Amlodipine vs a rehab Lercanidipine order). Reconcile the discharge drug list against *current rehab orders*, not the acute discharge, and don't double-list a class.
-  - **Dual antihypertensive + presyncope/fall** → check orthostatics before discharge; if BPs run low, trim the CCB.
+ - **Osteoporosis is treatment-defining after a fragility fracture — push it, don't boilerplate it.** A hip fracture (± vertebral fractures) defines osteoporosis without DXA; a *new* vertebral fracture during the admission = very high imminent refracture risk. The discharge rec should drive actual treatment (replete Vit D → check Ca/renal → anti-resorptive/anabolic via ortho/endo/GP), not just "bone-health follow-up in the community." Vit D + Ca alone is repletion, not treatment.
+ - **Opioid taper.** Ortho discharges on standing oxycodone (Targin/Percocet) + PRN. A pain-free, mobilizing rehab patient (refusing doses, VAS 0) should leave on paracetamol + a PRN, standing opioids dropped — falls/constipation/delirium in the elderly. Confirm with the team.
+ - **CCB / home-med reconciliation.** The rehab order set can diverge from the acute discharge (e.g. home/ortho Amlodipine vs a rehab Lercanidipine order). Reconcile the discharge drug list against *current rehab orders*, not the acute discharge, and don't double-list a class.
+ - **Dual antihypertensive + presyncope/fall** → check orthostatics before discharge; if BPs run low, trim the CCB.
 
-### Complex-medical rehab discharge checklist — **the ESRD/HD case ESRD case, 08/06/26**
+### Complex-medical rehab discharge checklist — **the ESRD/HD exemplar**
 
-For a rehab patient with serious chronic disease (dialysis, advanced CKD, brittle DM, immunosuppression, G6PD), the medical layer is where the value and the traps are. Run this before signing — each line is a real miss caught on the the ESRD/HD case case:
+For a rehab patient with serious chronic disease (dialysis, advanced CKD, brittle DM, immunosuppression, G6PD), the medical layer is where the value and the traps are. Run this before signing — each line is a real miss caught on the ESRD/HD case:
 
 - **Dialysis status is the first question, before anything else.** If ESRD/HD: name the **unit + schedule + access** in the note; at discharge coordinate the **next session + transport**; **protect the fistula arm** (no BP, no draws — put it in the exam *and* the recs); EPO/IV iron are given **via the dialysis unit**, not the GP. Don't write the discharge until you know.
 - **Renal drug dosing — reconcile against renal-adjusted doses, not the home doses.** Re-dose renally-cleared drugs (**Levetiracetam** — the ESRD/HD case's home 1000 BID → 500 BID; gabapentinoids; LMWH; many antibiotics); **avoid metformin**; ACE/ARB caution with hyperkalemia (the ESRD/HD case's home ACE was correctly dropped, K ran to 5.9). Flag any renally-cleared drug still at its non-renal dose.
@@ -446,8 +446,8 @@ These are clinical decisions that come up repeatedly on geri-rehab and where the
 
 The acute team's discharge dictation will contain medication interpretations, lab interpretations, and recommendations that you'll be tempted to copy into your rehab admission's מחלה נוכחית. Don't propagate without reading. Two real failure modes seen:
 
-- *Vitamin D 20 ng/ml labeled as "maintenance therapy"* (PATIENT 13/04) — D 20 is **insufficiency** (sufficiency starts ~30 ng/ml), not maintenance. Calling it maintenance and proceeding to bisphosphonate creates a pharmacological hazard.
-- *"Continue Aclasta in discharge" in an ESKD patient* (PATIENT 03/05) — bisphosphonates in HD are not a default; need CKD-MBD workup and nephro+endo consultation first.
+- *Vitamin D 20 ng/ml labeled as "maintenance therapy"* (the vitamin-D case) — D 20 is **insufficiency** (sufficiency starts ~30 ng/ml), not maintenance. Calling it maintenance and proceeding to bisphosphonate creates a pharmacological hazard.
+- *"Continue Aclasta in discharge" in an ESKD patient* (the bisphosphonate-in-HD case) — bisphosphonates in HD are not a default; need CKD-MBD workup and nephro+endo consultation first.
 
 **2. CKD-MBD vs osteoporosis — bisphosphonate trap in ESKD/HD patients.**
 
@@ -463,7 +463,7 @@ If the source team recommended bisphosphonate, push back as a question in your A
 
 **3. Demographics cross-check on day 1 capsule.**
 
-Marital status, parent count, living situation get propagated from your day-1 capsule into every subsequent note for the next month. The PATIENT 13/04 note had `אלמנה ואם ל-2` while admission said `רווקה / אם ל-5` — chart corruption that propagated. Cross-check the admission הצגת החולה verbatim before writing the capsule. If the admission field is blank or ambiguous, write it as you confirmed at bedside, not as you assumed.
+Marital status, parent count, living situation get propagated from your day-1 capsule into every subsequent note for the next month. The the vitamin-D case note had `אלמנה ואם ל-2` while admission said `רווקה / אם ל-5` — chart corruption that propagated. Cross-check the admission הצגת החולה verbatim before writing the capsule. If the admission field is blank or ambiguous, write it as you confirmed at bedside, not as you assumed.
 
 **4. Dizziness or pre-syncope during PT is a clinical event, not an anecdote.**
 
@@ -477,7 +477,7 @@ When a PT note describes a "near-fall" or "dizziness" or "needed extra support t
 
 **5. Pre-admission falls + in-rehab near-falls → connect them.**
 
-Geri-rehab admissions for fracture often have a fall as the precipitating event. If the PRE-admission fall and an IN-rehab near-fall both happen, treat them as a syndrome to investigate, not two unrelated events. The PATIENT case: scooter fall on 22/04 with weakness, near-fall in PT on 03/05 — both should be in the same bullet with the same workup.
+Geri-rehab admissions for fracture often have a fall as the precipitating event. If the PRE-admission fall and an IN-rehab near-fall both happen, treat them as a syndrome to investigate, not two unrelated events. The the bisphosphonate-in-HD case: scooter fall on 22/04 with weakness, near-fall in PT on 03/05 — both should be in the same bullet with the same workup.
 
 **6. Iatrogenically deprescribed antidepressants in HD patients.**
 
@@ -497,4 +497,4 @@ The admission med list often has 10+ meds with unclear current indication. Day-1
 
 **10. Discharge planning starts day 1, not week 4.**
 
-For any patient living alone in a high-floor apartment (PATIENT: floor 5; PATIENT: floor 1 no elevator), day-1 social work referral is appropriate. Discharge to "home alone" for a fresh post-op patient with falls history is rarely viable; surfacing the constraint on day 1 lets the family/social work plan in parallel with the rehab clinical course.
+For any patient living alone in a high-floor apartment (the bisphosphonate-in-HD case: floor 5; the vitamin-D case: floor 1 no elevator), day-1 social work referral is appropriate. Discharge to "home alone" for a fresh post-op patient with falls history is rarely viable; surfacing the constraint on day 1 lets the family/social work plan in parallel with the rehab clinical course.
