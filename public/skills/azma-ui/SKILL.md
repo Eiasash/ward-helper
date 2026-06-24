@@ -54,7 +54,7 @@ See `AZMA_REFERENCE.md` for the full reference (R5, 2026-05-18).
 - **§7 — order-grid row-state read** — §7.0 the AZMA grid (live) · §7.3 the icon legend (reconciled & confirmed) · §7.7 reconciliation log
 - §8 — 5 official quiz Q&As (manifest-grade answers)
 
-**Programmatic lookup** — `azma_reference.json` (v4.0.0). Top-level keys include `deptMgmt`, `colorCodes`, `medGridRowStates`, `quiz` (with `manifestEvidence` + `provenance` per item), `iconDischargeMapping`, `_source.scenes` (raw Storyline slide content).
+**Programmatic lookup** — `azma_reference.json` (v4.1.0). Top-level keys include `deptMgmt`, `colorCodes`, `medGridRowStates` (icon legend reconciled to the §7.3 2-state model), `assessmentFields` (VTE-risk + `<6 months` prognosis flag, §7.8), `quiz` (with `manifestEvidence` + `provenance` per item), `iconDischargeMapping`, `_source.scenes` (raw Storyline slide content).
 
 **Canonical SCORM source** — `manifest.json` carries explicit `"status":"correct"` markers tying answer records to choice IDs. Use this when verifying quiz answers programmatically.
 
@@ -62,7 +62,7 @@ See `AZMA_REFERENCE.md` for the full reference (R5, 2026-05-18).
 
 When Eias sends a photo of AZMA:
 - **Patient-list / department census** → match against §4 columns and §6 color codes
-- **Order grid (`הוראות תרופתיות` / `נזלים` / `לוינים-ונקזים`)** → use §7's 4-axis read. Always check all 4 axes (text color, strikethrough, icon, view filter) — misreading one flips clinical meaning
+- **Order grid (`הוראות תרופתיות` / `נזלים` / `לוינים-ונקזים`)** → use §7's 4-axis read. Always check all 4 axes (text color, strikethrough, icon, view filter) — misreading one flips clinical meaning. **If the grid arrives as an exported image / OCR'd text rather than the live screen, OCR loses two of those axes (colour + strikethrough): view the image natively and confirm the `בתוקף`/`הכל` filter before judging active-vs-held — an OCR'd `הכל` view reads exactly like the active list (§7.5 caution 3).** The SOAP panel also carries two assessment fields — VTE-risk score and a `<6 months` prognosis checkbox; surface the latter when ticked (§7.8).
 - **Toolbar** → §3 (department-management) or §5 (global)
 
 ## Workflow links to clinical writing

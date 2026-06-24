@@ -132,7 +132,7 @@ The medication-orders grid (and the parallel נזלים / לוינים-ונקז�
 
 ### 7.0 The AZMA medication-order grid (live reference)
 
-> Added R5, revised R6 (both 2026-05-18) from real de-identified captures in `screenshots/` and Eias's confirmation. §7.1–7.6 describe the grid; §7.3 and §7.7 are reconciled with the live captures.
+> Added R5, revised R6 (both 2026-05-18) from real de-identified captures in `screenshots/` and Eias's confirmation. §7.1–7.8 describe the grid; §7.3 and §7.7 are reconciled with the live captures; §7.8 (assessment fields) added from a live capture, and §7.5 caution 3 (OCR/exported-image loses axes 1–2) added the same day.
 
 **This grid is AZMA.** It is AZMA's medication-order screen (`הוראות תרופתיות`). The application window's title bar may read **`Eitan 4`** — that is the integrated application build, *not* a separate EMR; the order grid, the SOAP/`ביקור` panel and the census are all AZMA. **Eitan** proper is a different thing entirely — the cross-hospital shared record, surfaced as the small blue patient-name box (SKILL.md §0.3). Do not let the title bar mislead you.
 
@@ -194,10 +194,11 @@ For any order row, read three independent things:
 - **Admin-status icon.** Pencil = pending (awaiting administration); red round stop = active.
 - **Speech bubble.** Green = a doctor's note, red = a nurse's note (read both), grey = none.
 
-Plus two screen-not-photo cautions:
+Plus three screen-not-photo cautions:
 
 1. Set the `הצג הוראות` filter to **הכל** before reconstructing a regimen — **בתוקף** hides inactive rows (§7.4).
 2. The **selection-row blue border** (highlight when a row is clicked) is *not* a strikethrough. A real strikethrough is a thin blue line cutting through the medication name *and* the dose/frequency columns; the selection border only outlines the row.
+3. **Reading the grid from an exported image or OCR'd text (not the live screen)?** OCR conveys route / drug / dose / frequency but **cannot convey Axis 1 (colour) or Axis 2 (strikethrough)** — the two axes that carry active-vs-historical status. So an OCR'd **`הכל`** view reads *exactly* like the active list, and you will wrongly conclude that finished/held orders are current (or that current orders are absent). Before judging active-vs-held from a screenshot: **view the image natively** (so colour + strikethrough are visible) **and confirm which `הצג הוראות` filter the capture is on.** A signed transfer letter and a `הכל` capture both mislead the same way — the live **`בתוקף`** grid is ground truth.
 
 ### 7.6 Common workflows that depend on this read
 
@@ -283,16 +284,29 @@ The slide presents 4 picture choices (each picture shows a pen icon in a differe
 | Grey speech bubble | Empty — no note (§7.3) |
 | Gray name + strikethrough in the orders grid | Finished historical order (§7.1, §7.2) |
 | Black name + no strikethrough in the orders grid | Active current order (§7.1, §7.2) |
+| `<6 months` checkbox ticked (below SOAP panel) | Physician limited-prognosis flag — surface for goals-of-care, any setting (§7.8) |
+| `אומדן סיכון ל-VTE` score (below SOAP panel) | VTE-risk score + date — report the number (§7.8) |
 | Green circle near shift change | Unsigned nursing shift summary |
 | Color on the blood bank "מספר" column | Sample validity (§4 row 12) |
 | Icons at top of screen | Toolbar — §3 or §5 |
 | Bell icon on row | Overdue nursing task |
 | Red vs gray "רקע" | Current vs prior social-work involvement |
 
+### 7.8 Assessment fields below the SOAP / `ביקור` panel
+
+Beneath the SOAP/`ביקור` panel the screen carries two **structured assessment fields**. They are general AZMA screen features (any ward, any encounter type — not specific to rehab):
+
+| Field | Read |
+|---|---|
+| **`אומדן סיכון ל-VTE`** | A VTE-risk score with a date (e.g. `ציון 1, תאריך 28/05/26`). The number is the score — report it; do not infer the prophylaxis decision from the score alone. |
+| **`צפוי והערכה כי למטופל נותר פחות מ-6 חודשים לחיות`** | A **checkbox**. When **ticked**, a physician has entered a **limited-prognosis flag (≈ "less than 6 months expected")**. This is a goals-of-care signal, not an administrative tick. |
+
+**When the `<6 months` box is ticked, surface it** — in any setting (consult, acute-geriatrics note, rehab admission, family meeting), because it bears on goals of care and on how aggressively to pursue invasive workup, GDMT escalation, or an intensive rehab program. Confirm the entering team's reasoning before acting on it; it is one clinician's estimate, not a determination. A `<6 months` life-expectancy flag, when set, reframes the rehab goal toward an early expectations conversation rather than full functional restoration.
+
 ## Files in this bundle
 
 - `AZMA_REFERENCE.md` — this document (R5)
-- `azma_reference.json` — programmatic lookup with `medGridRowStates.icons` (7 entries) plus quiz items carrying explicit `manifestEvidence` and `provenance` fields. Original Storyline slide-content dump preserved under `_source.scenes`. **Note:** the `medGridRowStates.icons` list reflects the §7.3 SCORM legend and has not been reconciled with the §7.7 real-capture observations — treat §7.7 as the more current source until the JSON is updated.
+- `azma_reference.json` (v4.1.0) — programmatic lookup. `medGridRowStates.axes.3_rowIcons` now carries the **current 2-state admin-icon model** (pencil=pending, red-stop=active; blue-circle retired into `retired[]`), `practical3x3` rebuilt on the 2-state read, plus a `readingFromImage` caution and a top-level `assessmentFields` block (VTE-risk + `<6 months` prognosis flag, §7.8). Quiz items still carry explicit `manifestEvidence`/`provenance` and their answers intentionally reflect the **SCORM course key** (for passing the familiarization quiz), so quiz item answers may still cite the course-era blue-circle — that is by design, not drift. Original Storyline slide-content dump preserved under `_source.scenes`.
 - `manifest.json` — the complete Articulate Storyline 3.5 SCORM manifest (`projectId 66MVezv2vF7`). Canonical source for the explicit answer key (look for `"status":"correct"` markers).
 - `screenshots/` — de-identified crops from **real AZMA captures** (R5–R7, 2026-05-18): the medication-order grid (`azma-medgrid-*.png`) and the `ניהול מחלקה` census (`azma-census-reference.png`). See `screenshots/README.md`. Any image added here must be PHI-cropped first (no patient name / ID / DOB / admission number).
 
