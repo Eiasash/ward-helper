@@ -10,9 +10,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install gitleaks (latest release)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          TAG=$(curl -sSfL https://api.github.com/repos/gitleaks/gitleaks/releases/latest | grep -oP '"tag_name":\s*"\K[^"]+')
+          # Authenticate the release-metadata API call so it does not hit the
+          # unauthenticated 60/hr rate limit (was intermittently 403ing).
+          TAG=$(curl -sSfL -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/repos/gitleaks/gitleaks/releases/latest | grep -oP '"tag_name":\s*"\K[^"]+')
           VER=${TAG#v}
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/${TAG}/gitleaks_${VER}_linux_x64.tar.gz" -o gl.tgz
           tar -xzf gl.tgz gitleaks
