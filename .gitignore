@@ -39,3 +39,5 @@ supabase/.temp/
 # infra — and is tracked, not ignored.)
 docs/audit/2026-05-14-pr-b2-bake-DEVICE.md
 scripts/fix-precision-v4-1.mjs
+.env.production
+.env.*.local

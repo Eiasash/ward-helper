@@ -1,0 +1,66 @@
+title = "Eias PWAs — gitleaks (targeted high-signal rules)"
+
+# NOTE: default gitleaks rules produce ~55 false positives on these repos
+# (UUIDs, Vite content hashes, base64 test fixtures via the noisy generic-api-key
+# rule). We therefore use TARGETED rules matching the secret CLASSES that actually
+# matter here. The allowlist exempts values that are public-by-design or already
+# exposed + scheduled for rotation (see the P0 secret-rotation runbook). After
+# rotation + the signed-token cutover, remove the two proxy-secret allowlist
+# regexes so any re-introduction (incl. the rotated value hardcoded) is caught.
+
+[[rules]]
+id = "anthropic-api-key"
+description = "Anthropic API key"
+regex = '''sk-ant-(?:api|admin)[0-9]{2}-[A-Za-z0-9_\-]{80,}'''
+keywords = ["sk-ant-"]
+
+[[rules]]
+id = "supabase-service-role-jwt"
+description = "Supabase service_role JWT"
+regex = '''eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{0,400}(?:service_role|c2VydmljZV9yb2xl)[A-Za-z0-9_-]{0,400}\.[A-Za-z0-9_-]{10,}'''
+keywords = ["service_role", "c2VydmljZV9yb2xl"]
+
+[[rules]]
+id = "supabase-secret-key"
+description = "Supabase secret key (sb_secret_)"
+regex = '''sb_secret_[A-Za-z0-9_\-]{20,}'''
+keywords = ["sb_secret_"]
+
+[[rules]]
+id = "private-key-block"
+description = "Private key block"
+regex = '''-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----'''
+keywords = ["PRIVATE KEY"]
+
+[[rules]]
+id = "toranot-proxy-secret"
+description = "Toranot shared proxy secret shape"
+regex = '''(?:toranot-proxy-[0-9a-f]{32}-r[0-9]|shlav-a-mega-[0-9a-f]{12}-[0-9]{4})'''
+keywords = ["toranot-proxy-", "shlav-a-mega-"]
+
+[[rules]]
+id = "aws-access-key-id"
+description = "AWS access key id"
+regex = '''AKIA[0-9A-Z]{16}'''
+keywords = ["AKIA"]
+
+[[rules]]
+id = "github-pat"
+description = "GitHub personal access token"
+regex = '''gh[pousr]_[A-Za-z0-9]{36,255}'''
+keywords = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_"]
+
+[allowlist]
+description = "Public-by-design + already-exposed-pending-rotation + vendored/build paths"
+regexes = [
+  '''sb_publishable_tUuqQQ8RKMvLDwTz5cKkOg_o_y-rHtw''',
+  '''toranot-proxy-34207b1d12f35873d7f22d8ca0388b2a-r2''',
+  '''shlav-a-mega-1f97f311d307-2026''',
+]
+paths = [
+  '''(^|/)node_modules/''',
+  '''(^|/)dist/''',
+  '''(^|/)build/''',
+  '''\.map$''',
+  '''(^|/)package-lock\.json$''',
+]
