@@ -70,18 +70,28 @@ export function useBidiAudit(): [boolean, (v: boolean) => void] {
 }
 
 /**
- * Email target for the "Send by email" button on the Save screen. Persists
- * to localStorage under `ward-helper.emailTo`. When unset, the Save-screen
- * button is hidden — user has to configure a recipient in Settings first.
+ * Email target for the "Send by email" button on the Save screen.
+ * Persisted under the `ward-helper.emailTo` key. Until the user sets or
+ * explicitly clears a recipient in Settings, it falls back to the owner
+ * default below (doctor→self workflow — send the note to your own archive
+ * inbox). An explicit clear hides the Save-screen button.
  *
- * Single recipient by design — doctor→self workflow (send the note to your
- * own archive inbox). Multi-recipient would need a proper compose UI.
+ * Single recipient by design — multi-recipient would need a compose UI.
  */
 const EMAIL_TARGET_KEY = 'ward-helper.emailTo';
+// Owner default (doctor→self). A config constant — never written into
+// browser storage on boot, so the PHI-at-rest detector stays a clean zero.
+const DEFAULT_EMAIL_TARGET = 'iyasas@szmc.org.il';
+// Marks an explicit user-clear, so "never configured" (→ use the default)
+// stays distinct from "cleared" (→ hide the Save-screen button).
+const EMAIL_CLEARED_KEY = 'ward-helper.emailTo.cleared';
 
 export function getEmailTarget(): string {
   try {
-    return localStorage.getItem(EMAIL_TARGET_KEY) ?? '';
+    const v = localStorage.getItem(EMAIL_TARGET_KEY);
+    if (v != null) return v;
+    if (localStorage.getItem(EMAIL_CLEARED_KEY) === '1') return '';
+    return DEFAULT_EMAIL_TARGET;
   } catch {
     return '';
   }
@@ -90,8 +100,13 @@ export function getEmailTarget(): string {
 export function setEmailTarget(s: string): void {
   try {
     const v = s.trim();
-    if (v) localStorage.setItem(EMAIL_TARGET_KEY, v);
-    else localStorage.removeItem(EMAIL_TARGET_KEY);
+    if (v) {
+      localStorage.setItem(EMAIL_TARGET_KEY, v);
+      localStorage.removeItem(EMAIL_CLEARED_KEY);
+    } else {
+      localStorage.removeItem(EMAIL_TARGET_KEY);
+      localStorage.setItem(EMAIL_CLEARED_KEY, '1');
+    }
   } catch {
     /* ignore */
   }
