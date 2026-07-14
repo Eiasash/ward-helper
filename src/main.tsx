@@ -5,22 +5,10 @@ import { App } from './ui/App';
 import { runV1_40_0_BackfillIfNeeded } from './storage/rounds';
 import './styles.css';
 
-// First-run defaults. Currently: pre-seed the email target for the
-// known SZMC owner of this PWA so /consult emails just work after
-// fresh install. Stored under a separate flag so removing the address
-// in Settings later isn't reverted on next reload.
-(function bootstrapDefaults() {
-  try {
-    const FLAG = 'ward-helper.bootstrap.v1';
-    if (localStorage.getItem(FLAG)) return;
-    if (!localStorage.getItem('ward-helper.emailTo')) {
-      localStorage.setItem('ward-helper.emailTo', 'iyasas@szmc.org.il');
-    }
-    localStorage.setItem(FLAG, '1');
-  } catch {
-    /* localStorage disabled — nothing to do */
-  }
-})();
+// First-run email-target default now lives as a config constant in
+// useSettings.ts (getEmailTarget falls back to it until the user sets or
+// explicitly clears a recipient) — no owner address is written into
+// localStorage on boot, so the PHI-at-rest detector stays a clean zero.
 
 // v1.40.0 morning-rounds-prep backfill — adds default values to legacy
 // patient records lacking the new optional fields. Idempotent.
