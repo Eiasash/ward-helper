@@ -83,6 +83,30 @@ export async function ensureAnonymousAuth(): Promise<string> {
   return data.user.id;
 }
 
+/**
+ * P0 secret-cutover (runbook §3): the Toranot /api/claude proxy accepts a
+ * Supabase session JWT (verified server-side via /auth/v1/user) INSTEAD of the
+ * shared `x-api-secret` that shipped in the client bundle. We already keep an
+ * anonymous GoTrue session for storage RLS, so reuse its short-lived
+ * access_token as the proxy Bearer — no new dependency, session-bound, and the
+ * shared secret leaves the bundle entirely. Returns a ready Authorization value.
+ *
+ * PRE-REQ (Eias, before un-drafting): anonymous sign-ins enabled on the shared
+ * project (ward-helper already uses signInAnonymously in prod, so this holds),
+ * AND the proxy in dual-accept mode (API_SECRET keeps old+new) until every
+ * client has shipped this change — otherwise a mixed fleet 401s.
+ */
+export async function ensureProxyBearer(): Promise<string> {
+  const sb = await getSupabase();
+  let { data: { session } } = await sb.auth.getSession();
+  if (!session) {
+    const { data, error } = await sb.auth.signInAnonymously();
+    if (error || !data.session) throw error ?? new Error('anonymous sign-in failed');
+    session = data.session;
+  }
+  return `Bearer ${session.access_token}`;
+}
+
 export async function pushBlob(
   type: 'patient' | 'note' | 'api-key' | 'canary' | 'day-snapshot',
   id: string,

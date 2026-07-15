@@ -1,4 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// P0 cutover: callClaude now fetches an anonymous Supabase session JWT via
+// ensureProxyBearer() before POSTing. Stub it so agent tests stay unit-level
+// (no real GoTrue signInAnonymously). Partial mock keeps every other cloud
+// export real. Mirrors tests/clientProxy.test.ts.
+vi.mock('@/storage/cloud', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/storage/cloud')>();
+  return { ...actual, ensureProxyBearer: async () => 'Bearer test-jwt' };
+});
+
 import { runExtractTurn, runEmitTurn } from '@/agent/loop';
 import type { CaptureBlock } from '@/camera/session';
 

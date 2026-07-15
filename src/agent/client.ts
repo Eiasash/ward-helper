@@ -30,7 +30,10 @@
 // existing test suite keep compiling without churn.
 
 export const PROXY_URL = 'https://toranot.netlify.app/api/claude';
-export const PROXY_SECRET = 'shlav-a-mega-1f97f311d307-2026';
+// P0 cutover (runbook §3): the shared x-api-secret that used to live here has
+// been removed from the client bundle. The proxy is now authenticated with the
+// anonymous Supabase session JWT — see ensureProxyBearer() in src/storage/cloud.ts
+// and callProxyOnce() in src/ai/dispatch.ts.
 
 export const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 export const ANTHROPIC_VERSION = '2023-06-01';

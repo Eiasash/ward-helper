@@ -28,9 +28,9 @@ import {
   ANTHROPIC_VERSION,
   MODEL_DIRECT,
   PROXY_URL,
-  PROXY_SECRET,
 } from '@/agent/client';
 import { getCurrentUser } from '@/auth/auth';
+import { ensureProxyBearer } from '@/storage/cloud';
 
 export const LOCAL_API_KEY_LS = 'wardhelper_apikey';
 
@@ -193,11 +193,15 @@ async function callProxyOnce(
     controller.abort();
   }, PROXY_TIMEOUT_MS);
   try {
+    // P0 cutover (runbook §3): authenticate with the anonymous Supabase session
+    // JWT rather than the client-shipped shared x-api-secret. Session-bound +
+    // short-lived; the shared secret no longer lives in the bundle.
+    const authorization = await ensureProxyBearer();
     const res = await fetch(PROXY_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-secret': PROXY_SECRET,
+        'Authorization': authorization,
       },
       body: JSON.stringify(req),
       signal: controller.signal,

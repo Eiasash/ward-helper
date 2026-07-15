@@ -1,4 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// P0 cutover: stub the anon-JWT proxy auth so agent tests stay unit-level (no
+// real GoTrue signInAnonymously). Mirrors tests/clientProxy.test.ts.
+vi.mock('@/storage/cloud', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/storage/cloud')>();
+  return { ...actual, ensureProxyBearer: async () => 'Bearer test-jwt' };
+});
 import { runExtractTurn } from '@/agent/loop';
 import type { CaptureBlock } from '@/camera/session';
 

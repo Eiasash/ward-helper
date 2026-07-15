@@ -4,7 +4,6 @@ import {
   callAnthropic,
   callProxy,
   PROXY_URL,
-  PROXY_SECRET,
   ANTHROPIC_URL,
   ANTHROPIC_VERSION,
   MODEL,
@@ -12,6 +11,13 @@ import {
   MODEL_DIRECT,
   activePath,
 } from '@/agent/client';
+
+// P0 cutover: callProxyOnce now fetches an anonymous Supabase session JWT via
+// ensureProxyBearer() before POSTing. Stub it so the proxy tests stay unit-level
+// (no real GoTrue call) and assert the Authorization: Bearer header.
+vi.mock('@/storage/cloud', () => ({
+  ensureProxyBearer: async () => 'Bearer test-jwt',
+}));
 
 // v1.39.0: dispatch picks direct vs proxy from localStorage 'wardhelper_apikey'
 // gated on getCurrentUser(). Drive via localStorage instead of mocking the
@@ -100,7 +106,7 @@ describe('activePath', () => {
 });
 
 describe('callAnthropic — proxy path (no API key)', () => {
-  it('POSTs to PROXY_URL with x-api-secret header and JSON body', async () => {
+  it('POSTs to PROXY_URL with Authorization: Bearer header and JSON body', async () => {
     const fetchSpy = mockOk('hello');
     vi.stubGlobal('fetch', fetchSpy);
     const res = await callAnthropic({ messages: [{ role: 'user', content: 'hi' }], max_tokens: 16 });
@@ -111,7 +117,7 @@ describe('callAnthropic — proxy path (no API key)', () => {
     expect(init.method).toBe('POST');
     const headers = init.headers as Record<string, string>;
     expect(headers['Content-Type']).toBe('application/json');
-    expect(headers['x-api-secret']).toBe(PROXY_SECRET);
+    expect(headers['Authorization']).toBe('Bearer test-jwt');
     // Proxy body does NOT inject `model` (the proxy chooses).
     expect(JSON.parse(init.body as string)).toEqual({
       messages: [{ role: 'user', content: 'hi' }],
