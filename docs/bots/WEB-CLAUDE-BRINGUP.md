@@ -19,7 +19,7 @@ Jerusalem. He uses ward-helper on his iPhone in the ward to:
 
 ## Architecture invariants (NEVER break)
 
-- **Toranot proxy is the model gateway.** All Claude API calls go through `https://toranot.netlify.app/api/claude` with shared secret `shlav-a-mega-1f97f311d307-2026`. **Do NOT re-add `@anthropic-ai/sdk`** to the client — it added 12 KB to the bundle and doesn't work through the proxy.
+- **Toranot proxy is the model gateway.** All Claude API calls go through `https://toranot.netlify.app/api/claude` with shared secret `RETIRED_PROXY_SECRET_2026_07_19`. **Do NOT re-add `@anthropic-ai/sdk`** to the client — it added 12 KB to the bundle and doesn't work through the proxy.
 - **No PHI off device.** Supabase stores AES-GCM 256 ciphertext only. PBKDF2 ≥ 600 000 iters.
 - **wrapForChameleon is the clipboard boundary.** Every clipboard write must go through `src/i18n/bidi.ts::wrapForChameleon` which runs `sanitizeForChameleon` first. Arrows (→ ↑ ↓), `**bold**`, `--`, `>N`, `q8h`/`bid` corrupt Chameleon EMR.
 - **Version trinity** — `package.json.version` ↔ `public/sw.js VERSION` must match. Sibling medical PWAs (Geri/IM/FM) also have `src/core/constants.js APP_VERSION`. Pre-push hook + CI verify.
