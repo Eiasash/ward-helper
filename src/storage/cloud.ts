@@ -6,6 +6,7 @@
 // the next feature lands and crosses the trigger.
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { aesEncrypt, aesDecrypt } from '@/crypto/aes';
+import { getCloudSessionToken, expireCloudSession } from '@/auth/auth';
 
 /**
  * Supabase credentials resolution order:
@@ -181,30 +182,30 @@ export async function pullAllBlobs(): Promise<CloudBlobRow[]> {
   return (data ?? []) as CloudBlobRow[];
 }
 
-/**
- * Cross-device pull: fetch every encrypted blob attributed to a given
- * app_users username, regardless of which Supabase anon user pushed them.
- *
- * This is the cross-device sync path. The per-anon-user `pullAllBlobs`
- * above can never see another device's rows because each device has its
- * own `auth.uid()`. The `ward_helper_pull_by_username(p_username)` RPC
- * (migration 0003, SECURITY DEFINER) bypasses that boundary by looking
- * up the `username` column populated when the user was logged in via
- * app_users at push time.
- *
- * Threat model: knowing the username is enough to fetch the encrypted
- * blobs — but the AES-GCM payload is bound to a PBKDF2(600k)-derived
- * key from the user's separate cloud passphrase. The DB hands out
- * ciphertext; the passphrase is the actual lock. Same posture as the
- * Phase 2 *_backups RPC for the study PWAs.
- */
+/** Missing/expired cloud sessions need an explicit sign-in, never a username fallback. */
+function requireCloudSession(username: string): string {
+  const token = getCloudSessionToken(username);
+  if (!token) throw new Error('יש להתחבר שוב בהגדרות כדי לגשת לגיבויים בענן.');
+  return token;
+}
+
+function checkCloudSessionError(error: { code?: string; message?: string }, token: string): void {
+  if (error.code === '28000' || error.message === 'not_signed_in') {
+    expireCloudSession(token);
+    throw new Error('פג תוקף ההתחברות לענן. יש להתחבר שוב בהגדרות.');
+  }
+}
+
+/** Cross-device pull, scoped server-side to the app_users session's username. */
 export async function pullByUsername(username: string): Promise<CloudBlobRow[]> {
   if (!username || !username.trim()) return [];
+  const token = requireCloudSession(username);
   const sb = await getSupabase();
-  const { data, error } = await sb.rpc('ward_helper_pull_by_username', {
-    p_username: username.trim(),
-  });
-  if (error) throw error;
+  const { data, error } = await sb.rpc('ward_helper_pull_v2', { p_token: token });
+  if (error) {
+    checkCloudSessionError(error, token);
+    throw error;
+  }
   return (data ?? []) as CloudBlobRow[];
 }
 
@@ -265,21 +266,10 @@ export async function deleteBlob(
 }
 
 /**
- * Cross-device best-effort delete: remove the row attributed to a given
- * app_users `username`, regardless of which anon user_id pushed it. Calls
- * the SECURITY DEFINER RPC `ward_helper_delete_by_username` (migration
- * 0009), which mirrors `ward_helper_pull_by_username` (migration 0003):
- * it bypasses the auth.uid() RLS boundary because cross-device deletes
- * cross that boundary, exactly as cross-device pulls do.
- *
- * Blank/whitespace usernames are a no-op ('skipped') and never hit the
- * network — the username column is never written empty (see pushBlob's
- * cleanUsername coercion), so an empty match could only ever group
- * unrelated null-username rows.
- *
- * Never throws — returns a status. If the RPC is not yet deployed the
- * Supabase client returns an error (function not found), surfaced as
- * 'error'; the local delete already succeeded and navigation proceeds.
+ * Cross-device best-effort delete. Use the session-scoped RPC; during rollout
+ * only a missing v2 function permits the legacy username RPC. Authentication,
+ * permission, network and server failures must never downgrade to legacy.
+ * Local deletion retains its existing non-throwing status contract.
  */
 export async function deleteByUsername(
   type: 'patient' | 'note' | 'api-key' | 'canary' | 'day-snapshot',
@@ -288,14 +278,24 @@ export async function deleteByUsername(
 ): Promise<CloudDeleteStatus> {
   if (!username || !username.trim()) return 'skipped';
   try {
+    const token = requireCloudSession(username);
     const sb = await getSupabase();
-    const { error } = await sb.rpc('ward_helper_delete_by_username', {
+    const { error, status } = await sb.rpc('ward_helper_delete_v2', {
+      p_token: token,
+      p_blob_type: type,
+      p_blob_id: id,
+    });
+    if (!error) return 'deleted';
+    checkCloudSessionError(error, token);
+    if (status !== 404 && error.code !== 'PGRST202' && error.code !== '42883') return 'error';
+    // Do not use an old account's username if sign-in changed while v2 was in flight.
+    if (getCloudSessionToken(username) !== token) return 'error';
+    const legacy = await sb.rpc('ward_helper_delete_by_username', {
       p_username: username.trim(),
       p_blob_type: type,
       p_blob_id: id,
     });
-    if (error) return 'error';
-    return 'deleted';
+    return legacy.error ? 'error' : 'deleted';
   } catch {
     return 'error';
   }
