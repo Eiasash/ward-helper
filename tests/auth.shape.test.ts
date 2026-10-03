@@ -11,7 +11,7 @@ vi.mock('@supabase/supabase-js', () => ({
   })),
 }));
 
-import { authLogin, authRegister } from '@/auth/auth';
+import { authLogin, authRegister, setAuthSession, getCloudSessionToken, logout, getCurrentUser } from '@/auth/auth';
 
 beforeEach(() => {
   rpcImpl = () => Promise.reject(new Error('rpcImpl not configured for this test'));
@@ -91,5 +91,29 @@ describe('authRegister — server response shape normalization', () => {
     expect(res.user).toBeUndefined();
     expect(res.error).toBe('username_taken');
     expect(res.message).toBe('This username is already in use');
+  });
+});
+
+
+describe('cloud session credential persistence', () => {
+  it('keeps the server token across reloads without adding a password to the profile', async () => {
+    localStorage.clear();
+    rpcImpl = async () => ({ data: { ok: true, username: 'test-user', session_token: 'opaque-token' }, error: null });
+    const res = await authLogin('test-user', 'synthetic-password');
+    setAuthSession(res.user!.username, null, 'login', res.session_token);
+    expect(getCloudSessionToken('test-user')).toBe('opaque-token');
+    expect(getCloudSessionToken('other-user')).toBeNull();
+    expect(localStorage.getItem('ward-helper.auth.user')).not.toContain('synthetic-password');
+    // UI profile objects must not expose the credential to consumers/loggers.
+    expect(getCurrentUser()).not.toHaveProperty('sessionToken');
+    await logout();
+    expect(getCloudSessionToken('test-user')).toBeNull();
+  });
+
+  it('clears the previous account token on tokenless session replacement', () => {
+    setAuthSession('test-user', null, 'login', 'old-token');
+    setAuthSession('other-user');
+    expect(getCloudSessionToken('other-user')).toBeNull();
+    expect(localStorage.getItem('ward-helper.auth.user')).not.toContain('old-token');
   });
 });
