@@ -33,7 +33,7 @@
     "cross-env": "^7.0.3",
     "fake-indexeddb": "^6.0.0",
     "happy-dom": "^20.9.0",
-    "lighthouse": "^13.1.0",
+    "lighthouse": "^13.5.0",
     "tsx": "^4.21.0",
     "typescript": "^5.5.4",
     "vite": "^8.0.11",
