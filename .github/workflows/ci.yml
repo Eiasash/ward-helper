@@ -12,6 +12,8 @@ jobs:
         # Fail-fast, required: zero patient/staff identifiers in public/skills + src/skills.
         # Makes the de-identification scrub zero-miss by construction — a missed name can't ship.
         run: bash scripts/phi-gate.sh
+      - name: PHI gate red case (UTF-16 ID must fail)
+        run: bash scripts/phi-gate.test.sh
       - uses: actions/setup-node@v5
         with: { node-version: '20', cache: 'npm' }
       - run: npm ci

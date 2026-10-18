@@ -7,12 +7,13 @@
  *     blob_id})`, scoped to auth.uid by RLS. Best-effort: returns a status,
  *     never throws.
  *   - deleteByUsername: cross-device path. Calls the SECURITY DEFINER RPC
- *     ward_helper_delete_by_username with (p_username, p_blob_type,
+ *     ward_helper_delete_v2 with (p_token, p_blob_type,
  *     p_blob_id). Blank usernames are 'skipped' without hitting the network.
  *
  * Mirrors the mock harness in cloud-username-bridge.test.ts.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { setAuthSession, getCloudSessionToken } from '@/auth/auth';
 
 const h = vi.hoisted(() => ({
   deleteSpy: vi.fn(),
@@ -42,6 +43,8 @@ vi.mock('@supabase/supabase-js', () => ({
 import { deleteBlob, deleteByUsername } from '@/storage/cloud';
 
 beforeEach(() => {
+  localStorage.clear();
+  setAuthSession('eias', null, 'login', 'test-session-token');
   h.deleteSpy.mockReset();
   h.matchSpy.mockReset();
   h.matchSpy.mockImplementation(async () => ({ error: null }));
@@ -79,11 +82,11 @@ describe('deleteBlob — same-device auth.uid-scoped delete', () => {
 });
 
 describe('deleteByUsername — cross-device SECURITY DEFINER RPC delete', () => {
-  it('calls ward_helper_delete_by_username with the 3 params and returns "deleted"', async () => {
+  it('calls ward_helper_delete_v2 with the 3 params and returns "deleted"', async () => {
     const status = await deleteByUsername('note', 'n-id-1', 'eias');
     expect(h.rpcSpy).toHaveBeenCalledTimes(1);
-    expect(h.rpcSpy).toHaveBeenCalledWith('ward_helper_delete_by_username', {
-      p_username: 'eias',
+    expect(h.rpcSpy).toHaveBeenCalledWith('ward_helper_delete_v2', {
+      p_token: 'test-session-token',
       p_blob_type: 'note',
       p_blob_id: 'n-id-1',
     });
@@ -92,8 +95,8 @@ describe('deleteByUsername — cross-device SECURITY DEFINER RPC delete', () => 
 
   it('trims the username before calling the RPC', async () => {
     await deleteByUsername('note', 'n-id-2', '  eias  ');
-    expect(h.rpcSpy).toHaveBeenCalledWith('ward_helper_delete_by_username', {
-      p_username: 'eias',
+    expect(h.rpcSpy).toHaveBeenCalledWith('ward_helper_delete_v2', {
+      p_token: 'test-session-token',
       p_blob_type: 'note',
       p_blob_id: 'n-id-2',
     });
@@ -112,7 +115,7 @@ describe('deleteByUsername — cross-device SECURITY DEFINER RPC delete', () => 
   it('returns "error" (does NOT throw) when the RPC reports an error', async () => {
     h.rpcSpy.mockImplementationOnce(async () => ({
       data: null,
-      error: new Error('PGRST202: function not found'),
+      error: { code: '42501', message: 'permission denied' },
     }));
     const status = await deleteByUsername('note', 'n-id-5', 'eias');
     expect(status).toBe('error');
@@ -123,5 +126,57 @@ describe('deleteByUsername — cross-device SECURITY DEFINER RPC delete', () => 
       throw new Error('network down');
     });
     await expect(deleteByUsername('note', 'n-id-6', 'eias')).resolves.toBe('error');
+  });
+});
+
+
+describe('delete session boundary and rollout fallback', () => {
+  it.each([
+    { status: 404, code: '' },
+    { status: 400, code: 'PGRST202' },
+    { status: 400, code: '42883' },
+  ])('falls back only for missing function: %j', async ({ status, code }) => {
+    h.rpcSpy.mockResolvedValueOnce({ status, error: { code } });
+    expect(await deleteByUsername('note', 'n1', 'eias')).toBe('deleted');
+    expect(h.rpcSpy).toHaveBeenCalledTimes(2);
+    expect(h.rpcSpy).toHaveBeenLastCalledWith('ward_helper_delete_by_username', {
+      p_username: 'eias', p_blob_type: 'note', p_blob_id: 'n1',
+    });
+  });
+
+  it.each([
+    { status: 401, code: '28000' },
+    { status: 403, code: '42501' },
+    { status: 500, code: 'XX000' },
+    { status: 0, code: '' },
+    // An authentication rejection must outrank an inconsistent HTTP 404.
+    { status: 404, code: '28000' },
+  ])('never downgrades other failures: %j', async ({ status, code }) => {
+    h.rpcSpy.mockResolvedValueOnce({ status, error: { code } });
+    expect(await deleteByUsername('note', 'n1', 'eias')).toBe('error');
+    expect(h.rpcSpy).toHaveBeenCalledTimes(1);
+    expect(getCloudSessionToken('eias')).toBe(code === '28000' ? null : 'test-session-token');
+  });
+
+  it('requires a matching session before attempting either RPC', async () => {
+    expect(await deleteByUsername('note', 'n1', 'other-user')).toBe('error');
+    setAuthSession('eias');
+    expect(await deleteByUsername('note', 'n1', 'eias')).toBe('error');
+    expect(h.rpcSpy).not.toHaveBeenCalled();
+  });
+
+  it('returns error if the legacy fallback also fails', async () => {
+    h.rpcSpy.mockResolvedValueOnce({ status: 404, error: { code: 'PGRST202' } });
+    h.rpcSpy.mockResolvedValueOnce({ error: { code: '42501' } });
+    expect(await deleteByUsername('note', 'n1', 'eias')).toBe('error');
+  });
+
+  it('does not fall back after the account changes in flight', async () => {
+    h.rpcSpy.mockImplementationOnce(async () => {
+      setAuthSession('other-user', null, 'login', 'other-session');
+      return { status: 404, error: { code: 'PGRST202' } };
+    });
+    expect(await deleteByUsername('note', 'n1', 'eias')).toBe('error');
+    expect(h.rpcSpy).toHaveBeenCalledTimes(1);
   });
 });

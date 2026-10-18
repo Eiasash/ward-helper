@@ -132,6 +132,8 @@ export interface AuthUser {
 /** Result shape of the three RPCs. */
 export interface RpcResult {
   ok: boolean;
+  /** Opaque app_users session credential; never the login password. */
+  session_token?: string;
   /** Present when ok=true, returned by auth_register_user / auth_login_user. */
   user?: { username: string; display_name: string | null };
   /**
@@ -170,6 +172,30 @@ export function getCurrentUser(): AuthUser | null {
 
 export function isLoggedIn(): boolean {
   return !!getCurrentUser();
+}
+
+/** The profile alone is not proof of a live server session. */
+export function getCloudSessionToken(username: string): string | null {
+  try {
+    const profile = JSON.parse(localStorage.getItem(AUTH_LS_KEY) ?? 'null');
+    if (getCurrentUser()?.username !== username.trim()) return null;
+    return typeof profile?.sessionToken === 'string' && profile.sessionToken.trim()
+      ? profile.sessionToken : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Expire only the failed token: a late response must not clear a newer login. */
+export function expireCloudSession(token: string): void {
+  const raw = localStorage.getItem(AUTH_LS_KEY);
+  if (!raw) return;
+  const profile = JSON.parse(raw);
+  if (profile.sessionToken !== token) return;
+  delete profile.sessionToken;
+  localStorage.setItem(AUTH_LS_KEY, JSON.stringify(profile));
+  // Keep the local identity and PHI unlock state; Settings offers sign-in again.
+  notifyAuthChanged();
 }
 
 /**
@@ -476,13 +502,17 @@ export function setAuthSession(
   username: string,
   displayName?: string | null,
   action: AuthChangeAction = 'unknown',
+  sessionToken?: string,
 ): AuthUser {
   const profile: AuthUser = {
     username,
     displayName: displayName ?? null,
     loggedInAt: Date.now(),
   };
-  localStorage.setItem(AUTH_LS_KEY, JSON.stringify(profile));
+  localStorage.setItem(AUTH_LS_KEY, JSON.stringify({
+    ...profile,
+    ...(typeof sessionToken === 'string' && sessionToken.trim() ? { sessionToken } : {}),
+  }));
   // Logged-in username takes over as the unified uid. Future cloud-backup
   // writes will key on this — the user's notes will follow them between
   // devices once sync ships.

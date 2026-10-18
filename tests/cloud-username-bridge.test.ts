@@ -1,12 +1,8 @@
 /**
  * Cloud sync — option-2 hybrid bridge wiring tests.
  *
- * These cover the client side of migration 0003
- * (`ward_helper_backup.username` column + `ward_helper_pull_by_username` RPC).
- *
- * Server-side (already verified live in PR #29):
- *   - Column exists, partial index created, RPC SECURITY DEFINER, GRANT
- *     EXECUTE on anon + authenticated.
+ * These cover username attribution on push and session-scoped pull v2.
+ * Database behavior is mocked here, not verified against a live account.
  *
  * Client side (this file):
  *   - pushBlob with a username string lands `username` in the upsert row.
@@ -14,11 +10,12 @@
  *     the column stays null.
  *   - Empty / whitespace usernames are coerced to "no username", never
  *     a literal '' (which would group all empties under one bucket).
- *   - pullByUsername calls the correct RPC name with `p_username` param.
+ *   - pullByUsername calls the session-scoped RPC with `p_token`.
  *   - pullByUsername returns `[]` for empty/blank input without hitting
  *     the network.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { setAuthSession, getCloudSessionToken } from '@/auth/auth';
 
 // vi.mock factories run BEFORE module-level const declarations, so we need
 // vi.hoisted to declare the spies in a way the factory can see. Without
@@ -50,6 +47,8 @@ vi.mock('@supabase/supabase-js', () => ({
 import { pushBlob, pullByUsername } from '@/storage/cloud';
 
 beforeEach(() => {
+  localStorage.clear();
+  setAuthSession('eias', null, 'login', 'test-session-token');
   h.upsertSpy.mockReset();
   h.upsertSpy.mockImplementation(async () => ({ error: null }));
   h.rpcSpy.mockReset();
@@ -118,7 +117,7 @@ describe('pushBlob — username column wiring', () => {
 });
 
 describe('pullByUsername — cross-device pull RPC', () => {
-  it('calls the migration-0003 RPC with p_username param', async () => {
+  it('calls the session-scoped RPC with p_token param', async () => {
     h.MOCK_RPC_ROWS.current = [
       {
         blob_type: 'patient',
@@ -131,8 +130,8 @@ describe('pullByUsername — cross-device pull RPC', () => {
     ];
     const rows = await pullByUsername('eias');
     expect(h.rpcSpy).toHaveBeenCalledTimes(1);
-    expect(h.rpcSpy).toHaveBeenCalledWith('ward_helper_pull_by_username', {
-      p_username: 'eias',
+    expect(h.rpcSpy).toHaveBeenCalledWith('ward_helper_pull_v2', {
+      p_token: 'test-session-token',
     });
     expect(rows).toHaveLength(1);
     expect((rows[0] as { blob_id: string }).blob_id).toBe('p1');
@@ -140,8 +139,8 @@ describe('pullByUsername — cross-device pull RPC', () => {
 
   it('trims username before calling the RPC', async () => {
     await pullByUsername('  eias  ');
-    expect(h.rpcSpy).toHaveBeenCalledWith('ward_helper_pull_by_username', {
-      p_username: 'eias',
+    expect(h.rpcSpy).toHaveBeenCalledWith('ward_helper_pull_v2', {
+      p_token: 'test-session-token',
     });
   });
 
@@ -157,7 +156,7 @@ describe('pullByUsername — cross-device pull RPC', () => {
 
   it('returns [] when the RPC reports zero rows for the user', async () => {
     h.MOCK_RPC_ROWS.current = [];
-    const rows = await pullByUsername('nobody-here');
+    const rows = await pullByUsername('eias');
     expect(rows).toEqual([]);
     expect(h.rpcSpy).toHaveBeenCalledTimes(1);
   });
@@ -168,5 +167,42 @@ describe('pullByUsername — cross-device pull RPC', () => {
       error: new Error('22023: invalid_username'),
     }));
     await expect(pullByUsername('eias')).rejects.toThrow(/22023/);
+  });
+});
+
+
+describe('pull session boundary', () => {
+  it('requires sign-in for an existing profile without a token', async () => {
+    setAuthSession('eias');
+    await expect(pullByUsername('eias')).rejects.toThrow(/\u05dc\u05d4\u05ea\u05d7\u05d1\u05e8 \u05e9\u05d5\u05d1/);
+    expect(h.rpcSpy).not.toHaveBeenCalled();
+  });
+
+  it('cannot use another account token', async () => {
+    await expect(pullByUsername('other-user')).rejects.toThrow(/\u05dc\u05d4\u05ea\u05d7\u05d1\u05e8 \u05e9\u05d5\u05d1/);
+    expect(h.rpcSpy).not.toHaveBeenCalled();
+  });
+
+  it('expires a rejected token and never calls the legacy pull', async () => {
+    h.rpcSpy.mockResolvedValueOnce({ error: { code: '28000', message: 'not_signed_in' } });
+    await expect(pullByUsername('eias')).rejects.toThrow(/\u05dc\u05d4\u05ea\u05d7\u05d1\u05e8 \u05e9\u05d5\u05d1/);
+    expect(getCloudSessionToken('eias')).toBeNull();
+    await expect(pullByUsername('eias')).rejects.toThrow(/\u05dc\u05d4\u05ea\u05d7\u05d1\u05e8 \u05e9\u05d5\u05d1/);
+    expect(h.rpcSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not downgrade even when pull v2 is missing', async () => {
+    h.rpcSpy.mockResolvedValueOnce({ status: 404, error: { code: 'PGRST202' } });
+    await expect(pullByUsername('eias')).rejects.toEqual({ code: 'PGRST202' });
+    expect(h.rpcSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not expire a newer login after a late rejected request', async () => {
+    h.rpcSpy.mockImplementationOnce(async () => {
+      setAuthSession('eias', null, 'login', 'new-session-token');
+      return { error: { code: '28000' } };
+    });
+    await expect(pullByUsername('eias')).rejects.toThrow();
+    expect(getCloudSessionToken('eias')).toBe('new-session-token');
   });
 });

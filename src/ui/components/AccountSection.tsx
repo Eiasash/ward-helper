@@ -8,6 +8,7 @@ import {
   authRequestPasswordReset,
   authSetEmail,
   setAuthSession,
+  getCloudSessionToken,
   logout,
   stashLastLoginPassword,
   persistLoginPassword,
@@ -47,6 +48,12 @@ export function AccountSection() {
     <>
       <h2>👤 חשבון</h2>
       {user ? <AuthedAccount user={user} /> : <GuestAccount />}
+      {user && !getCloudSessionToken(user.username) && (
+        <>
+          <p role="alert">כדי להוריד או למחוק גיבויים בענן, יש להתחבר שוב.</p>
+          <GuestAccount />
+        </>
+      )}
     </>
   );
 }
@@ -634,7 +641,7 @@ function GuestAccount() {
         .catch((e) => pushBreadcrumb('login.persistErr', (e as Error).message));
       pushBreadcrumb('login.stashed');
       setBusy(false);
-      setAuthSession(res.user.username, res.user.display_name, 'login');
+      setAuthSession(res.user.username, res.user.display_name, 'login', res.session_token);
       setPassword('');
     } else {
       setBusy(false);
@@ -711,7 +718,7 @@ function GuestAccount() {
     persistLoginPassword(password)
       .then(() => pushBreadcrumb('register.persisted'))
       .catch((e) => pushBreadcrumb('register.persistErr', (e as Error).message));
-    setAuthSession(res.user.username, res.user.display_name, 'register');
+    setAuthSession(res.user.username, res.user.display_name, 'register', res.session_token);
     setBusy(false);
     setPassword('');
   }
