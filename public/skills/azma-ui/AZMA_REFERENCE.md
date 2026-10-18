@@ -132,7 +132,7 @@ The medication-orders grid (and the parallel נזלים / לוינים-ונקז�
 
 ### 7.0 The AZMA medication-order grid (live reference)
 
-> Added R5, revised R6 (both 2026-05-18) from real de-identified captures in `screenshots/` and Eias's confirmation. §7.1–7.8 describe the grid; §7.3 and §7.7 are reconciled with the live captures; §7.8 (assessment fields) added from a live capture, and §7.5 caution 3 (OCR/exported-image loses axes 1–2) added the same day.
+> Added R5, revised R6 (both 2026-05-18) from real de-identified captures in `screenshots/` and Eias's confirmation. §7.1–7.8 describe the grid; §7.3 and §7.7 are reconciled with the live captures; §7.8 (assessment fields) and §7.5 caution 3 (OCR/exported-image loses axes 1–2) both added from a live capture.
 
 **This grid is AZMA.** It is AZMA's medication-order screen (`הוראות תרופתיות`). The application window's title bar may read **`Eitan 4`** — that is the integrated application build, *not* a separate EMR; the order grid, the SOAP/`ביקור` panel and the census are all AZMA. **Eitan** proper is a different thing entirely — the cross-hospital shared record, surfaced as the small blue patient-name box (SKILL.md §0.3). Do not let the title bar mislead you.
 
@@ -306,7 +306,7 @@ Beneath the SOAP/`ביקור` panel the screen carries two **structured assessme
 ## Files in this bundle
 
 - `AZMA_REFERENCE.md` — this document (R5)
-- `azma_reference.json` (v4.1.0) — programmatic lookup. `medGridRowStates.axes.3_rowIcons` now carries the **current 2-state admin-icon model** (pencil=pending, red-stop=active; blue-circle retired into `retired[]`), `practical3x3` rebuilt on the 2-state read, plus a `readingFromImage` caution and a top-level `assessmentFields` block (VTE-risk + `<6 months` prognosis flag, §7.8). Quiz items still carry explicit `manifestEvidence`/`provenance` and their answers intentionally reflect the **SCORM course key** (for passing the familiarization quiz), so quiz item answers may still cite the course-era blue-circle — that is by design, not drift. Original Storyline slide-content dump preserved under `_source.scenes`.
+- `azma_reference.json` (v4.1.0, reconciled 2026-06-24) — programmatic lookup. `medGridRowStates.axes.3_rowIcons` now carries the **current 2-state admin-icon model** (pencil=pending, red-stop=active; blue-circle retired into `retired[]`), `practical3x3` rebuilt on the 2-state read, plus a `readingFromImage` caution and a top-level `assessmentFields` block (VTE-risk + `<6 months` prognosis flag, §7.8). Quiz items still carry explicit `manifestEvidence`/`provenance` and their answers intentionally reflect the **SCORM course key** (for passing the familiarization quiz), so quiz item answers may still cite the course-era blue-circle — that is by design, not drift. Original Storyline slide-content dump preserved under `_source.scenes`.
 - `manifest.json` — the complete Articulate Storyline 3.5 SCORM manifest (`projectId 66MVezv2vF7`). Canonical source for the explicit answer key (look for `"status":"correct"` markers).
 - `screenshots/` — de-identified crops from **real AZMA captures** (R5–R7, 2026-05-18): the medication-order grid (`azma-medgrid-*.png`) and the `ניהול מחלקה` census (`azma-census-reference.png`). See `screenshots/README.md`. Any image added here must be PHI-cropped first (no patient name / ID / DOB / admission number).
 
@@ -323,7 +323,7 @@ Beneath the SOAP/`ביקור` panel the screen carries two **structured assessme
 - **R8 — 2026-05-18:**
   - §6 census status icons confirmed by Eias: red vial on yellow = blood test pending today; yellow book = awaiting imaging/diagnostic test; red book = pending task/mission (free-form inter-staff list); blue book = awaiting consultation. The per-row red pencil and the green-pages/`Rx` icons reclassified as row-action buttons (not status).
 - **R7 — 2026-05-18:**
-  - §4.0 added — the `ניהול מחלקה` census is in practice a case-manager-filtered ward roster (filter via the `חיפוש לפי case` box, by case-manager surname). Department-administration functions are the department head's domain, out of scope.
+  - §4.0 added — the `ניהול מחלקה` census is in practice a case-manager-filtered ward roster (filter via the `חיפוש לפי case` box; filter via the `חיפוש לפי case` box, by case-manager surname). Department-administration functions are the department head's domain, out of scope.
   - §6 gains real-capture colour notes (room cells purple; name-cell tint likely sex-coded; blood-type cell colour; per-row census icons). De-identified census crop added to `screenshots/` (`azma-census-reference.png`).
 - **R6 — 2026-05-18:**
   - §7.3 reconciled with real de-identified captures and confirmed by Eias: pencil = pending / red round stop = active (two states only); speech bubbles green = doctor / red = nurse / grey = empty; the "blue circle = order finished" icon retired (inactivity = strikethrough, §7.2).

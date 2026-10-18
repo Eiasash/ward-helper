@@ -1,7 +1,7 @@
 {
  "$schema": "https://eiasash.github.io/schemas/azma_reference.v4.json",
  "version": "4.1.0",
- "revisedUtc": "2026-06-23",
+ "revisedUtc": "2026-06-24",
  "meta": {
   "source": "SZMC AZMA familiarization e-learning (Articulate Storyline 3.5 SCORM, projectId 66MVezv2vF7) + clinical observation of the live medication-orders grid + Eias's canonical icon-legend table",
   "courseFile": "familiaritywithazma",
@@ -296,7 +296,7 @@
   }
  ],
  "medGridRowStates": {
-  "_note": "הוראות תרופתיות + נזלים + לוינים-ונקזים. Read 4 axes orthogonally; misreading any one flips clinical meaning. Icon model reconciled to AZMA_REFERENCE.md §7.3/§7.5 (2-state admin icon; blue-circle retired) 2026-06-23.",
+  "_note": "הוראות תרופתיות + נזלים + לוינים-ונקזים. Read 4 axes orthogonally; misreading any one flips clinical meaning. Icon model reconciled to AZMA_REFERENCE.md §7.3/§7.5 (2-state admin icon; blue-circle retired) 2026-06-24.",
   "axes": {
    "1_textColor": {
     "axis": "Medication-name text color",
